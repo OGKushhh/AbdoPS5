@@ -2,19 +2,17 @@
 #include "common/dateTime.h"
 #include "common/debug.h"
 #include "common/file.h"
+#include "common/magicEnum.h"
+#include "common/platform/sysDbg.h"
 #include "common/stringUtils.h"
 #include "common/threads.h"
 #include "common/virtualMemory.h"
 #include "emulator.h"
 #include "kytyGitVersion.h"
-#include "loader/pkg.h"
 
 #include <charconv>
 #include <cstdio>
-#include <string_view>
-#include <vector>
 #include <fmt/format.h>
-#include <magic_enum.hpp>
 
 using namespace Common;
 using namespace Emulator;
@@ -30,11 +28,12 @@ static std::string GetBuildString() {
 	std::string type = "????";
 #endif
 
-	std::string compiler = Debug::GetCompiler() + "-" + Debug::GetLinker();
+	std::string compiler =
+	    Debug::GetCompiler() + "-" + Debug::GetLinker() + "-" + Debug::GetBitness();
 
 	std::string str =
 	    fmt::format("{}, {}, ver = {}, git = {}, date = {}", type.c_str(), compiler.c_str(),
-			KYTY_VERSION, KYTY_GIT_VERSION, date.ToString().c_str());
+	                KYTY_VERSION, KYTY_GIT_VERSION, date.ToString().c_str());
 
 	return str;
 }
@@ -44,36 +43,24 @@ static void PrintUsage() {
 	::printf("kyty_emulator --game <dir|elf> [options]\n\n");
 	::printf("Options:\n");
 	::printf("  --game <dir|elf>                     Game directory or ELF to load.\n");
-	::printf("  --mount-pkg <pkg>                    Extract and mount a PKG file.\n");
 	::printf("  --game-patch <json>                  ETAHen cheat file.\n");
-	::printf("  --enable-hack <name,name,...>        Enable per-game hack flags. Available:\n");
-	::printf("                                       DisableAsyncCompute, ForceDepthRangeRestricted,\n");
-	::printf("                                       SkipShaderAssert, DepthDisable, DisableSRGB,\n");
-	::printf("                                       DisableFMV, SkipUnknownTiling, ImageLoadNoReload.\n");
 	::printf("  --screen-width <num>                 Window width. Default: 1280.\n");
 	::printf("  --screen-height <num>                Window height. Default: 720.\n");
 	::printf(
 	    "  --user-name <name>                   Local user name (1-16 bytes). Default: Kyty.\n");
 	::printf("  --user-id <num>                      Local user ID. Default: %d.\n",
-		 Config::DEFAULT_USER_ID);
-	::printf("  --mic <name>                        Capture from this microphone; omit for silence.\n");
-	::printf("  --storage-bandwidth <mbps>          Storage I/O throttle. 0=native, 5500=PS5 SSD. (Kyty-009)\n");
-	::printf("  --memory-compression <0-3>          Memory compression. 0=off, 1=fast, 2=balanced, 3=max. (Kyty-010)\n");
-	::printf("  --audio-backend <sdl|cubeb>         Audio backend. Default: sdl. (Kyty-011)\n");
+	         Config::DEFAULT_USER_ID);
 	::printf(
-	    "  --present-mode <value>               Fifo, Mailbox, or Immediate. Default: Mailbox.\n");
+	    "  --present-mode <value>               Fifo, Mailbox, or Immediate. Default: Fifo.\n");
 	::printf(
 	    "  --gpu <index>                        Vulkan physical device index. Default: auto.\n");
 	::printf("  --fullscreen                         Run in borderless desktop fullscreen.\n");
-	::printf("  --vr                                 Enable the virtual VR headset.\n");
-	::printf("  --amd-cpu                            Apply AMD CPU instruction patches.\n");
 	::printf("  --vblank-frequency <num>             Virtual vblank frequency. Default: 60.\n");
 	::printf("  --console-language <0-29>            Console language. Default: 1 (English US).\n");
 	::printf("  --vulkan-validation <true|false>     Enable Vulkan validation.\n");
 	::printf("  --gpu-assisted-validation <t|f>      Bounds-check shader accesses on the GPU.\n"
-		 "                                       Implies --vulkan-validation; very slow.\n");
+	         "                                       Implies --vulkan-validation; very slow.\n");
 	::printf("  --shader-validation <true|false>     Enable shader validation.\n");
-	::printf("  --tessellation                      Draw tessellation patches; skipped by default.\n");
 	::printf("  --shader-optimization-type <value>   None, Size, or Performance.\n");
 	::printf("  --shader-log-direction <value>       Silent, Console, or File.\n");
 	::printf("  --shader-log-folder <path>           Shader log output folder.\n");
@@ -82,7 +69,9 @@ static void PrintUsage() {
 	::printf("  --graphics-debug-dump <true|false>   Enable graphics debug dumps.\n");
 	::printf("  --printf-direction <value>           Silent, Console, or File.\n");
 	::printf("  --printf-output-file <path>          Guest printf output file.\n");
-	::printf("  --profile                            Enable the Tracy profiler.\n");
+	::printf("  --profiler-direction <value>         None or Network.\n");
+	::printf("  --async-shaders <true|false>         Build graphics pipelines on worker threads and\n"
+	         "                                       skip draws until ready. Default: true.\n");
 	::printf("  --spirv-debug-printf <true|false>    Enable SPIR-V debug printf.\n");
 	::printf(
 	    "  --readback-linear-images <true|false> Read back writable linear images on submit.\n");
@@ -175,28 +164,8 @@ static bool ParseArgs(int argc, char* argv[], RunOptions& options, bool& show_he
 			continue;
 		}
 
-		if (arg == "--vr") {
-			options.config.vr_enabled = true;
-			continue;
-		}
-
-		if (arg == "--amd-cpu") {
-			options.config.amd_cpu_enabled = true;
-			continue;
-		}
-
 		if (arg == "--playgo-hack") {
 			options.config.playgo_hack_enabled = true;
-			continue;
-		}
-
-		if (arg == "--tessellation") {
-			options.config.tessellation_enabled = true;
-			continue;
-		}
-
-		if (arg == "--profile") {
-			options.config.profiler_enabled = true;
 			continue;
 		}
 
@@ -207,7 +176,7 @@ static bool ParseArgs(int argc, char* argv[], RunOptions& options, bool& show_he
 		}
 #endif
 
-		if (!arg.starts_with("--")) {
+		if (!Common::StartsWith(arg, "--")) {
 			::printf("game input must be provided with --game\n");
 			return false;
 		}
@@ -224,19 +193,15 @@ static bool ParseArgs(int argc, char* argv[], RunOptions& options, bool& show_he
 			}
 
 			value = Common::FixFilenameSlash(value);
-			const auto path = Common::PathFromUtf8(value);
-
-			if (Common::File::IsDirectoryExisting(path)) {
-				options.app0_dir = path;
+			if (Common::File::IsDirectoryExisting(value)) {
+				options.app0_dir = value;
 				options.elf      = "/app0/eboot.bin";
-			} else if (Common::File::IsFileExisting(path)) {
-				options.app0_dir = path.parent_path();
-
+			} else if (Common::File::IsFileExisting(value)) {
+				options.app0_dir = Common::DirectoryWithoutFilename(value);
 				if (options.app0_dir.empty()) {
 					options.app0_dir = ".";
 				}
-
-				options.elf = std::filesystem::path("/app0") / path.filename();
+				options.elf = "/app0/" + Common::FilenameWithoutDirectory(value);
 			} else {
 				::printf("--game must point to an existing directory or ELF: %s\n", value.c_str());
 				return false;
@@ -247,39 +212,11 @@ static bool ParseArgs(int argc, char* argv[], RunOptions& options, bool& show_he
 				return false;
 			}
 			value = Common::FixFilenameSlash(value);
-			const auto path = Common::PathFromUtf8(value);
-
-			if (!Common::File::IsFileExisting(path)) {
+			if (!Common::File::IsFileExisting(value)) {
 				::printf("--game-patch must point to an existing file: %s\n", value.c_str());
 				return false;
 			}
-			options.game_patch = path;
-		} else if (arg == "--enable-hack") {
-			// Kyty-003: Per-game hack flags.
-			if (!options.enable_hacks.empty()) {
-				options.enable_hacks += ",";
-			}
-			options.enable_hacks += value;
-		} else if (arg == "--mount-pkg") {
-			// Kyty-005: Mount a PKG file.
-			if (!options.mount_pkg.empty()) {
-				::printf("--mount-pkg can only be specified once\n");
-				return false;
-			}
-			value = Common::FixFilenameSlash(value);
-			const auto pkg_path = Common::PathFromUtf8(value);
-
-			if (!Common::File::IsFileExisting(pkg_path)) {
-				::printf("--mount-pkg must point to an existing file: %s\n", value.c_str());
-				return false;
-			}
-
-			if (!Loader::IsPkgFile(pkg_path)) {
-				::printf("--mount-pkg: file is not a valid PKG (magic mismatch): %s\n", value.c_str());
-				return false;
-			}
-
-			options.mount_pkg = pkg_path;
+			options.game_patch = value;
 		} else if (arg == "--screen-width") {
 			options.config.screen_width = static_cast<uint32_t>(Common::ToInt32(value));
 		} else if (arg == "--screen-height") {
@@ -287,7 +224,7 @@ static bool ParseArgs(int argc, char* argv[], RunOptions& options, bool& show_he
 		} else if (arg == "--user-name") {
 			if (value.empty() || value.size() > Config::MAX_USER_NAME_LENGTH) {
 				::printf("invalid user name: must contain 1-%zu bytes\n",
-					 Config::MAX_USER_NAME_LENGTH);
+				         Config::MAX_USER_NAME_LENGTH);
 				return false;
 			}
 			options.config.user_name = value;
@@ -296,28 +233,6 @@ static bool ParseArgs(int argc, char* argv[], RunOptions& options, bool& show_he
 				::printf("invalid user ID: %s\n", value.c_str());
 				return false;
 			}
-		} else if (arg == "--mic") {
-			options.config.audio_input_device = value;
-		} else if (arg == "--storage-bandwidth") {
-			const auto bw = Common::ToInt32(value);
-			if (bw < 0) {
-				::printf("invalid storage bandwidth: %s (must be >= 0)\n", value.c_str());
-				return false;
-			}
-			options.config.storage_bandwidth_mbps = static_cast<uint32_t>(bw);
-		} else if (arg == "--memory-compression") {
-			const auto level = Common::ToInt32(value);
-			if (level < 0 || level > 3) {
-				::printf("invalid memory compression level: %s (must be 0-3)\n", value.c_str());
-				return false;
-			}
-			options.config.memory_compression_level = level;
-		} else if (arg == "--audio-backend") {
-			if (value != "sdl" && value != "cubeb") {
-				::printf("invalid audio backend: %s (expected 'sdl' or 'cubeb')\n", value.c_str());
-				return false;
-			}
-			options.config.audio_backend = value;
 		} else if (arg == "--present-mode") {
 			if (!ParseEnum(value, options.config.present_mode)) {
 				::printf("invalid present mode: %s\n", value.c_str());
@@ -360,14 +275,14 @@ static bool ParseArgs(int argc, char* argv[], RunOptions& options, bool& show_he
 				return false;
 			}
 		} else if (arg == "--shader-log-folder") {
-			options.config.shader_log_folder = Common::PathFromUtf8(value);
+			options.config.shader_log_folder = value;
 		} else if (arg == "--command-buffer-dump") {
 			if (!ParseBool(value, options.config.command_buffer_dump_enabled)) {
 				::printf("invalid boolean for %s: %s\n", arg.c_str(), value.c_str());
 				return false;
 			}
 		} else if (arg == "--command-buffer-dump-folder") {
-			options.config.command_buffer_dump_folder = Common::PathFromUtf8(value);
+			options.config.command_buffer_dump_folder = value;
 		} else if (arg == "--graphics-debug-dump") {
 			if (!ParseBool(value, options.config.graphics_debug_dump_enabled)) {
 				::printf("invalid boolean for %s: %s\n", arg.c_str(), value.c_str());
@@ -379,7 +294,17 @@ static bool ParseArgs(int argc, char* argv[], RunOptions& options, bool& show_he
 				return false;
 			}
 		} else if (arg == "--printf-output-file") {
-			options.config.printf_output_file = Common::PathFromUtf8(value);
+			options.config.printf_output_file = value;
+		} else if (arg == "--profiler-direction") {
+			if (!ParseEnum(value, options.config.profiler_direction)) {
+				::printf("invalid profiler direction: %s\n", value.c_str());
+				return false;
+			}
+		} else if (arg == "--async-shaders") {
+			if (!ParseBool(value, options.config.async_shaders)) {
+				::printf("invalid boolean for %s: %s\n", arg.c_str(), value.c_str());
+				return false;
+			}
 		} else if (arg == "--spirv-debug-printf") {
 			if (!ParseBool(value, options.config.spirv_debug_printf_enabled)) {
 				::printf("invalid boolean for %s: %s\n", arg.c_str(), value.c_str());
@@ -407,12 +332,10 @@ static bool ParseArgs(int argc, char* argv[], RunOptions& options, bool& show_he
 		options.config.vulkan_validation_enabled = true;
 	}
 
-	// Kyty-005: Allow --mount-pkg as an alternative to --game
-	return show_help || (!options.app0_dir.empty() && !options.elf.empty()) ||
-	       !options.mount_pkg.empty();
+	return show_help || (!options.app0_dir.empty() && !options.elf.empty());
 }
 
-static int Main(int argc, char* argv[]) {
+int main(int argc, char* argv[]) {
 	VirtualMemory::Init();
 	InitializeThreads();
 
@@ -438,34 +361,3 @@ static int Main(int argc, char* argv[]) {
 
 	return 0;
 }
-
-#if KYTY_PLATFORM == KYTY_PLATFORM_WINDOWS
-
-int wmain(int argc, wchar_t* argv[]) {
-    std::vector<std::string> utf8_args;
-    utf8_args.reserve(static_cast<size_t>(argc));
-
-    for (int index = 0; index < argc; index++) {
-	const std::wstring_view wide(argv[index]);
-	const std::u16string utf16(wide.begin(), wide.end());
-
-	utf8_args.push_back(Common::Utf16ToUtf8(utf16));
-    }
-
-    std::vector<char*> utf8_argv;
-    utf8_argv.reserve(utf8_args.size());
-
-    for (auto& argument: utf8_args) {
-	utf8_argv.push_back(argument.data());
-    }
-
-    return Main(argc, utf8_argv.data());
-}
-
-#else
-
-int main(int argc, char* argv[]) {
-    return Main(argc, argv);
-}
-
-#endif
