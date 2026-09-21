@@ -51,6 +51,14 @@ const std::string& GetAudioBackend() { // Kyty-011
 	return g_config->audio_backend;
 }
 
+uint32_t GetStorageBandwidthMbps() { // Kyty-009
+	return g_config->storage_bandwidth_mbps;
+}
+
+int32_t GetMemoryCompressionLevel() { // Kyty-010
+	return g_config->memory_compression_level;
+}
+
 PresentMode GetPresentMode() {
 	return g_config->present_mode;
 }

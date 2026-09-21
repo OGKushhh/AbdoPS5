@@ -45,6 +45,8 @@ struct ConfigOptions {
 	int32_t                user_id                     = DEFAULT_USER_ID;
 	std::string            audio_input_device;
 	std::string            audio_backend              = "sdl"; // Kyty-011: "sdl" or "cubeb"
+	uint32_t               storage_bandwidth_mbps     = 0;      // Kyty-009: 0=native, 5500=PS5 SSD
+	int32_t                memory_compression_level   = 0;      // Kyty-010: 0=off, 1=fast, 2=balanced, 3=max
 	PresentMode            present_mode                = PresentMode::Mailbox;
 	int32_t                gpu_index                   = -1;
 	bool                   fullscreen_enabled          = false;
@@ -82,7 +84,9 @@ uint32_t GetScreenHeight();
 const std::string& GetUserName();
 int32_t  GetUserId();
 const std::string& GetAudioInputDevice();
-const std::string& GetAudioBackend(); // Kyty-011: "sdl" or "cubeb"
+const std::string& GetAudioBackend();       // Kyty-011: "sdl" or "cubeb"
+uint32_t GetStorageBandwidthMbps();          // Kyty-009: 0=native, 5500=PS5 SSD
+int32_t  GetMemoryCompressionLevel();        // Kyty-010: 0=off, 1-3
 PresentMode GetPresentMode();
 int32_t GetGpuIndex();
 bool     FullscreenEnabled();

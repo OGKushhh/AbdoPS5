@@ -16,6 +16,7 @@
 #include "kernel/memoryCompression.h"
 #include "kernel/memory.h"
 #include "kernel/pthread.h"
+#include "kernel/storageScheduler.h"
 #include "kytyGitVersion.h"
 #include "libs/agc.h"
 #include "libs/audio.h"
