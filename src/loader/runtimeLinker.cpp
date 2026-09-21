@@ -287,7 +287,7 @@ static uint64_t RegisterStubbedImport(uint32_t index, const Program* program,
 	const auto program_name = program != nullptr ? Common::PathToString(program->file_name) : "";
 
 	// Bug #2 fix: lock the mutex to prevent concurrent access from ResolveImportStubWithId
-	std::scoped_lock lock(g_stubbed_imports_mutex);
+	g_stubbed_imports_mutex.Lock();
 
 	for (auto& record: g_stubbed_imports) {
 		if (record.patch_vaddr == ri.vaddr) {
@@ -296,7 +296,9 @@ static uint64_t RegisterStubbedImport(uint32_t index, const Program* program,
 			record.type    = ri.type;
 			record.bind    = ri.bind;
 			record.program = program_name;
-			return record.thunk_vaddr;
+			auto thunk = record.thunk_vaddr;
+			g_stubbed_imports_mutex.Unlock();
+			return thunk;
 		}
 	}
 
@@ -308,13 +310,13 @@ static uint64_t RegisterStubbedImport(uint32_t index, const Program* program,
 	record.bind        = ri.bind;
 	record.program     = program_name;
 	g_stubbed_imports.push_back(record);
-	const auto record_id                     = g_stubbed_imports.size() - 1;
+	const auto record_id = g_stubbed_imports.size() - 1;
 	// Unlock before AllocateUnresolvedImportThunk (it allocates memory, takes time)
-	// and re-lock to set thunk_vaddr
-	lock.unlock();
+	g_stubbed_imports_mutex.Unlock();
 	const auto thunk = AllocateUnresolvedImportThunk(record_id);
-	lock.lock();
+	g_stubbed_imports_mutex.Lock();
 	g_stubbed_imports[record_id].thunk_vaddr = thunk;
+	g_stubbed_imports_mutex.Unlock();
 	return thunk;
 }
 
@@ -333,7 +335,7 @@ static KYTY_SYSV_ABI uint64_t ResolveImportStubWithId(uint64_t record_id) {
 	bool       record_valid = false;
 
 	{
-		std::scoped_lock lock(g_stubbed_imports_mutex);
+		g_stubbed_imports_mutex.Lock();
 		if (record_id < g_stubbed_imports.size()) {
 			const auto& record = g_stubbed_imports[record_id];
 			nid = record.name;
@@ -346,6 +348,7 @@ static KYTY_SYSV_ABI uint64_t ResolveImportStubWithId(uint64_t record_id) {
 			record_index = record.index;
 			record_valid = true;
 		}
+		g_stubbed_imports_mutex.Unlock();
 	}
 
 	if (record_valid) {
