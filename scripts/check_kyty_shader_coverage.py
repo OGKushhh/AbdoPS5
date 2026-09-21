@@ -17,9 +17,11 @@ Exit code 1 = missing opcodes found
 """
 import re
 import sys
+import os
 from pathlib import Path
 
-REPO = Path("/home/z/my-project/repos/ps5/KytyPS5")
+# Use the script's own location to find the repo root (works locally and in CI)
+REPO = Path(__file__).resolve().parent.parent
 SHADER_DECODER_H = REPO / "src/graphics/shader/recompiler/frontend/decode/ShaderDecoder.h"
 VECTOR_ALU_OPS_CPP = REPO / "src/graphics/shader/recompiler/frontend/decode/VectorAluOps.cpp"
 VECTOR_CPP = REPO / "src/graphics/shader/recompiler/frontend/translate/Vector.cpp"

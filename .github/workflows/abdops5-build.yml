@@ -41,7 +41,17 @@ jobs:
         id: vcpkg
         shell: pwsh
         run: |
-          $vcpkgRoot = Split-Path (Get-Command vcpkg).Source
+          # vcpkg is pre-installed on windows-2022 runners
+          $vcpkgExe = (Get-Command vcpkg -ErrorAction SilentlyContinue).Source
+          if (-not $vcpkgExe) {
+            # Try common locations
+            $vcpkgExe = "C:\vcpkg\vcpkg.exe"
+            if (-not (Test-Path $vcpkgExe)) {
+              $vcpkgExe = "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe"
+            }
+          }
+          $vcpkgRoot = Split-Path $vcpkgExe
+          Write-Host "vcpkg root: $vcpkgRoot"
           $portHash = (Get-FileHash "$vcpkgRoot\ports\glslang\vcpkg.json" -Algorithm SHA256).Hash
           "root=$vcpkgRoot" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
           "port_hash=$($portHash.ToLowerInvariant())" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
@@ -58,7 +68,7 @@ jobs:
         run: |
           $vcpkgRoot = "${{ steps.vcpkg.outputs.root }}"
           if ("${{ steps.glslang_cache.outputs.cache-hit }}" -ne "true") {
-            vcpkg install glslang[tools,opt]:x64-windows
+            & "$vcpkgRoot\vcpkg.exe" install glslang[tools,opt]:x64-windows
           }
           "$vcpkgRoot\installed\x64-windows\tools\glslang" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
@@ -100,7 +110,7 @@ jobs:
             -DCMAKE_CXX_COMPILER_LAUNCHER=sccache ^
             -DCMAKE_PREFIX_PATH="%Qt6_DIR%"
 
-      - name: Build emulator + launcher + tools
+      - name: Build emulator + launcher + tests
         shell: cmd
         run: |
           cmake --build _Build/windows ^
@@ -115,8 +125,7 @@ jobs:
 
       - name: Run shader coverage check (Kyty-008)
         shell: pwsh
-        run: |
-          python scripts/check_kyty_shader_coverage.py --verbose
+        run: python scripts/check_kyty_shader_coverage.py --verbose
         continue-on-error: true
 
       - name: Build standalone tools
@@ -130,37 +139,27 @@ jobs:
         run: |
           cmake --install _Build/windows --prefix _Build/windows/install
 
-      - name: Copy data files
+      - name: Copy data + scripts + tools
         shell: pwsh
         run: |
           $installDir = "_Build/windows/install"
-          # Copy data directory (NID database, game hacks, shader skips)
           if (Test-Path "data") {
             Copy-Item -Path "data" -Destination "$installDir/data" -Recurse -Force
           }
-          # Copy tools
-          if (Test-Path "_Build/windows/tools") {
-            New-Item -ItemType Directory -Force -Path "$installDir/tools"
-            Copy-Item -Path "_Build/windows/tools/*.exe" -Destination "$installDir/tools/" -Force -ErrorAction SilentlyContinue
-          }
-          # Copy scripts
+          New-Item -ItemType Directory -Force -Path "$installDir/tools"
+          Get-ChildItem -Path "_Build/windows" -Filter "*.exe" -Recurse | Where-Object { $_.Name -match "nids_tool|elf_info|param_sfo" } | ForEach-Object { Copy-Item $_.FullName "$installDir/tools/" -Force }
           if (Test-Path "scripts") {
             New-Item -ItemType Directory -Force -Path "$installDir/scripts"
             Copy-Item -Path "scripts/*.py" -Destination "$installDir/scripts/" -Force
           }
-          # Copy .github workflow for reference
-          # (skip — not needed in release)
 
       - name: Create final ZIP
         shell: pwsh
         run: |
-          $tag = "${{ needs.metadata.outputs.release_tag }}"
           $zipPath = "AbdoPS5-Windows-x64.zip"
           Compress-Archive -Path "_Build/windows/install/*" -DestinationPath $zipPath -CompressionLevel Optimal
-          Write-Host "Created $zipPath"
-          # Show contents
-          $zipSize = (Get-Item $zipPath).Length / 1MB
-          Write-Host "ZIP size: $([math]::Round($zipSize, 1)) MB"
+          $zipSize = [math]::Round((Get-Item $zipPath).Length / 1MB, 1)
+          Write-Host "Created $zipPath ($zipSize MB)"
 
       - name: Upload final ZIP artifact
         uses: actions/upload-artifact@v4
@@ -170,17 +169,17 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      - name: Upload test results
-        if: always()
+      - name: Upload build logs on failure
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: test-results-windows
-          path: _Build/windows/Testing/
+          name: build-logs-windows
+          path: _Build/windows/
           if-no-files-found: ignore
           retention-days: 7
 
   linux:
-    name: Build + Test (Linux x64)
+    name: Build + Test + Package (Linux x64)
     needs: metadata
     runs-on: ubuntu-24.04
 
@@ -244,22 +243,27 @@ jobs:
 
       - name: Run shader coverage check (Kyty-008)
         shell: bash
+        run: python3 scripts/check_kyty_shader_coverage.py --verbose
+        continue-on-error: true
+
+      - name: Build standalone tools
+        shell: bash
         run: |
-          python3 scripts/check_kyty_shader_coverage.py --verbose
+          cmake --build _Build/linux --target nids_tool elf_info param_sfo_info --parallel
         continue-on-error: true
 
       - name: Install + create ZIP
         shell: bash
         run: |
           cmake --install _Build/linux --prefix _Build/linux/install
-          # Copy data files
           cp -r data _Build/linux/install/ 2>/dev/null || true
           cp -r scripts _Build/linux/install/ 2>/dev/null || true
-          # Create zip
+          mkdir -p _Build/linux/install/tools
+          find _Build/linux -maxdepth 2 -name "nids_tool" -o -name "elf_info" -o -name "param_sfo_info" | xargs -I{} cp {} _Build/linux/install/tools/ 2>/dev/null || true
           cd _Build/linux/install
           zip -r ../../AbdoPS5-Linux-x64.zip .
           cd ../..
-          ls -lh AbdoPS5-Linux-x64.zip
+          ls -lh AbDoPS5-Linux-x64.zip || ls -lh AbdoPS5-Linux-x64.zip
 
       - name: Upload Linux ZIP artifact
         uses: actions/upload-artifact@v4
@@ -268,6 +272,15 @@ jobs:
           path: AbdoPS5-Linux-x64.zip
           if-no-files-found: error
           retention-days: 30
+
+      - name: Upload build logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs-linux
+          path: _Build/linux/
+          if-no-files-found: ignore
+          retention-days: 7
 
   shader-coverage:
     name: Shader opcode coverage check
