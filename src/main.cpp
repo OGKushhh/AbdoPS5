@@ -58,10 +58,8 @@ static void PrintUsage() {
 		 Config::DEFAULT_USER_ID);
 	::printf("  --mic <name>                        Capture from this microphone; omit for silence.\n");
 	::printf("  --storage-bandwidth <mbps>          Storage I/O throttle. 0=native, 5500=PS5 SSD. (Kyty-009)\n");
-<<<<<<< HEAD
-=======
 	::printf("  --memory-compression <0-3>          Memory compression. 0=off, 1=fast, 2=balanced, 3=max. (Kyty-010)\n");
->>>>>>> 6cf91ba (kernel: Add memory compression for low-RAM systems (Kyty-010))
+	::printf("  --audio-backend <sdl|cubeb>         Audio backend. Default: sdl. (Kyty-011)\n");
 	::printf(
 	    "  --present-mode <value>               Fifo, Mailbox, or Immediate. Default: Mailbox.\n");
 	::printf(
@@ -301,27 +299,25 @@ static bool ParseArgs(int argc, char* argv[], RunOptions& options, bool& show_he
 		} else if (arg == "--mic") {
 			options.config.audio_input_device = value;
 		} else if (arg == "--storage-bandwidth") {
-<<<<<<< HEAD
-			// Kyty-009: Storage I/O bandwidth throttle
-=======
->>>>>>> 6cf91ba (kernel: Add memory compression for low-RAM systems (Kyty-010))
 			const auto bw = Common::ToInt32(value);
 			if (bw < 0) {
 				::printf("invalid storage bandwidth: %s (must be >= 0)\n", value.c_str());
 				return false;
 			}
 			options.config.storage_bandwidth_mbps = static_cast<uint32_t>(bw);
-<<<<<<< HEAD
-=======
 		} else if (arg == "--memory-compression") {
-			// Kyty-010: Memory compression level (0=off, 1=fast, 2=balanced, 3=max)
 			const auto level = Common::ToInt32(value);
 			if (level < 0 || level > 3) {
 				::printf("invalid memory compression level: %s (must be 0-3)\n", value.c_str());
 				return false;
 			}
 			options.config.memory_compression_level = level;
->>>>>>> 6cf91ba (kernel: Add memory compression for low-RAM systems (Kyty-010))
+		} else if (arg == "--audio-backend") {
+			if (value != "sdl" && value != "cubeb") {
+				::printf("invalid audio backend: %s (expected 'sdl' or 'cubeb')\n", value.c_str());
+				return false;
+			}
+			options.config.audio_backend = value;
 		} else if (arg == "--present-mode") {
 			if (!ParseEnum(value, options.config.present_mode)) {
 				::printf("invalid present mode: %s\n", value.c_str());

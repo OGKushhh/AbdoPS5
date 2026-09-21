@@ -44,9 +44,7 @@ struct ConfigOptions {
 	std::string            user_name                   = "Kyty";
 	int32_t                user_id                     = DEFAULT_USER_ID;
 	std::string            audio_input_device;
-	std::string            audio_backend              = "sdl"; // Kyty-011
-	uint32_t               storage_bandwidth_mbps     = 0;     // Kyty-009
-	int32_t                memory_compression_level   = 0;     // Kyty-010
+	std::string            audio_backend              = "sdl"; // Kyty-011: "sdl" or "cubeb"
 	PresentMode            present_mode                = PresentMode::Mailbox;
 	int32_t                gpu_index                   = -1;
 	bool                   fullscreen_enabled          = false;
@@ -84,9 +82,7 @@ uint32_t GetScreenHeight();
 const std::string& GetUserName();
 int32_t  GetUserId();
 const std::string& GetAudioInputDevice();
-const std::string& GetAudioBackend();       // Kyty-011
-uint32_t GetStorageBandwidthMbps();          // Kyty-009
-int32_t  GetMemoryCompressionLevel();        // Kyty-010
+const std::string& GetAudioBackend(); // Kyty-011: "sdl" or "cubeb"
 PresentMode GetPresentMode();
 int32_t GetGpuIndex();
 bool     FullscreenEnabled();
