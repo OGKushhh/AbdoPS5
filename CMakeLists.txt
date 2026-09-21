@@ -335,9 +335,10 @@ set(kyty_emulator_link_libraries common Vulkan::Headers spirv-tools-opt spirv-to
 
 # Kyty-011: Cubeb audio backend (lower latency than SDL on Linux/PipeWire).
 # Conditionally linked — only when USE_CUBEB is ON (default ON in 3rdparty/CMakeLists.txt).
+# Note: target_compile_definitions is called after add_executable(kyty_emulator)
+# below, because we can't modify a target before it exists.
 if(USE_CUBEB AND TARGET cubeb)
         list(APPEND kyty_emulator_link_libraries cubeb)
-        target_compile_definitions(kyty_emulator PRIVATE KYTY_USE_CUBEB=1)
 endif()
 
 # Linux system libraries.
@@ -651,6 +652,13 @@ add_executable(kyty_emulator "${KYTY_SOURCE_DIR}/main.cpp" ${kyty_emulator_src})
 configure_macos_guest_address_space(kyty_emulator)
 
 target_link_libraries(kyty_emulator ${kyty_emulator_link_libraries})
+
+# Kyty-011: Define KYTY_USE_CUBEB=1 so cubeb_audio.cpp's #if defined(KYTY_USE_CUBEB)
+# blocks enable the real cubeb API calls. Must come AFTER add_executable() because
+# you can't modify a target before it exists.
+if(USE_CUBEB AND TARGET cubeb)
+        target_compile_definitions(kyty_emulator PRIVATE KYTY_USE_CUBEB=1)
+endif()
 if (WIN32)
         target_link_libraries(kyty_emulator opengl32)
         target_link_libraries(kyty_emulator iphlpapi)
