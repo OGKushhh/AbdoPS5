@@ -7,6 +7,7 @@
 #include "common/virtualMemory.h"
 #include "emulator.h"
 #include "kytyGitVersion.h"
+#include "loader/pkg.h"
 
 #include <charconv>
 #include <cstdio>
@@ -43,6 +44,7 @@ static void PrintUsage() {
 	::printf("kyty_emulator --game <dir|elf> [options]\n\n");
 	::printf("Options:\n");
 	::printf("  --game <dir|elf>                     Game directory or ELF to load.\n");
+	::printf("  --mount-pkg <pkg>                    Extract and mount a PKG file.\n");
 	::printf("  --game-patch <json>                  ETAHen cheat file.\n");
 	::printf("  --enable-hack <name,name,...>        Enable per-game hack flags. Available:\n");
 	::printf("                                       DisableAsyncCompute, ForceDepthRangeRestricted,\n");
@@ -250,13 +252,31 @@ static bool ParseArgs(int argc, char* argv[], RunOptions& options, bool& show_he
 			}
 			options.game_patch = path;
 		} else if (arg == "--enable-hack") {
-			// Kyty-003: Per-game hack flags. Parse the comma-separated list
-			// at startup; the actual mask is applied after HackFeatures::Init()
-			// runs (which requires the title_id from param.sfo).
+			// Kyty-003: Per-game hack flags.
 			if (!options.enable_hacks.empty()) {
 				options.enable_hacks += ",";
 			}
 			options.enable_hacks += value;
+		} else if (arg == "--mount-pkg") {
+			// Kyty-005: Mount a PKG file.
+			if (!options.mount_pkg.empty()) {
+				::printf("--mount-pkg can only be specified once\n");
+				return false;
+			}
+			value = Common::FixFilenameSlash(value);
+			const auto pkg_path = Common::PathFromUtf8(value);
+
+			if (!Common::File::IsFileExisting(pkg_path)) {
+				::printf("--mount-pkg must point to an existing file: %s\n", value.c_str());
+				return false;
+			}
+
+			if (!Loader::IsPkgFile(pkg_path)) {
+				::printf("--mount-pkg: file is not a valid PKG (magic mismatch): %s\n", value.c_str());
+				return false;
+			}
+
+			options.mount_pkg = pkg_path;
 		} else if (arg == "--screen-width") {
 			options.config.screen_width = static_cast<uint32_t>(Common::ToInt32(value));
 		} else if (arg == "--screen-height") {
@@ -364,7 +384,9 @@ static bool ParseArgs(int argc, char* argv[], RunOptions& options, bool& show_he
 		options.config.vulkan_validation_enabled = true;
 	}
 
-	return show_help || (!options.app0_dir.empty() && !options.elf.empty());
+	// Kyty-005: Allow --mount-pkg as an alternative to --game
+	return show_help || (!options.app0_dir.empty() && !options.elf.empty()) ||
+	       !options.mount_pkg.empty();
 }
 
 static int Main(int argc, char* argv[]) {
