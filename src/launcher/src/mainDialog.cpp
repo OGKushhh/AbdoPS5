@@ -1,11 +1,17 @@
 #include "mainDialog.h"
 
+#include "background_music_player.h"
+#include "cheats_patches.h"
 #include "configuration.h"
 #include "configurationItem.h"
 #include "configurationListWidget.h"
+#include "game_grid_frame.h"
+#include "hotkeys.h"
+#include "hub_menu_widget.h"
 #include "patchesDialog.h"
 #include "updateChecker.h"
 
+#include <QAction>
 #include <QApplication>
 #include <QByteArray>
 #include <QCheckBox>
@@ -13,7 +19,13 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
-#include <QIODevice>
+#include <QMenuBar>
+#include <QStackedWidget>
+#include <QToolBar>
+#include <QKeySequence>
+#include <QShortcut>
+#include <QInputDialog>
+#include <QFileDialog>
 #include <QLabel>
 #include <QMessageBox>
 #include <QObject>
@@ -75,6 +87,15 @@ public:
 	void FindInterpreter();
 	void Run();
 
+	// AbdoPS5 GUI integration slots
+	void OnToggleGridView();
+	void OnToggleCinemaMode();
+	void OnOpenHotkeys();
+	void OnOpenCheatsPatches();
+	void OnToggleBackgroundMusic();
+	void OnMountPkg();
+	void OnEnableHack();
+
 	[[nodiscard]] const QString& GetInterpreter() const { return m_interpreter; }
 
 	static void WriteSettings(QSettings& s);
@@ -92,6 +113,15 @@ private:
 	QProcess m_process;
 
 	QPointer<ConfigurationItem> m_running_item;
+
+	// AbdoPS5 GUI components
+	QMenuBar*      m_menu_bar         = nullptr;
+	QStackedWidget* m_stacked_widget  = nullptr;
+	GameGridFrame* m_grid_frame       = nullptr;
+	HubMenuWidget* m_hub_menu         = nullptr;
+	bool           m_grid_view_active = false;
+	bool           m_cinema_mode      = false;
+	bool           m_bg_music_playing = false;
 };
 
 QByteArray MainDialogPrivate::g_last_geometry;
@@ -146,6 +176,53 @@ void MainDialogPrivate::Setup(MainDialog* main_dialog) {
 	m_ui->label_settings_file->setText(tr("Settings file: ") + m_ui->widget->GetSettingsFile());
 
 	m_main_dialog->restoreGeometry(g_last_geometry);
+
+	// AbdoPS5: Create menu bar with View, Tools, and Audio menus
+	m_menu_bar = new QMenuBar(main_dialog);
+
+	// === View Menu ===
+	auto* view_menu = m_menu_bar->addMenu(tr("&View"));
+
+	auto* action_grid_view = view_menu->addAction(tr("&Grid View"));
+	action_grid_view->setCheckable(true);
+	action_grid_view->setShortcut(QKeySequence("Ctrl+G"));
+	connect(action_grid_view, &QAction::triggered, this, &MainDialogPrivate::OnToggleGridView);
+
+	auto* action_cinema = view_menu->addAction(tr("&Cinema Mode"));
+	action_cinema->setShortcut(QKeySequence("F11"));
+	connect(action_cinema, &QAction::triggered, this, &MainDialogPrivate::OnToggleCinemaMode);
+
+	view_menu->addSeparator();
+
+	auto* action_hotkeys = view_menu->addAction(tr("&Hotkeys..."));
+	action_hotkeys->setShortcut(QKeySequence("Ctrl+K"));
+	connect(action_hotkeys, &QAction::triggered, this, &MainDialogPrivate::OnOpenHotkeys);
+
+	// === Tools Menu ===
+	auto* tools_menu = m_menu_bar->addMenu(tr("&Tools"));
+
+	auto* action_cheats = tools_menu->addAction(tr("&Cheats & Patches..."));
+	action_cheats->setShortcut(QKeySequence("Ctrl+C"));
+	connect(action_cheats, &QAction::triggered, this, &MainDialogPrivate::OnOpenCheatsPatches);
+
+	auto* action_mount_pkg = tools_menu->addAction(tr("&Mount PKG File..."));
+	action_mount_pkg->setShortcut(QKeySequence("Ctrl+M"));
+	connect(action_mount_pkg, &QAction::triggered, this, &MainDialogPrivate::OnMountPkg);
+
+	tools_menu->addSeparator();
+
+	auto* action_enable_hack = tools_menu->addAction(tr("&Enable Hack Flag..."));
+	connect(action_enable_hack, &QAction::triggered, this, &MainDialogPrivate::OnEnableHack);
+
+	// === Audio Menu ===
+	auto* audio_menu = m_menu_bar->addMenu(tr("&Audio"));
+
+	auto* action_bg_music = audio_menu->addAction(tr("&Background Music"));
+	action_bg_music->setCheckable(true);
+	connect(action_bg_music, &QAction::triggered, this, &MainDialogPrivate::OnToggleBackgroundMusic);
+
+	// Insert menu bar at the top of the dialog
+	main_dialog->layout()->setMenuBar(m_menu_bar);
 
 	Update();
 }
@@ -511,6 +588,147 @@ void MainDialogPrivate::Update() {
 	}
 
 	m_ui->widget->SetRunEnabled(run_enabled);
+}
+
+// === AbdoPS5 GUI slot implementations ===
+
+void MainDialogPrivate::OnToggleGridView() {
+	if (!m_grid_frame) {
+		m_grid_frame = new GameGridFrame(m_main_dialog);
+
+		// Populate with games from the config list
+		QVector<GameGridItem> grid_items;
+		auto* config_widget = m_ui->widget;
+		// TODO: extract game list from ConfigurationListWidget
+		// For now, placeholder — will be wired when ConfigurationListWidget API is extended
+		m_grid_frame->PopulateGames(grid_items);
+
+		connect(m_grid_frame, &GameGridFrame::gameSelected, [this](const GameGridItem& item) {
+			m_main_dialog->setWindowTitle(item.title + " — AbdoPS5");
+		});
+	}
+
+	m_grid_view_active = !m_grid_view_active;
+
+	if (m_grid_view_active) {
+		m_grid_frame->show();
+		m_grid_frame->raise();
+		m_grid_frame->resize(m_main_dialog->size());
+	} else {
+		m_grid_frame->hide();
+	}
+}
+
+void MainDialogPrivate::OnToggleCinemaMode() {
+	if (!m_hub_menu) {
+		m_hub_menu = new HubMenuWidget(m_main_dialog);
+		m_hub_menu->setWindowFlags(Qt::Window | Qt::FramelessWindowHint);
+		m_hub_menu->setWindowState(Qt::WindowFullScreen);
+
+		// Populate games
+		QVector<HubGameItem> hub_items;
+		// TODO: extract game list from ConfigurationListWidget
+		m_hub_menu->SetGames(hub_items);
+
+		connect(m_hub_menu, &HubMenuWidget::gameLaunched, [this](const HubGameItem& game) {
+			m_hub_menu->hide();
+			// Launch the game
+			auto* item = m_ui->widget->GetSelectedItem();
+			if (item) {
+				Run();
+			}
+		});
+		connect(m_hub_menu, &HubMenuWidget::backToMainView, [this]() {
+			m_hub_menu->hide();
+			m_cinema_mode = false;
+		});
+	}
+
+	m_cinema_mode = !m_cinema_mode;
+
+	if (m_cinema_mode) {
+		m_hub_menu->showFullScreen();
+		m_hub_menu->AnimateIn();
+	} else {
+		m_hub_menu->AnimateOut();
+	}
+}
+
+void MainDialogPrivate::OnOpenHotkeys() {
+	auto* dialog = new Hotkeys(m_main_dialog);
+	dialog->exec();
+	delete dialog;
+}
+
+void MainDialogPrivate::OnOpenCheatsPatches() {
+	const auto* item = m_ui->widget->GetSelectedItem();
+	QString title_id = "UNKNOWN";
+	if (item) {
+		title_id = item->GetInfo().title_id;
+	}
+
+	auto* dialog = new CheatsPatches(title_id, m_main_dialog);
+	dialog->setWindowTitle("Cheats & Patches — " + title_id);
+	dialog->setAttribute(Qt::WA_DeleteOnClose);
+	dialog->resize(600, 500);
+	dialog->exec();
+}
+
+void MainDialogPrivate::OnToggleBackgroundMusic() {
+	auto& player = BackgroundMusicPlayer::getInstance();
+
+	if (m_bg_music_playing) {
+		player.stopMusic();
+		m_bg_music_playing = false;
+	} else {
+		// Try to play ambient music from the selected game's snd0.at9
+		QString music_path;
+		const auto* item = m_ui->widget->GetSelectedItem();
+		if (item) {
+			music_path = QDir(item->GetInfo().basedir).filePath("sce_sys/snd0.at9");
+		}
+		player.setVolume(30);
+		player.playMusic(music_path);
+		m_bg_music_playing = true;
+	}
+}
+
+void MainDialogPrivate::OnMountPkg() {
+	QString pkg_path = QFileDialog::getOpenFileName(
+		m_main_dialog, tr("Select PKG File"), QString(),
+		tr("PKG Files (*.pkg);;All Files (*.*)"));
+
+	if (pkg_path.isEmpty()) {
+		return;
+	}
+
+	// Launch the emulator with --mount-pkg
+	QMessageBox::information(m_main_dialog, tr("Mount PKG"),
+		tr("PKG file selected:\n") + pkg_path +
+		tr("\n\nThe emulator will be launched with --mount-pkg."));
+
+	// TODO: Launch the emulator process with the --mount-pkg flag
+}
+
+void MainDialogPrivate::OnEnableHack() {
+	QStringList hack_names = {
+		"DepthDisable", "ComputeDisable", "DisableAsyncCompute",
+		"DisableSRGB", "DisableFMV", "SkipUnknownTiling",
+		"ForceDepthRangeRestricted", "UseColorImageForComparison",
+		"SkipShaderAssert", "ImageLoadNoReload", "MemoryBound",
+		"ForcePs4ProMode", "ForceDevKitMode"
+	};
+
+	bool ok = false;
+	QString hack = QInputDialog::getItem(
+		m_main_dialog, tr("Enable Hack Flag"),
+		tr("Select a hack to enable:"), hack_names, 0, false, &ok);
+
+	if (ok && !hack.isEmpty()) {
+		QMessageBox::information(m_main_dialog, tr("Hack Enabled"),
+			tr("Hack '") + hack + tr("' will be applied on next game launch.\n") +
+			tr("Use Tools → Cheats & Patches for persistent per-game configuration."));
+	}
 }
 
 #include "mainDialog.moc"

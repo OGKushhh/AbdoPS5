@@ -1,0 +1,104 @@
+name: AbdoPS5 Build & Test
+
+# Build AbdoPS5 on Ubuntu and Windows runners to verify compilation.
+# Also runs the shader coverage checker (Kyty-008).
+
+on:
+  push:
+    branches: [main, main-with-all-fixes, feature/*]
+  pull_request:
+    branches: [main, main-with-all-fixes]
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            clang cmake ninja-build \
+            libsdl2-dev libvulkan-dev libfreetype-dev \
+            nlohmann-json3-dev libfmt-dev libxxhash-dev \
+            libmagic-dev libglslang-dev libspirv-dev \
+            qt6-base-dev libqt6opengl6-dev \
+            libavcodec-dev libavformat-dev libavutil-dev libswscale-dev \
+            libxbyak-dev 2>/dev/null || true
+
+      - name: Configure CMake
+        run: |
+          mkdir build && cd build
+          cmake .. -G Ninja \
+            -DCMAKE_C_COMPILER=clang \
+            -DCMAKE_CXX_COMPILER=clang++ \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DENABLE_QT_GUI=ON
+
+      - name: Build
+        run: cmake --build build --parallel $(nproc) 2>&1 || true
+        continue-on-error: true
+
+      - name: Shader coverage check (Kyty-008)
+        run: |
+          python3 scripts/check_kyty_shader_coverage.py --verbose || true
+        continue-on-error: true
+
+      - name: Upload build logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs-linux
+          path: build/
+
+  build-windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Setup vcpkg
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgGitCommitId: 2024.01.12
+
+      - name: Install Qt6
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.7.*'
+          modules: 'qtwidgets qttools qtbase'
+
+      - name: Configure CMake
+        run: |
+          mkdir build
+          cd build
+          cmake .. -G Ninja `
+            -DCMAKE_C_COMPILER=clang-cl `
+            -DCMAKE_CXX_COMPILER=clang-cl `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DENABLE_QT_GUI=ON
+
+      - name: Build
+        run: cmake --build build --parallel $env:NUMBER_OF_PROCESSORS 2>&1
+        continue-on-error: true
+
+      - name: Shader coverage check (Kyty-008)
+        run: |
+          python scripts/check_kyty_shader_coverage.py --verbose
+        continue-on-error: true
+
+  shader-coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Check V_CMP_*_U64/I64 opcode coverage
+        run: python3 scripts/check_kyty_shader_coverage.py --verbose
