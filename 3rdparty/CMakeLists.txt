@@ -10,8 +10,8 @@ include(FetchContent)
 
 set(USE_CUBEB ON CACHE BOOL "Build with Cubeb audio backend" FORCE)
 if(USE_CUBEB)
-        # FetchContent declaration stays in the parent scope so the cubeb
-        # source is fetched before any target uses it.
+        # Find Python early — the cubeb PATCH_COMMAND references ${Python3_EXECUTABLE}.
+        find_package(Python3 REQUIRED COMPONENTS Interpreter)
         FetchContent_Declare(
                 cubeb
                 GIT_REPOSITORY https://github.com/mozilla/cubeb.git
@@ -22,6 +22,17 @@ if(USE_CUBEB)
                 # CI builds are reproducible.
                 GIT_TAG e13d9c8855d42bebcd52e69f296404ff437dcdf5
                 GIT_SHALLOW FALSE
+                # Patch out cubeb's install() rules. They fail on Windows because
+                # cubeb's cmake_install.cmake looks for `<source>/include/cubeb`
+                # at install time using a path computed relative to the wrong
+                # working directory. We don't need to install cubeb's headers or
+                # pkg-config files into our prefix — we just link the static
+                # library. Comment out all install() calls in the cubeb source.
+                # This is the cleanest approach: it patches the source at fetch
+                # time, before any CMake rules are processed.
+                # Use Python (cross-platform) instead of sed (Linux only).
+                PATCH_COMMAND ${Python3_EXECUTABLE} -c
+                        "import io; p='CMakeLists.txt'; s=io.open(p,encoding='utf-8').read(); s='\\n'.join('#'+l if l.lstrip().startswith('install(') else l for l in s.split('\\n')); io.open(p,'w',encoding='utf-8').write(s)"
         )
         # Cubeb options: build static, skip examples/tests, skip rust audiounit
         # backend (would require a Rust toolchain in CI).
@@ -30,25 +41,7 @@ if(USE_CUBEB)
         set(BUILD_TOOLS OFF CACHE BOOL "" FORCE)
         set(USE_SANITIZERS OFF CACHE BOOL "" FORCE)
 
-        # Suppress cubeb's install() rules by temporarily setting
-        # CMAKE_SKIP_INSTALL_RULES=TRUE. CMake checks this variable at
-        # install() call time (not just at project() time), so setting it
-        # before FetchContent_MakeAvailable will skip cubeb's install rules.
-        # (Earlier I tried this and it didn't work — but the issue was that
-        # CMAKE_SKIP_INSTALL_RULES is checked AT install() time, not at the
-        # project() / add_subdirectory() boundary. The setting sticks across
-        # add_subdirectory boundaries, so we MUST unset it before any
-        # subsequent install() calls.)
-        set(CMAKE_SKIP_INSTALL_RULES_SAVE "${CMAKE_SKIP_INSTALL_RULES}")
-        set(CMAKE_SKIP_INSTALL_RULES TRUE CACHE BOOL "" FORCE)
         FetchContent_MakeAvailable(cubeb)
-        # Restore the previous value so kyty_emulator + launcher + tools
-        # install rules still work.
-        if(DEFINED CMAKE_SKIP_INSTALL_RULES_SAVE)
-                set(CMAKE_SKIP_INSTALL_RULES "${CMAKE_SKIP_INSTALL_RULES_SAVE}" CACHE BOOL "" FORCE)
-        else()
-                unset(CMAKE_SKIP_INSTALL_RULES CACHE)
-        endif()
 
         if(TARGET cubeb)
                 set_target_properties(cubeb PROPERTIES EXCLUDE_FROM_ALL ON)
