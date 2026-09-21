@@ -26,6 +26,7 @@
 #include <QShortcut>
 #include <QInputDialog>
 #include <QFileDialog>
+#include <QTreeWidget>
 #include <QLabel>
 #include <QMessageBox>
 #include <QObject>
@@ -176,6 +177,82 @@ void MainDialogPrivate::Setup(MainDialog* main_dialog) {
 	m_ui->label_settings_file->setText(tr("Settings file: ") + m_ui->widget->GetSettingsFile());
 
 	m_main_dialog->restoreGeometry(g_last_geometry);
+
+	// AbdoPS5: Create a QStackedWidget to switch between list view, grid view,
+	// and cinema mode within the same window (unified GUI).
+	// Page 0: Original list view (ConfigurationListWidget + labels)
+	// Page 1: Grid view (GameGridFrame)
+	// Page 2: Cinema mode (HubMenuWidget)
+	m_stacked_widget = new QStackedWidget(main_dialog);
+
+	// Page 0: wrap the existing UI content in a container widget
+	auto* list_page = new QWidget();
+	auto* list_layout = new QVBoxLayout(list_page);
+	list_layout->setContentsMargins(0, 0, 0, 0);
+	list_layout->addWidget(m_ui->widget);
+	// Move labels below the list
+	auto* info_layout = new QVBoxLayout();
+	info_layout->addWidget(m_ui->label_settings_file);
+	info_layout->addWidget(m_ui->label_Interpreter);
+	info_layout->addWidget(m_ui->versionLayout->widget());
+	info_layout->addWidget(m_ui->check_updates_on_startup);
+	list_layout->addLayout(info_layout);
+	m_stacked_widget->addWidget(list_page);
+
+	// Page 1: Grid view
+	m_grid_frame = new GameGridFrame();
+	m_stacked_widget->addWidget(m_grid_frame);
+
+	// Page 2: Cinema mode (inline, not fullscreen separate window)
+	m_hub_menu = new HubMenuWidget();
+	m_stacked_widget->addWidget(m_hub_menu);
+
+	// Replace the main layout's central widget with the stacked widget
+	auto* main_layout = qobject_cast<QVBoxLayout*>(main_dialog->layout());
+	if (main_layout) {
+		// Remove the widget that was added by setupUi, insert stacked_widget
+		main_layout->insertWidget(0, m_stacked_widget);
+	}
+	m_stacked_widget->setCurrentIndex(0); // Start on list view
+
+	// Connect grid view selection
+	connect(m_grid_frame, &GameGridFrame::gameSelected, [this](const GameGridItem& item) {
+		m_main_dialog->setWindowTitle(item.title + " — AbdoPS5");
+		// Select the corresponding item in the list widget
+		auto* tree = m_ui->widget->findChild<QTreeWidget*>();
+		if (tree) {
+			for (int i = 0; i < tree->topLevelItemCount(); i++) {
+				auto* cfg_item = static_cast<ConfigurationItem*>(tree->topLevelItem(i));
+				if (cfg_item && cfg_item->GetInfo().title_id == item.title_id) {
+					tree->setCurrentItem(cfg_item);
+					break;
+				}
+			}
+		}
+	});
+
+	// Connect cinema mode game launch
+	connect(m_hub_menu, &HubMenuWidget::gameLaunched, [this](const HubGameItem& game) {
+		// Select the game in the list and run it
+		auto* tree = m_ui->widget->findChild<QTreeWidget*>();
+		if (tree) {
+			for (int i = 0; i < tree->topLevelItemCount(); i++) {
+				auto* cfg_item = static_cast<ConfigurationItem*>(tree->topLevelItem(i));
+				if (cfg_item && cfg_item->GetInfo().title_id == game.title_id) {
+					tree->setCurrentItem(cfg_item);
+					Run();
+					break;
+				}
+			}
+		}
+		// Switch back to list view
+		m_stacked_widget->setCurrentIndex(0);
+		m_cinema_mode = false;
+	});
+	connect(m_hub_menu, &HubMenuWidget::backToMainView, [this]() {
+		m_stacked_widget->setCurrentIndex(0);
+		m_cinema_mode = false;
+	});
 
 	// AbdoPS5: Create menu bar with View, Tools, and Audio menus
 	m_menu_bar = new QMenuBar(main_dialog);
@@ -593,65 +670,57 @@ void MainDialogPrivate::Update() {
 // === AbdoPS5 GUI slot implementations ===
 
 void MainDialogPrivate::OnToggleGridView() {
-	if (!m_grid_frame) {
-		m_grid_frame = new GameGridFrame(m_main_dialog);
+	// Populate grid with games from the config list
+	auto* tree = m_ui->widget->findChild<QTreeWidget*>();
+	if (!tree) return;
 
-		// Populate with games from the config list
-		QVector<GameGridItem> grid_items;
-		auto* config_widget = m_ui->widget;
-		// TODO: extract game list from ConfigurationListWidget
-		// For now, placeholder — will be wired when ConfigurationListWidget API is extended
-		m_grid_frame->PopulateGames(grid_items);
+	QVector<GameGridItem> grid_items;
+	for (int i = 0; i < tree->topLevelItemCount(); i++) {
+		auto* cfg_item = static_cast<ConfigurationItem*>(tree->topLevelItem(i));
+		if (!cfg_item) continue;
 
-		connect(m_grid_frame, &GameGridFrame::gameSelected, [this](const GameGridItem& item) {
-			m_main_dialog->setWindowTitle(item.title + " — AbdoPS5");
-		});
+		const auto& info = cfg_item->GetInfo();
+		GameGridItem item;
+		item.title_id = info.title_id;
+		item.title = info.name.isEmpty() ? info.title_id : info.name;
+		item.icon_path = QDir(info.basedir).filePath("sce_sys/icon0.png");
+		item.app_path = info.basedir;
+		item.compatibility = EnumToText(info.game_status);
+		grid_items.append(item);
 	}
+	m_grid_frame->PopulateGames(grid_items);
 
-	m_grid_view_active = !m_grid_view_active;
-
-	if (m_grid_view_active) {
-		m_grid_frame->show();
-		m_grid_frame->raise();
-		m_grid_frame->resize(m_main_dialog->size());
-	} else {
-		m_grid_frame->hide();
-	}
+	// Switch to grid view (page 1)
+	m_stacked_widget->setCurrentIndex(1);
+	m_grid_view_active = true;
 }
 
 void MainDialogPrivate::OnToggleCinemaMode() {
-	if (!m_hub_menu) {
-		m_hub_menu = new HubMenuWidget(m_main_dialog);
-		m_hub_menu->setWindowFlags(Qt::Window | Qt::FramelessWindowHint);
-		m_hub_menu->setWindowState(Qt::WindowFullScreen);
+	// Populate cinema mode with games
+	auto* tree = m_ui->widget->findChild<QTreeWidget*>();
+	if (!tree) return;
 
-		// Populate games
-		QVector<HubGameItem> hub_items;
-		// TODO: extract game list from ConfigurationListWidget
-		m_hub_menu->SetGames(hub_items);
+	QVector<HubGameItem> hub_items;
+	for (int i = 0; i < tree->topLevelItemCount(); i++) {
+		auto* cfg_item = static_cast<ConfigurationItem*>(tree->topLevelItem(i));
+		if (!cfg_item) continue;
 
-		connect(m_hub_menu, &HubMenuWidget::gameLaunched, [this](const HubGameItem& game) {
-			m_hub_menu->hide();
-			// Launch the game
-			auto* item = m_ui->widget->GetSelectedItem();
-			if (item) {
-				Run();
-			}
-		});
-		connect(m_hub_menu, &HubMenuWidget::backToMainView, [this]() {
-			m_hub_menu->hide();
-			m_cinema_mode = false;
-		});
+		const auto& info = cfg_item->GetInfo();
+		HubGameItem item;
+		item.title_id = info.title_id;
+		item.title = info.name.isEmpty() ? info.title_id : info.name;
+		item.icon_path = QDir(info.basedir).filePath("sce_sys/icon0.png");
+		item.app_path = info.basedir;
+		item.compatibility = EnumToText(info.game_status);
+		item.version = info.gameVersion;
+		hub_items.append(item);
 	}
+	m_hub_menu->SetGames(hub_items);
 
-	m_cinema_mode = !m_cinema_mode;
-
-	if (m_cinema_mode) {
-		m_hub_menu->showFullScreen();
-		m_hub_menu->AnimateIn();
-	} else {
-		m_hub_menu->AnimateOut();
-	}
+	// Switch to cinema mode (page 2)
+	m_stacked_widget->setCurrentIndex(2);
+	m_cinema_mode = true;
+	m_hub_menu->AnimateIn();
 }
 
 void MainDialogPrivate::OnOpenHotkeys() {
