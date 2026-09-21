@@ -30,23 +30,27 @@ if(USE_CUBEB)
         set(BUILD_TOOLS OFF CACHE BOOL "" FORCE)
         set(USE_SANITIZERS OFF CACHE BOOL "" FORCE)
 
-        # We need to suppress cubeb's install() rules (they fail on Windows
-        # because cubeb's cmake_install.cmake looks for `<source>/include/cubeb`
-        # at install time using a path computed relative to the wrong working
-        # directory). CMake doesn't have a clean way to suppress install() for
-        # just one subdirectory — function definitions propagate to child
-        # scopes (so a no-op install() in this file would also affect sibling
-        # add_subdirectory() calls). To prevent that, we delegate to a wrapper
-        # subdirectory: 3rdparty/cubeb-wrapper/CMakeLists.txt. That wrapper's
-        # scope is a child of this scope, so install() shadowing in the wrapper
-        # only propagates DOWN (into cubeb's CMakeLists) — not up or sideways.
-        add_subdirectory(cubeb-wrapper)
+        # Suppress cubeb's install() rules by temporarily setting
+        # CMAKE_SKIP_INSTALL_RULES=TRUE. CMake checks this variable at
+        # install() call time (not just at project() time), so setting it
+        # before FetchContent_MakeAvailable will skip cubeb's install rules.
+        # (Earlier I tried this and it didn't work — but the issue was that
+        # CMAKE_SKIP_INSTALL_RULES is checked AT install() time, not at the
+        # project() / add_subdirectory() boundary. The setting sticks across
+        # add_subdirectory boundaries, so we MUST unset it before any
+        # subsequent install() calls.)
+        set(CMAKE_SKIP_INSTALL_RULES_SAVE "${CMAKE_SKIP_INSTALL_RULES}")
+        set(CMAKE_SKIP_INSTALL_RULES TRUE CACHE BOOL "" FORCE)
+        FetchContent_MakeAvailable(cubeb)
+        # Restore the previous value so kyty_emulator + launcher + tools
+        # install rules still work.
+        if(DEFINED CMAKE_SKIP_INSTALL_RULES_SAVE)
+                set(CMAKE_SKIP_INSTALL_RULES "${CMAKE_SKIP_INSTALL_RULES_SAVE}" CACHE BOOL "" FORCE)
+        else()
+                unset(CMAKE_SKIP_INSTALL_RULES CACHE)
+        endif()
 
         if(TARGET cubeb)
-                # Mark cubeb excluded from install so `cmake --install` skips its
-                # install rules too. (EXCLUDE_FROM_ALL doesn't prevent install rules
-                # registered via install(TARGETS ...) from running, but combined
-                # with the install() shadow it's belt-and-suspenders.)
                 set_target_properties(cubeb PROPERTIES EXCLUDE_FROM_ALL ON)
         endif()
 endif()
