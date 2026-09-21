@@ -83,8 +83,8 @@ static PatchModule* GetContainingModule(const void* ptr) {
 		return nullptr;
 	}
 	--upper;
-	auto* result = (upper->second.module_addr <= reinterpret_cast<u64>(ptr) &&
-		       reinterpret_cast<u64>(ptr) < upper->second.module_addr + upper->second.module_size)
+	auto* result = (reinterpret_cast<u64>(upper->second.start) <= reinterpret_cast<u64>(ptr) &&
+		       reinterpret_cast<u64>(ptr) < reinterpret_cast<u64>(upper->second.end))
 			  ? &upper->second
 			  : nullptr;
 	g_patch_modules_mutex.Unlock();
