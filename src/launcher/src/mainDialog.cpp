@@ -8,6 +8,7 @@
 #include "game_grid_frame.h"
 #include "hotkeys.h"
 #include "hub_menu_widget.h"
+#include "loader/pkg.h"
 #include "patchesDialog.h"
 #include "updateChecker.h"
 
@@ -40,6 +41,7 @@
 #include <QTextStream>
 #include <QToolBar>
 #include <QTreeWidget>
+#include <QToolButton>
 #include <QVariant>
 #include <QVBoxLayout>
 #include <QtCore>
@@ -893,12 +895,72 @@ void MainDialogPrivate::OnMountPkg() {
                 return;
         }
 
-        // Launch the emulator with --mount-pkg
-        QMessageBox::information(m_main_dialog, tr("Mount PKG"),
-                tr("PKG file selected:\n") + pkg_path +
-                tr("\n\nThe emulator will be launched with --mount-pkg."));
+        // Open the PKG and parse its header.
+        Loader::Pkg pkg;
+        std::string fail_reason;
+        if (!pkg.Open(std::filesystem::path(pkg_path.toStdString()), fail_reason)) {
+                QMessageBox::critical(m_main_dialog, tr("Mount PKG"),
+                                      tr("Failed to open PKG:\n%1\n\n%2")
+                                          .arg(pkg_path)
+                                          .arg(QString::fromStdString(fail_reason)));
+                return;
+        }
 
-        // TODO: Launch the emulator process with the --mount-pkg flag
+        // Build a sane extraction path: <same dir as PKG>/<title_id>/
+        // The user can change it via the dialog below.
+        QFileInfo pkg_info(pkg_path);
+        QString default_out_dir =
+            pkg_info.absoluteDir().filePath(QString::fromUtf8(pkg.GetTitleId().data(),
+                                                              static_cast<int>(pkg.GetTitleId().size())));
+
+        QString out_dir = QFileDialog::getExistingDirectory(
+                m_main_dialog,
+                tr("Extract PKG to directory"),
+                default_out_dir);
+        if (out_dir.isEmpty()) {
+                return;
+        }
+
+        // Show a "extracting..." dialog (PKG extraction can take a while
+        // for large games — 50+ GB PKGs are common).
+        QMessageBox::information(
+            m_main_dialog, tr("Extracting PKG"),
+            tr("Extracting PKG:\n  %1\n\nto:\n  %2\n\n"
+               "This may take a while for large games. Click OK to continue — "
+               "a completion dialog will appear when done.")
+                .arg(pkg_path)
+                .arg(out_dir));
+
+        // Actually extract. ExtractAll handles FPKG (unencrypted); retail
+        // PKGs return an error here because Sony's keyset isn't available.
+        if (!pkg.ExtractAll(std::filesystem::path(out_dir.toStdString()), fail_reason)) {
+                QMessageBox::critical(m_main_dialog, tr("Mount PKG"),
+                                      tr("Extraction failed:\n%1").arg(QString::fromStdString(fail_reason)));
+                return;
+        }
+
+        // Success — tell the user where to find the extracted files and
+        // offer to add the new directory to the launcher's game list.
+        auto result = QMessageBox::information(
+            m_main_dialog, tr("PKG Extracted"),
+            tr("PKG extracted to:\n  %1\n\n"
+               "Would you like to add this folder to your game list now? "
+               "You can do it later via the 'Edit global settings' button "
+               "(gear icon).")
+                .arg(out_dir),
+            QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
+
+        if (result == QMessageBox::Yes) {
+                // Open the global settings dialog — the user can add the
+                // extracted folder as a game directory there.
+                // (ConfigurationListWidget::edit_global_settings is private,
+                // but it's wired to the global_settings_button which we
+                // can click programmatically.)
+                auto* btn = m_config_list->findChild<QToolButton*>("global_settings_button");
+                if (btn) {
+                        btn->click();
+                }
+        }
 }
 
 void MainDialogPrivate::OnEnableHack() {
