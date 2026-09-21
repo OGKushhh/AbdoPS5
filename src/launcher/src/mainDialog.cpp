@@ -15,33 +15,33 @@
 #include <QApplication>
 #include <QByteArray>
 #include <QCheckBox>
-#include <QDialog>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
-#include <QMenuBar>
-#include <QToolBar>
-#include <QKeySequence>
-#include <QShortcut>
+#include <QHBoxLayout>
 #include <QInputDialog>
-#include <QFileDialog>
-#include <QTreeWidget>
+#include <QKeySequence>
 #include <QLabel>
+#include <QListWidget>
+#include <QMenuBar>
 #include <QMessageBox>
 #include <QObject>
 #include <QPointer>
 #include <QProcess>
-#include <QRadioButton>
 #include <QRegularExpression>
 #include <QSettings>
+#include <QShortcut>
+#include <QStackedWidget>
+#include <QStatusBar>
 #include <QStringList>
 #include <QTextStream>
+#include <QToolBar>
+#include <QTreeWidget>
 #include <QVariant>
+#include <QVBoxLayout>
 #include <QtCore>
 
 #include <cstdint>
-
-#include "ui_main_dialog.h"
 
 #if defined(_WIN32)
 #include <windows.h> // IWYU pragma: keep
@@ -77,7 +77,7 @@ class MainDialogPrivate: public QObject {
 
 public:
         explicit MainDialogPrivate(QObject* parent = nullptr): QObject(parent) {}
-        ~MainDialogPrivate() override;
+        ~MainDialogPrivate() override = default;
 
         void Setup(MainDialog* main_dialog);
 
@@ -87,8 +87,11 @@ public:
         void FindInterpreter();
         void Run();
 
+        // Unified GUI: switch between stacked pages (0=list, 1=grid, 2=settings)
+        void SwitchToPage(int index);
+        void RefreshGrid(); // populate grid page from the config list
+
         // AbdoPS5 GUI integration slots
-        void OnToggleGridView(bool force_show);
         void OnToggleCinemaMode();
         void OnOpenHotkeys();
         void OnOpenCheatsPatches();
@@ -105,101 +108,154 @@ private:
         static QByteArray g_last_geometry;
         static bool       g_check_updates_on_startup;
 
-        Ui::MainDialog* m_ui             = {nullptr};
-        MainDialog*     m_main_dialog    = nullptr;
-        UpdateChecker*  m_update_checker = nullptr;
-        QString         m_interpreter;
+        MainDialog*           m_main_dialog    = nullptr;
+        UpdateChecker*        m_update_checker = nullptr;
+        QString               m_interpreter;
 
         QProcess m_process;
 
         QPointer<ConfigurationItem> m_running_item;
 
-        // AbdoPS5 GUI components
-        QMenuBar*      m_menu_bar         = nullptr;
-        GameGridFrame* m_grid_frame       = nullptr;
-        HubMenuWidget* m_hub_menu         = nullptr;
-        bool           m_grid_view_active = false;
-        bool           m_cinema_mode      = false;
-        bool           m_bg_music_playing = false;
-        // Cached menu actions so we can sync their checked state with the
-        // actual window / player visibility from outside the menu trigger.
-        QAction*       m_action_grid_view = nullptr;
-        QAction*       m_action_bg_music   = nullptr;
+        // === UI components — built fresh in C++, no .ui file ===
+        // The previous design used Ui::MainDialog (from main_dialog.ui) which
+        // promoted a ConfigurationListWidget and embedded labels in a QDialog.
+        // We've switched to QMainWindow and build the central widget by hand:
+        //   sidebar (QListWidget) | QStackedWidget with 3 pages
+        // Page 0: ConfigurationListWidget (list view)
+        // Page 1: GameGridFrame            (grid view, embedded, no popup)
+        // Page 2: Settings                  (labels + checkbox)
+        // The menuBar() and statusBar() come from QMainWindow for free.
+        QListWidget*            m_sidebar                = nullptr;
+        QStackedWidget*         m_stacked                = nullptr;
+        ConfigurationListWidget* m_config_list          = nullptr;
+        GameGridFrame*          m_grid_frame             = nullptr; // embedded as page 1
+        HubMenuWidget*          m_hub_menu               = nullptr; // cinema mode (separate window, immersive)
+        QLabel*                 m_label_settings_file    = nullptr;
+        QLabel*                 m_label_interpreter      = nullptr;
+        QLabel*                 m_label_version          = nullptr;
+        QLabel*                 m_check_updates_link     = nullptr;
+        QCheckBox*              m_check_updates_on_startup = nullptr;
+
+        bool     m_cinema_mode      = false;
+        bool     m_bg_music_playing = false;
+        QAction* m_action_bg_music  = nullptr;
 };
 
 QByteArray MainDialogPrivate::g_last_geometry;
 bool       MainDialogPrivate::g_check_updates_on_startup = true;
 
-MainDialog::MainDialog(QWidget* parent): QDialog(parent), m_p(new MainDialogPrivate(this)) {
+MainDialog::MainDialog(QWidget* parent): QMainWindow(parent), m_p(new MainDialogPrivate(this)) {
         m_p->Setup(this);
 }
 
-MainDialogPrivate::~MainDialogPrivate() {
-        delete m_ui;
-}
-
 void MainDialogPrivate::Setup(MainDialog* main_dialog) {
-        m_ui = new Ui::MainDialog;
-        m_ui->setupUi(main_dialog);
-
         m_main_dialog = main_dialog;
         m_update_checker = new UpdateChecker(main_dialog);
-        m_ui->check_updates_on_startup->setChecked(g_check_updates_on_startup);
-        m_ui->check_updates_link->setVisible(UpdateChecker::IsSupported());
-        m_ui->check_updates_on_startup->setVisible(UpdateChecker::IsSupported());
 
-        main_dialog->setWindowFlags(Qt::Dialog /*| Qt::MSWindowsFixedSizeDialogHint*/);
+        // === Central widget: sidebar (left) + QStackedWidget (right) ===
+        // We build the entire UI in C++ — no .ui file, no reparenting, no
+        // layout fighting. The previous design used Ui::MainDialog from
+        // main_dialog.ui, which promoted a ConfigurationListWidget and
+        // embedded the version/interpreter labels in a QDialog layout.
+        // The QStackedWidget attempt to unify the UI reparented those
+        // widgets at runtime, which Qt's layout nuked on first resize →
+        // blank launcher window. This rewrite avoids that entirely.
+        auto* central = new QWidget(main_dialog);
+        auto* mainLayout = new QHBoxLayout(central);
+        mainLayout->setContentsMargins(0, 0, 0, 0);
+        mainLayout->setSpacing(0);
 
-        connect(main_dialog, &MainDialog::Start, this, &MainDialogPrivate::FindInterpreter,
-                Qt::QueuedConnection);
-        connect(m_ui->widget, &ConfigurationListWidget::Select, this, &MainDialogPrivate::Update);
-        connect(m_ui->widget, &ConfigurationListWidget::Run, this, &MainDialogPrivate::Run);
-        connect(m_ui->check_updates_link, &QLabel::linkActivated, this,
-                [this](const QString&) { m_update_checker->Check(true); });
-        connect(m_update_checker, &UpdateChecker::CheckingChanged, m_ui->check_updates_link,
-                &QLabel::setDisabled);
-        connect(m_ui->check_updates_on_startup, &QCheckBox::toggled, this, [this](bool checked) {
-                g_check_updates_on_startup = checked;
-                m_ui->widget->WriteSettings();
+        // --- Sidebar (page switcher) ---
+        m_sidebar = new QListWidget(main_dialog);
+        m_sidebar->setObjectName("sidebar");
+        m_sidebar->setFixedWidth(180);
+        m_sidebar->setIconSize(QSize(24, 24));
+        m_sidebar->setFocusPolicy(Qt::NoFocus);
+        new QListWidgetItem(tr("List View"), m_sidebar);
+        new QListWidgetItem(tr("Grid View"), m_sidebar);
+        new QListWidgetItem(tr("Settings"), m_sidebar);
+        m_sidebar->setCurrentRow(0);
+        connect(m_sidebar, &QListWidget::currentRowChanged, this, &MainDialogPrivate::SwitchToPage);
+        mainLayout->addWidget(m_sidebar);
+
+        // --- Stacked widget (one page per sidebar entry) ---
+        m_stacked = new QStackedWidget(main_dialog);
+        mainLayout->addWidget(m_stacked, 1);
+
+        // Page 0: List view (the ConfigurationListWidget has its own internal
+        // .ui that promotes GameListTreeWidget — that's fine, we just
+        // instantiate it directly here).
+        auto* listPage = new QWidget(m_stacked);
+        auto* listLayout = new QVBoxLayout(listPage);
+        listLayout->setContentsMargins(0, 0, 0, 0);
+        m_config_list = new ConfigurationListWidget(listPage);
+        listLayout->addWidget(m_config_list);
+        m_stacked->addWidget(listPage);
+
+        // Page 1: Grid view — GameGridFrame embedded as a page (NOT a popup).
+        // Previously the grid opened as a separate window, which made the
+        // launcher feel disjoint. Now switching to the grid page is instant.
+        m_grid_frame = new GameGridFrame(m_stacked);
+        m_stacked->addWidget(m_grid_frame);
+
+        // Page 2: Settings (labels + checkbox). The interpreter/version info
+        // also lives on the status bar so it's always visible regardless of
+        // the current page.
+        auto* settingsPage = new QWidget(m_stacked);
+        auto* settingsLayout = new QVBoxLayout(settingsPage);
+        settingsLayout->setContentsMargins(20, 20, 20, 20);
+        settingsLayout->setSpacing(8);
+
+        m_label_settings_file = new QLabel(tr("Settings file: "), settingsPage);
+        m_label_interpreter    = new QLabel(tr("Emulator: "),     settingsPage);
+        m_label_version        = new QLabel(tr("Version: "),     settingsPage);
+        m_check_updates_link   = new QLabel(
+            QStringLiteral("<a href=\"check\">Check for updates</a>"), settingsPage);
+        m_check_updates_link->setTextFormat(Qt::RichText);
+        m_check_updates_on_startup = new QCheckBox(
+            tr("Check for updates on startup"), settingsPage);
+        m_check_updates_on_startup->setChecked(g_check_updates_on_startup);
+
+        settingsLayout->addWidget(m_label_settings_file);
+        settingsLayout->addWidget(m_label_interpreter);
+        settingsLayout->addWidget(m_label_version);
+        settingsLayout->addWidget(m_check_updates_link);
+        settingsLayout->addWidget(m_check_updates_on_startup);
+        settingsLayout->addStretch();
+
+        m_stacked->addWidget(settingsPage);
+
+        m_check_updates_link->setVisible(UpdateChecker::IsSupported());
+        m_check_updates_on_startup->setVisible(UpdateChecker::IsSupported());
+
+        main_dialog->setCentralWidget(central);
+
+        // === Menu bar — QMainWindow provides menuBar() for free ===
+        // (No more shoehorning a QMenuBar into a QDialog layout.)
+        auto* menubar = main_dialog->menuBar();
+
+        // --- View menu ---
+        auto* view_menu = menubar->addMenu(tr("&View"));
+
+        auto* action_list_view = view_menu->addAction(tr("&List View"));
+        action_list_view->setShortcut(QKeySequence("Ctrl+L"));
+        connect(action_list_view, &QAction::triggered, [this]() {
+                m_sidebar->setCurrentRow(0);
         });
-        connect(main_dialog, &MainDialog::Resize, [this]() {
-                g_last_geometry = m_main_dialog->saveGeometry();
-                m_ui->widget->WriteSettings();
-        });
-
-        connect(&m_process,
-                static_cast<void (QProcess::*)(int, QProcess::ExitStatus)>(&QProcess::finished),
-                [this](int /*exitCode*/, QProcess::ExitStatus /*exitStatus*/) {
-                        if (m_running_item != nullptr) {
-                                m_running_item->SetRunning(false);
-                        }
-                        Update();
-                });
-
-        m_ui->label_settings_file->setText(tr("Settings file: ") + m_ui->widget->GetSettingsFile());
-
-        m_main_dialog->restoreGeometry(g_last_geometry);
-
-        // AbdoPS5: Create menu bar with View, Tools, and Audio menus
-        m_menu_bar = new QMenuBar(main_dialog);
-
-        // === View Menu ===
-        auto* view_menu = m_menu_bar->addMenu(tr("&View"));
 
         auto* action_grid_view = view_menu->addAction(tr("&Grid View"));
-        action_grid_view->setCheckable(true);
         action_grid_view->setShortcut(QKeySequence("Ctrl+G"));
-        // IMPORTANT: connect to triggered(bool) (not triggered()) so we get the
-        // *new* check state. We treat the menu action as the source of truth
-        // — the closeEvent of the grid window will uncheck it.
-        connect(action_grid_view, &QAction::triggered, this, [this](bool checked) {
-                if (checked) {
-                        OnToggleGridView(/*force_show=*/true);
-                } else {
-                        OnToggleGridView(/*force_show=*/false);
-                }
+        connect(action_grid_view, &QAction::triggered, [this]() {
+                m_sidebar->setCurrentRow(1);
         });
-        m_action_grid_view = action_grid_view; // cached for closeEvent sync
+
+        auto* action_settings = view_menu->addAction(tr("&Settings"));
+        action_settings->setShortcut(QKeySequence("Ctrl+,"));
+        connect(action_settings, &QAction::triggered, [this]() {
+                m_sidebar->setCurrentRow(2);
+        });
+
+        view_menu->addSeparator();
 
         auto* action_cinema = view_menu->addAction(tr("&Cinema Mode"));
         action_cinema->setShortcut(QKeySequence("F11"));
@@ -211,8 +267,8 @@ void MainDialogPrivate::Setup(MainDialog* main_dialog) {
         action_hotkeys->setShortcut(QKeySequence("Ctrl+K"));
         connect(action_hotkeys, &QAction::triggered, this, &MainDialogPrivate::OnOpenHotkeys);
 
-        // === Tools Menu ===
-        auto* tools_menu = m_menu_bar->addMenu(tr("&Tools"));
+        // --- Tools menu ---
+        auto* tools_menu = menubar->addMenu(tr("&Tools"));
 
         auto* action_cheats = tools_menu->addAction(tr("&Cheats & Patches..."));
         action_cheats->setShortcut(QKeySequence("Ctrl+C"));
@@ -227,16 +283,81 @@ void MainDialogPrivate::Setup(MainDialog* main_dialog) {
         auto* action_enable_hack = tools_menu->addAction(tr("&Enable Hack Flag..."));
         connect(action_enable_hack, &QAction::triggered, this, &MainDialogPrivate::OnEnableHack);
 
-        // === Audio Menu ===
-        auto* audio_menu = m_menu_bar->addMenu(tr("&Audio"));
+        // --- Audio menu ---
+        auto* audio_menu = menubar->addMenu(tr("&Audio"));
 
         auto* action_bg_music = audio_menu->addAction(tr("&Background Music"));
         action_bg_music->setCheckable(true);
         connect(action_bg_music, &QAction::triggered, this, &MainDialogPrivate::OnToggleBackgroundMusic);
-        m_action_bg_music = action_bg_music; // cached for closeEvent sync
+        m_action_bg_music = action_bg_music; // cached so OnToggleBackgroundMusic can sync the checkbox
 
-        // Insert menu bar at the top of the dialog
-        main_dialog->layout()->setMenuBar(m_menu_bar);
+        // === Status bar — QMainWindow provides statusBar() for free ===
+        // Shows the interpreter path + version + update link at the bottom
+        // of the window, regardless of which page is current.
+        auto* sb = main_dialog->statusBar();
+        sb->setSizeGripEnabled(true);
+        sb->addWidget(m_label_interpreter, 1);
+        sb->addPermanentWidget(m_label_version);
+        sb->addPermanentWidget(m_check_updates_link);
+
+        // === Signal wiring ===
+        connect(main_dialog, &MainDialog::Start, this, &MainDialogPrivate::FindInterpreter,
+                Qt::QueuedConnection);
+        connect(m_config_list, &ConfigurationListWidget::Select, this, &MainDialogPrivate::Update);
+        connect(m_config_list, &ConfigurationListWidget::Run, this, &MainDialogPrivate::Run);
+        connect(m_check_updates_link, &QLabel::linkActivated, this,
+                [this](const QString&) { m_update_checker->Check(true); });
+        connect(m_update_checker, &UpdateChecker::CheckingChanged, m_check_updates_link,
+                &QLabel::setDisabled);
+        connect(m_check_updates_on_startup, &QCheckBox::toggled, this, [this](bool checked) {
+                g_check_updates_on_startup = checked;
+                m_config_list->WriteSettings();
+        });
+        connect(main_dialog, &MainDialog::Resize, [this]() {
+                g_last_geometry = m_main_dialog->saveGeometry();
+                m_config_list->WriteSettings();
+        });
+
+        connect(&m_process,
+                static_cast<void (QProcess::*)(int, QProcess::ExitStatus)>(&QProcess::finished),
+                [this](int /*exitCode*/, QProcess::ExitStatus /*exitStatus*/) {
+                        if (m_running_item != nullptr) {
+                                m_running_item->SetRunning(false);
+                        }
+                        Update();
+                });
+
+        // Grid view: clicking a game in the grid syncs the selection back to
+        // the config list so Run() picks up the right game.
+        connect(m_grid_frame, &GameGridFrame::gameSelected, [this](const GameGridItem& item) {
+                m_main_dialog->setWindowTitle(item.title + " — AbdoPS5");
+                auto* tree = m_config_list->findChild<QTreeWidget*>();
+                if (tree) {
+                        for (int i = 0; i < tree->topLevelItemCount(); i++) {
+                                auto* cfg_item = static_cast<ConfigurationItem*>(tree->topLevelItem(i));
+                                if (cfg_item && cfg_item->GetInfo().title_id == item.title_id) {
+                                        tree->setCurrentItem(cfg_item);
+                                        break;
+                                }
+                        }
+                }
+        });
+
+        // Grid view Esc: switch back to the list view (the grid is no longer
+        // a separate window — Esc just means "I'm done browsing the grid").
+        connect(m_grid_frame, &GameGridFrame::GameGridFrameClosed, [this]() {
+                m_sidebar->setCurrentRow(0);
+        });
+
+        m_label_settings_file->setText(tr("Settings file: ") + m_config_list->GetSettingsFile());
+
+        main_dialog->restoreGeometry(g_last_geometry);
+        main_dialog->setWindowTitle(QStringLiteral("AbdoPS5"));
+        // Sensible default size on first launch; user-resized geometry is
+        // restored from QSettings on subsequent launches.
+        if (g_last_geometry.isEmpty()) {
+                main_dialog->resize(900, 600);
+        }
 
         Update();
 }
@@ -253,7 +374,7 @@ void MainDialogPrivate::FindInterpreter() {
         bool found = QFile::exists(m_interpreter);
 
         if (found) {
-                m_ui->label_Interpreter->setText(tr("Emulator: ") + m_interpreter);
+                m_label_interpreter->setText(tr("Emulator: ") + m_interpreter);
 
                 QProcess test;
                 test.setProgram(m_interpreter);
@@ -264,7 +385,7 @@ void MainDialogPrivate::FindInterpreter() {
                 auto lines  = output.split(QRegularExpression("[\r\n]"), Qt::SkipEmptyParts);
 
                 if (lines.count() >= 2) {
-                        m_ui->label_Version->setText(
+                        m_label_version->setText(
                             tr("Version: ") + (lines.at(0).startsWith("exe_name") ? lines.at(1) : lines.at(0)));
                 } else {
                         found = false;
@@ -280,12 +401,12 @@ void MainDialogPrivate::FindInterpreter() {
         // Prompt for a game folder when none are configured, but keep the launcher
         // open if the user dismisses the dialog (quitting here can segfault during
         // nested modal shutdown / background compatibility load).
-        m_ui->widget->EnsureGameDirectory();
+        m_config_list->EnsureGameDirectory();
 
-        m_ui->label_settings_file->setText(tr("Settings file: ") + m_ui->widget->GetSettingsFile());
+        m_label_settings_file->setText(tr("Settings file: ") + m_config_list->GetSettingsFile());
 
         Update();
-        if (m_ui->check_updates_on_startup->isChecked()) {
+        if (m_check_updates_on_startup->isChecked()) {
                 m_update_checker->Check(false);
         }
 }
@@ -553,7 +674,7 @@ void MainDialog::ReadSettings(QSettings& s) {
 
 void MainDialog::resizeEvent(QResizeEvent* event) {
         emit Resize();
-        QDialog::resizeEvent(event);
+        QMainWindow::resizeEvent(event);
 }
 
 void MainDialogPrivate::WriteSettings(QSettings& s) {
@@ -577,21 +698,21 @@ void MainDialogPrivate::ReadSettings(QSettings& s) {
 }
 
 void MainDialogPrivate::Run() {
-        m_running_item = m_ui->widget->GetSelectedItem();
+        m_running_item = m_config_list->GetSelectedItem();
         if (m_running_item == nullptr) {
                 return;
         }
 
         m_running_item->SetRunning(true);
 
-        auto info = m_ui->widget->CreateConfiguration(*m_running_item);
+        auto info = m_config_list->CreateConfiguration(*m_running_item);
         m_main_dialog->RunInterpreter(&m_process, *info);
 
         Update();
 }
 
 void MainDialogPrivate::Update() {
-        const auto* item = m_ui->widget->GetSelectedItem();
+        const auto* item = m_config_list->GetSelectedItem();
 
         bool run_enabled = (m_process.state() == QProcess::NotRunning && item != nullptr);
 
@@ -601,73 +722,48 @@ void MainDialogPrivate::Update() {
                 run_enabled      = !dir.isEmpty() && QDir(dir).exists();
         }
 
-        m_ui->widget->SetRunEnabled(run_enabled);
+        m_config_list->SetRunEnabled(run_enabled);
+}
+
+// === Unified GUI: page switching + grid refresh ===
+
+void MainDialogPrivate::SwitchToPage(int index) {
+        if (index < 0 || index >= m_stacked->count()) return;
+        m_stacked->setCurrentIndex(index);
+        if (index == 1) {
+                // Grid page — refresh from the current config list so newly
+                // added/removed games show up immediately.
+                RefreshGrid();
+        }
+}
+
+void MainDialogPrivate::RefreshGrid() {
+        if (!m_grid_frame) return;
+        auto* tree = m_config_list->findChild<QTreeWidget*>();
+        if (!tree) return;
+
+        QVector<GameGridItem> grid_items;
+        for (int i = 0; i < tree->topLevelItemCount(); i++) {
+                auto* cfg_item = static_cast<ConfigurationItem*>(tree->topLevelItem(i));
+                if (!cfg_item) continue;
+                const auto& info = cfg_item->GetInfo();
+                GameGridItem item;
+                item.title_id = info.title_id;
+                item.title = info.name.isEmpty() ? info.title_id : info.name;
+                item.icon_path = QDir(info.basedir).filePath("sce_sys/icon0.png");
+                item.app_path = info.basedir;
+                item.compatibility = EnumToText(info.game_status);
+                grid_items.append(item);
+        }
+        m_grid_frame->PopulateGames(grid_items);
 }
 
 // === AbdoPS5 GUI slot implementations ===
-
-void MainDialogPrivate::OnToggleGridView(bool force_show) {
-        if (!m_grid_frame) {
-                m_grid_frame = new GameGridFrame(m_main_dialog);
-                m_grid_frame->setWindowFlags(Qt::Window);
-                m_grid_frame->setWindowTitle("AbdoPS5 — Grid View");
-                m_grid_frame->resize(800, 600);
-
-                connect(m_grid_frame, &GameGridFrame::gameSelected, [this](const GameGridItem& item) {
-                        m_main_dialog->setWindowTitle(item.title + " — AbdoPS5");
-                        auto* tree = m_ui->widget->findChild<QTreeWidget*>();
-                        if (tree) {
-                                for (int i = 0; i < tree->topLevelItemCount(); i++) {
-                                        auto* cfg_item = static_cast<ConfigurationItem*>(tree->topLevelItem(i));
-                                        if (cfg_item && cfg_item->GetInfo().title_id == item.title_id) {
-                                                tree->setCurrentItem(cfg_item);
-                                                break;
-                                        }
-                                }
-                        }
-                });
-                // When the grid window is closed (via Esc or title-bar X),
-                // uncheck the menu action and clear our state flag. This is
-                // the fix for the previous state-desync bug.
-                connect(m_grid_frame, &GameGridFrame::GameGridFrameClosed, [this]() {
-                        m_grid_view_active = false;
-                        if (m_action_grid_view) {
-                                m_action_grid_view->setChecked(false);
-                        }
-                });
-        }
-
-        // Populate grid with games from the config list
-        auto* tree = m_ui->widget->findChild<QTreeWidget*>();
-        if (tree) {
-                QVector<GameGridItem> grid_items;
-                for (int i = 0; i < tree->topLevelItemCount(); i++) {
-                        auto* cfg_item = static_cast<ConfigurationItem*>(tree->topLevelItem(i));
-                        if (!cfg_item) continue;
-                        const auto& info = cfg_item->GetInfo();
-                        GameGridItem item;
-                        item.title_id = info.title_id;
-                        item.title = info.name.isEmpty() ? info.title_id : info.name;
-                        item.icon_path = QDir(info.basedir).filePath("sce_sys/icon0.png");
-                        item.app_path = info.basedir;
-                        item.compatibility = EnumToText(info.game_status);
-                        grid_items.append(item);
-                }
-                m_grid_frame->PopulateGames(grid_items);
-        }
-
-        m_grid_view_active = force_show;
-        if (force_show) {
-                m_grid_frame->show();
-                m_grid_frame->raise();
-                m_grid_frame->activateWindow();
-        } else {
-                m_grid_frame->hide();
-        }
-        if (m_action_grid_view) {
-                m_action_grid_view->setChecked(force_show);
-        }
-}
+// OnToggleGridView has been removed — the grid is now an embedded page
+// in the QStackedWidget, switched to via the sidebar or the View → Grid
+// View menu action (which just calls m_sidebar->setCurrentRow(1)).
+// RefreshGrid() is called automatically by SwitchToPage when the user
+// navigates to the grid page.
 
 void MainDialogPrivate::OnToggleCinemaMode() {
         if (!m_hub_menu) {
@@ -679,7 +775,7 @@ void MainDialogPrivate::OnToggleCinemaMode() {
                 connect(m_hub_menu, &HubMenuWidget::gameLaunched, [this](const HubGameItem& game) {
                         m_hub_menu->hide();
                         m_cinema_mode = false;
-                        auto* tree = m_ui->widget->findChild<QTreeWidget*>();
+                        auto* tree = m_config_list->findChild<QTreeWidget*>();
                         if (tree) {
                                 for (int i = 0; i < tree->topLevelItemCount(); i++) {
                                         auto* cfg_item = static_cast<ConfigurationItem*>(tree->topLevelItem(i));
@@ -700,7 +796,7 @@ void MainDialogPrivate::OnToggleCinemaMode() {
         }
 
         // Populate cinema mode with games
-        auto* tree = m_ui->widget->findChild<QTreeWidget*>();
+        auto* tree = m_config_list->findChild<QTreeWidget*>();
         if (tree) {
                 QVector<HubGameItem> hub_items;
                 for (int i = 0; i < tree->topLevelItemCount(); i++) {
@@ -737,7 +833,7 @@ void MainDialogPrivate::OnOpenHotkeys() {
 }
 
 void MainDialogPrivate::OnOpenCheatsPatches() {
-        const auto* item = m_ui->widget->GetSelectedItem();
+        const auto* item = m_config_list->GetSelectedItem();
         QString title_id = "UNKNOWN";
         if (item) {
                 title_id = item->GetInfo().title_id;
@@ -762,7 +858,7 @@ void MainDialogPrivate::OnToggleBackgroundMusic() {
 
         // Try to play ambient music from the selected game's snd0.at9.
         QString music_path;
-        const auto* item = m_ui->widget->GetSelectedItem();
+        const auto* item = m_config_list->GetSelectedItem();
         if (item) {
                 music_path = QDir(item->GetInfo().basedir).filePath("sce_sys/snd0.at9");
         }
