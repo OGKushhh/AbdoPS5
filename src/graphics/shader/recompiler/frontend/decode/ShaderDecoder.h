@@ -415,13 +415,47 @@ enum class Opcode {
 	V_CMP_NE_U32,
 	V_CMP_GE_U32,
 	V_CMP_T_U32,
+	// Kyty-001: Complete V_CMP_*_{U,I}64 opcode matrix.
+	// Previously only 7 of 32 canonical opcodes were defined; any shader using
+	// one of the missing 25 would hit EXIT("unsupported decoded instruction")
+	// at Dispatch.cpp:15 — the same failure mode that blocked RE3 Remake on
+	// shadPS4 for 18 months. Mirrors shadPS4 SHAD-001 fix.
+	// V_CMP_*_I64 (signed 64-bit, non-exec) — 8 opcodes
+	V_CMP_F_I64,
+	V_CMP_LT_I64,
 	V_CMP_EQ_I64,
+	V_CMP_LE_I64,
+	V_CMP_GT_I64,
+	V_CMP_NE_I64,
+	V_CMP_GE_I64,
+	V_CMP_T_I64,
+	// V_CMPX_*_I64 (signed 64-bit, exec-setting) — 8 opcodes
+	V_CMPX_F_I64,
+	V_CMPX_LT_I64,
+	V_CMPX_EQ_I64,
+	V_CMPX_LE_I64,
+	V_CMPX_GT_I64,
+	V_CMPX_NE_I64,
+	V_CMPX_GE_I64,
+	V_CMPX_T_I64,
+	// V_CMP_*_U64 (unsigned 64-bit, non-exec) — 8 opcodes
+	V_CMP_F_U64,
 	V_CMP_LT_U64,
 	V_CMP_EQ_U64,
+	V_CMP_LE_U64,
 	V_CMP_GT_U64,
 	V_CMP_NE_U64,
-	V_CMPX_NE_I64,
+	V_CMP_GE_U64,
+	V_CMP_T_U64,
+	// V_CMPX_*_U64 (unsigned 64-bit, exec-setting) — 8 opcodes
+	V_CMPX_F_U64,
+	V_CMPX_LT_U64,
+	V_CMPX_EQ_U64,
+	V_CMPX_LE_U64,
+	V_CMPX_GT_U64,
 	V_CMPX_NE_U64,
+	V_CMPX_GE_U64,
+	V_CMPX_T_U64,
 	V_CMPX_LT_U32,
 	V_CMPX_EQ_U32,
 	V_CMPX_LE_U32,
@@ -742,7 +776,7 @@ void DecodeScalarDestination(uint32_t code, uint32_t pc, Operand& operand);
 void DecodeVectorGpr(uint32_t reg, Operand& operand);
 void ReadLiteralOperands(std::span<const uint32_t> code, uint32_t word_index, Instruction& inst);
 void SetRawWords(Instruction& inst, std::span<const uint32_t> code, uint32_t word_index,
-                 uint32_t word_count);
+		 uint32_t word_count);
 void SetUnsupported(Instruction& inst, Family family, uint32_t opcode_id, const char* reason);
 std::string OperandToString(const Operand& operand);
 const char* ImageDimensionToString(ImageDimension dimension);

@@ -24,14 +24,14 @@ uint32_t MakePair(EmitterState& state, uint32_t low, uint32_t high) {
 }
 
 uint32_t CompareEqual64(EmitterState& state, uint32_t lhs_value, uint32_t rhs_value,
-                        bool not_equal) {
+			bool not_equal) {
 	const auto compare = Binary(state, not_equal ? spv::OpINotEqual : spv::OpIEqual,
-	                            TypeBoolVector(state, 2), lhs_value, rhs_value);
+				    TypeBoolVector(state, 2), lhs_value, rhs_value);
 	return Unary(state, not_equal ? spv::OpAny : spv::OpAll, TypeBool(state), compare);
 }
 
 uint32_t CompareOrdered64(EmitterState& state, uint32_t lhs_value, uint32_t rhs_value,
-                          spv::Op high_compare, spv::Op low_compare) {
+			  spv::Op high_compare, spv::Op low_compare) {
 	const auto lhs         = ExtractPair(state, lhs_value);
 	const auto rhs         = ExtractPair(state, rhs_value);
 	const auto high_equal  = Binary(state, spv::OpIEqual, TypeBool(state), lhs.high, rhs.high);
@@ -52,7 +52,7 @@ uint32_t EmitMulHigh(EmitterState& state, uint32_t lhs, uint32_t rhs, bool signe
 	}
 	const auto extended = state.builder.AllocateId();
 	state.builder.AddFunction(signed_value ? spv::OpSMulExtended : spv::OpUMulExtended, pair_type,
-	                          extended, lhs_operand, rhs_operand);
+				  extended, lhs_operand, rhs_operand);
 	const auto high = state.builder.AllocateId();
 	state.builder.AddFunction(spv::OpCompositeExtract, operand_type, high, extended, 1);
 	return signed_value ? Unary(state, spv::OpBitcast, TypeU32(state), high) : high;
@@ -72,28 +72,28 @@ uint32_t EmitShift64(EmitterState& state, spv::Op opcode, uint32_t value, uint32
 		const auto low = Binary(state, opcode, TypeU32(state), pair.low, word_shift);
 		const auto carry =
 		    Select(state, TypeU32(state), nonzero,
-		           Binary(state, spv::OpShiftRightLogical, TypeU32(state), pair.low, carry_count),
-		           ConstantU32(state, 0));
+			   Binary(state, spv::OpShiftRightLogical, TypeU32(state), pair.low, carry_count),
+			   ConstantU32(state, 0));
 		const auto high =
 		    Binary(state, spv::OpBitwiseOr, TypeU32(state),
-		           Binary(state, opcode, TypeU32(state), pair.high, word_shift), carry);
+			   Binary(state, opcode, TypeU32(state), pair.high, word_shift), carry);
 		return MakePair(state,
-		                Select(state, TypeU32(state), at_least_32, ConstantU32(state, 0), low),
-		                Select(state, TypeU32(state), at_least_32, low, high));
+				Select(state, TypeU32(state), at_least_32, ConstantU32(state, 0), low),
+				Select(state, TypeU32(state), at_least_32, low, high));
 	}
 	const auto high = Binary(state, opcode, TypeU32(state), pair.high, word_shift);
 	const auto carry =
 	    Select(state, TypeU32(state), nonzero,
-	           Binary(state, spv::OpShiftLeftLogical, TypeU32(state), pair.high, carry_count),
-	           ConstantU32(state, 0));
+		   Binary(state, spv::OpShiftLeftLogical, TypeU32(state), pair.high, carry_count),
+		   ConstantU32(state, 0));
 	const auto low = Binary(
 	    state, spv::OpBitwiseOr, TypeU32(state),
 	    Binary(state, spv::OpShiftRightLogical, TypeU32(state), pair.low, word_shift), carry);
 	const auto fill = opcode == spv::OpShiftRightArithmetic
-	                      ? Binary(state, opcode, TypeU32(state), pair.high, ConstantU32(state, 31))
-	                      : ConstantU32(state, 0);
+			      ? Binary(state, opcode, TypeU32(state), pair.high, ConstantU32(state, 31))
+			      : ConstantU32(state, 0);
 	return MakePair(state, Select(state, TypeU32(state), at_least_32, high, low),
-	                Select(state, TypeU32(state), at_least_32, fill, high));
+			Select(state, TypeU32(state), at_least_32, fill, high));
 }
 
 uint32_t EmitConstantShift64(EmitterState& state, spv::Op opcode, uint32_t value, uint32_t shift) {
@@ -105,45 +105,45 @@ uint32_t EmitConstantShift64(EmitterState& state, spv::Op opcode, uint32_t value
 	if (opcode == spv::OpShiftLeftLogical) {
 		if (shift < 32u) {
 			const auto low  = Binary(state, spv::OpShiftLeftLogical, TypeU32(state), pair.low,
-			                         ConstantU32(state, shift));
+						 ConstantU32(state, shift));
 			const auto high = Binary(state, spv::OpBitwiseOr, TypeU32(state),
-			                         Binary(state, spv::OpShiftLeftLogical, TypeU32(state),
-			                                pair.high, ConstantU32(state, shift)),
-			                         Binary(state, spv::OpShiftRightLogical, TypeU32(state),
-			                                pair.low, ConstantU32(state, 32u - shift)));
+						 Binary(state, spv::OpShiftLeftLogical, TypeU32(state),
+							pair.high, ConstantU32(state, shift)),
+						 Binary(state, spv::OpShiftRightLogical, TypeU32(state),
+							pair.low, ConstantU32(state, 32u - shift)));
 			return MakePair(state, low, high);
 		}
 		return MakePair(state, ConstantU32(state, 0),
-		                shift == 32u ? pair.low
-		                             : Binary(state, spv::OpShiftLeftLogical, TypeU32(state),
-		                                      pair.low, ConstantU32(state, shift - 32u)));
+				shift == 32u ? pair.low
+					     : Binary(state, spv::OpShiftLeftLogical, TypeU32(state),
+						      pair.low, ConstantU32(state, shift - 32u)));
 	}
 	if (shift < 32u) {
 		const auto low = Binary(state, spv::OpBitwiseOr, TypeU32(state),
-		                        Binary(state, spv::OpShiftRightLogical, TypeU32(state), pair.low,
-		                               ConstantU32(state, shift)),
-		                        Binary(state, spv::OpShiftLeftLogical, TypeU32(state), pair.high,
-		                               ConstantU32(state, 32u - shift)));
+					Binary(state, spv::OpShiftRightLogical, TypeU32(state), pair.low,
+					       ConstantU32(state, shift)),
+					Binary(state, spv::OpShiftLeftLogical, TypeU32(state), pair.high,
+					       ConstantU32(state, 32u - shift)));
 		const auto high =
 		    Binary(state, opcode, TypeU32(state), pair.high, ConstantU32(state, shift));
 		return MakePair(state, low, high);
 	}
 	const auto high = opcode == spv::OpShiftRightArithmetic
-	                      ? Binary(state, spv::OpShiftRightArithmetic, TypeU32(state), pair.high,
-	                               ConstantU32(state, 31u))
-	                      : ConstantU32(state, 0);
+			      ? Binary(state, spv::OpShiftRightArithmetic, TypeU32(state), pair.high,
+				       ConstantU32(state, 31u))
+			      : ConstantU32(state, 0);
 	const auto low  = shift == 32u ? pair.high
-	                               : Binary(state, opcode, TypeU32(state), pair.high,
-	                                        ConstantU32(state, shift - 32u));
+				       : Binary(state, opcode, TypeU32(state), pair.high,
+						ConstantU32(state, shift - 32u));
 	return MakePair(state, low, high);
 }
 
 uint32_t EmitMinMax3(EmitterState& state, uint32_t a, uint32_t b, uint32_t c, bool signed_value,
-                     bool max_value) {
+		     bool max_value) {
 	const auto ab = signed_value ? EmitMinMaxI32Value(state, a, b, max_value)
-	                             : EmitMinMaxU32Value(state, a, b, max_value);
+				     : EmitMinMaxU32Value(state, a, b, max_value);
 	return signed_value ? EmitMinMaxI32Value(state, ab, c, max_value)
-	                    : EmitMinMaxU32Value(state, ab, c, max_value);
+			    : EmitMinMaxU32Value(state, ab, c, max_value);
 }
 
 uint32_t EmitMed3(EmitterState& state, uint32_t a, uint32_t b, uint32_t c, bool signed_value) {
@@ -152,7 +152,7 @@ uint32_t EmitMed3(EmitterState& state, uint32_t a, uint32_t b, uint32_t c, bool 
 	const auto ab      = Binary(state, spv::OpIAdd, TypeU32(state), a, b);
 	const auto abc     = Binary(state, spv::OpIAdd, TypeU32(state), ab, c);
 	return Binary(state, spv::OpISub, TypeU32(state),
-	              Binary(state, spv::OpISub, TypeU32(state), abc, minimum), maximum);
+		      Binary(state, spv::OpISub, TypeU32(state), abc, minimum), maximum);
 }
 
 uint32_t EmitFMinMax3(EmitterState& state, uint32_t a, uint32_t b, uint32_t c, bool max_value) {
@@ -160,7 +160,7 @@ uint32_t EmitFMinMax3(EmitterState& state, uint32_t a, uint32_t b, uint32_t c, b
 }
 
 uint32_t EmitExt(EmitterState& state, uint32_t type, uint32_t opcode,
-                 std::initializer_list<uint32_t> args) {
+		 std::initializer_list<uint32_t> args) {
 	const auto            result = state.builder.AllocateId();
 	std::vector<uint32_t> words {spv::OpExtInst, type, result, GlslStd450(state), opcode};
 	words.insert(words.end(), args.begin(), args.end());
@@ -181,9 +181,9 @@ uint32_t EmitF32ToU32(EmitterState& state, uint32_t src, bool signed_value) {
 	const auto nan = EmitClassifyF32(state, src).nan;
 	if (signed_value) {
 		const auto below = Binary(state, spv::OpFOrdLessThanEqual, TypeBool(state), src,
-		                          ConstantF32(state, 0xcf000000u));
+					  ConstantF32(state, 0xcf000000u));
 		const auto above = Binary(state, spv::OpFOrdGreaterThanEqual, TypeBool(state), src,
-		                          ConstantF32(state, 0x4f000000u));
+					  ConstantF32(state, 0x4f000000u));
 		const auto high =
 		    Select(state, TypeU32(state), above, ConstantU32(state, 0x7fffffffu), converted_raw);
 		const auto low =
@@ -193,7 +193,7 @@ uint32_t EmitF32ToU32(EmitterState& state, uint32_t src, bool signed_value) {
 	const auto below =
 	    Binary(state, spv::OpFOrdLessThanEqual, TypeBool(state), src, ConstantF32(state, 0));
 	const auto above = Binary(state, spv::OpFOrdGreaterThanEqual, TypeBool(state), src,
-	                          ConstantF32(state, 0x4f800000u));
+				  ConstantF32(state, 0x4f800000u));
 	const auto zero  = Binary(state, spv::OpLogicalOr, TypeBool(state), nan, below);
 	const auto high =
 	    Select(state, TypeU32(state), above, ConstantU32(state, 0xffffffffu), converted_raw);
@@ -208,7 +208,7 @@ uint32_t EmitFPMedTri32(EmitterState& state, uint32_t a, uint32_t b, uint32_t c)
 	const auto high_min = EmitMinMaxF32Value(state, max_ab, c, false);
 	const auto median   = EmitMinMaxF32Value(state, min_ab, high_min, true);
 	const auto nan_ab   = Binary(state, spv::OpLogicalOr, TypeBool(state),
-	                             EmitClassifyF32(state, a).nan, EmitClassifyF32(state, b).nan);
+				     EmitClassifyF32(state, a).nan, EmitClassifyF32(state, b).nan);
 	const auto any_nan =
 	    Binary(state, spv::OpLogicalOr, TypeBool(state), nan_ab, EmitClassifyF32(state, c).nan);
 	return Select(state, TypeF32(state), any_nan, min3, median);
@@ -219,15 +219,15 @@ uint32_t EmitFindUMsb64(EmitterState& state, uint32_t value) {
 	const auto high_i = state.builder.AllocateId();
 	const auto low_i  = state.builder.AllocateId();
 	state.builder.AddFunction(spv::OpExtInst, TypeI32(state), high_i, GlslStd450(state),
-	                          GLSLstd450FindUMsb, pair.high);
+				  GLSLstd450FindUMsb, pair.high);
 	state.builder.AddFunction(spv::OpExtInst, TypeI32(state), low_i, GlslStd450(state),
-	                          GLSLstd450FindUMsb, pair.low);
+				  GLSLstd450FindUMsb, pair.low);
 	const auto high = Unary(state, spv::OpBitcast, TypeU32(state), high_i);
 	const auto low  = Unary(state, spv::OpBitcast, TypeU32(state), low_i);
 	const auto high_nonzero =
 	    Binary(state, spv::OpINotEqual, TypeBool(state), pair.high, ConstantU32(state, 0));
 	return Select(state, TypeU32(state), high_nonzero,
-	              Binary(state, spv::OpIAdd, TypeU32(state), high, ConstantU32(state, 32)), low);
+		      Binary(state, spv::OpIAdd, TypeU32(state), high, ConstantU32(state, 32)), low);
 }
 
 uint32_t EmitIMul64(EmitterState& state, uint32_t lhs_value, uint32_t rhs_value) {
@@ -238,8 +238,8 @@ uint32_t EmitIMul64(EmitterState& state, uint32_t lhs_value, uint32_t rhs_value)
 	const auto high1 = Binary(state, spv::OpIMul, TypeU32(state), lhs.low, rhs.high);
 	const auto high2 = Binary(state, spv::OpIMul, TypeU32(state), lhs.high, rhs.low);
 	return MakePair(state, low,
-	                Binary(state, spv::OpIAdd, TypeU32(state),
-	                       Binary(state, spv::OpIAdd, TypeU32(state), high0, high1), high2));
+			Binary(state, spv::OpIAdd, TypeU32(state),
+			       Binary(state, spv::OpIAdd, TypeU32(state), high0, high1), high2));
 }
 
 uint32_t EmitISub64(EmitterState& state, uint32_t lhs_value, uint32_t rhs_value) {
@@ -279,7 +279,7 @@ uint32_t EmitConvertU8U32(EmitterState& state, uint32_t arg0) {
 uint32_t EmitConvertF16F32(EmitterState& state, uint32_t arg0) {
 	const auto pair = state.builder.AllocateId();
 	state.builder.AddFunction(spv::OpCompositeConstruct, TypeF32Vector(state, 2), pair, arg0,
-	                          ConstantF32(state, 0));
+				  ConstantF32(state, 0));
 	return EmitPackHalf2x16(state, pair);
 }
 
@@ -303,13 +303,13 @@ uint32_t EmitCompositeExtractU64(EmitterState& state, uint32_t arg0, IR::Value a
 uint32_t EmitPackFloat2x16Rtz(EmitterState& state, uint32_t arg0, uint32_t arg1) {
 	const auto low  = EmitF32ToF16RtzBits(state, arg0);
 	const auto high = Binary(state, spv::OpShiftLeftLogical, TypeU32(state),
-	                         EmitF32ToF16RtzBits(state, arg1), ConstantU32(state, 16));
+				 EmitF32ToF16RtzBits(state, arg1), ConstantU32(state, 16));
 	return Binary(state, spv::OpBitwiseOr, TypeU32(state), low, high);
 }
 
 uint32_t EmitFPSaturate32(EmitterState& state, uint32_t arg0) {
 	return EmitExt(state, TypeF32(state), GLSLstd450FClamp,
-	               {arg0, ConstantF32(state, 0), ConstantF32(state, 0x3f800000u)});
+		       {arg0, ConstantF32(state, 0), ConstantF32(state, 0x3f800000u)});
 }
 
 uint32_t EmitSMulHi(EmitterState& state, uint32_t arg0, uint32_t arg1) {
@@ -331,22 +331,22 @@ uint32_t EmitIAbs32(EmitterState& state, uint32_t arg0) {
 uint32_t EmitShiftLeftLogical64(ValueEmitContext& ctx, uint32_t arg0, IR::Value arg1) {
 	auto& state = ctx.state;
 	return arg1.Resolve().IsImmediate()
-	           ? EmitConstantShift64(state, spv::OpShiftLeftLogical, arg0, arg1.Resolve().U32())
-	           : EmitShift64(state, spv::OpShiftLeftLogical, arg0, ctx.Def(arg1));
+		   ? EmitConstantShift64(state, spv::OpShiftLeftLogical, arg0, arg1.Resolve().U32())
+		   : EmitShift64(state, spv::OpShiftLeftLogical, arg0, ctx.Def(arg1));
 }
 
 uint32_t EmitShiftRightLogical64(ValueEmitContext& ctx, uint32_t arg0, IR::Value arg1) {
 	auto& state = ctx.state;
 	return arg1.Resolve().IsImmediate()
-	           ? EmitConstantShift64(state, spv::OpShiftRightLogical, arg0, arg1.Resolve().U32())
-	           : EmitShift64(state, spv::OpShiftRightLogical, arg0, ctx.Def(arg1));
+		   ? EmitConstantShift64(state, spv::OpShiftRightLogical, arg0, arg1.Resolve().U32())
+		   : EmitShift64(state, spv::OpShiftRightLogical, arg0, ctx.Def(arg1));
 }
 
 uint32_t EmitShiftRightArithmetic64(ValueEmitContext& ctx, uint32_t arg0, IR::Value arg1) {
 	auto& state = ctx.state;
 	return arg1.Resolve().IsImmediate()
-	           ? EmitConstantShift64(state, spv::OpShiftRightArithmetic, arg0, arg1.Resolve().U32())
-	           : EmitShift64(state, spv::OpShiftRightArithmetic, arg0, ctx.Def(arg1));
+		   ? EmitConstantShift64(state, spv::OpShiftRightArithmetic, arg0, arg1.Resolve().U32())
+		   : EmitShift64(state, spv::OpShiftRightArithmetic, arg0, ctx.Def(arg1));
 }
 
 uint32_t EmitBitwiseAnd64(EmitterState& state, uint32_t arg0, uint32_t arg1) {
@@ -428,6 +428,27 @@ uint32_t EmitUGreaterThan64(EmitterState& state, uint32_t arg0, uint32_t arg1) {
 	return CompareOrdered64(state, arg0, arg1, spv::OpUGreaterThan, spv::OpUGreaterThan);
 }
 
+// Kyty-001: Add missing 64-bit comparison emitters for V_CMP_*_{U,I}64
+uint32_t EmitULessThanEqual64(EmitterState& state, uint32_t arg0, uint32_t arg1) {
+	return CompareOrdered64(state, arg0, arg1, spv::OpULessThanEqual, spv::OpULessThanEqual);
+}
+
+uint32_t EmitSLessThanEqual64(EmitterState& state, uint32_t arg0, uint32_t arg1) {
+	return CompareOrdered64(state, arg0, arg1, spv::OpSLessThanEqual, spv::OpULessThanEqual);
+}
+
+uint32_t EmitSGreaterThan64(EmitterState& state, uint32_t arg0, uint32_t arg1) {
+	return CompareOrdered64(state, arg0, arg1, spv::OpSGreaterThan, spv::OpUGreaterThan);
+}
+
+uint32_t EmitSGreaterThanEqual64(EmitterState& state, uint32_t arg0, uint32_t arg1) {
+	return CompareOrdered64(state, arg0, arg1, spv::OpSGreaterThanEqual, spv::OpUGreaterThanEqual);
+}
+
+uint32_t EmitUGreaterThanEqual64(EmitterState& state, uint32_t arg0, uint32_t arg1) {
+	return CompareOrdered64(state, arg0, arg1, spv::OpUGreaterThanEqual, spv::OpUGreaterThanEqual);
+}
+
 uint32_t EmitFPIsNan32(EmitterState& state, uint32_t arg0) {
 	return EmitNative<spv::OpFUnordNotEqual, IR::Type::U1>(state, arg0, arg0);
 }
@@ -460,22 +481,22 @@ uint32_t EmitFPRecipIFlag32(EmitterState& state, uint32_t arg0) {
 
 uint32_t EmitFPRecipSqrt32(EmitterState& state, uint32_t arg0) {
 	return EmitExt(state, TypeF32(state), GLSLstd450InverseSqrt,
-	               {EmitFlushF32DenormToSignedZero(state, arg0)});
+		       {EmitFlushF32DenormToSignedZero(state, arg0)});
 }
 
 uint32_t EmitFPSqrt(EmitterState& state, uint32_t arg0) {
 	return EmitExt(state, TypeF32(state), GLSLstd450Sqrt,
-	               {EmitFlushF32DenormToSignedZero(state, arg0)});
+		       {EmitFlushF32DenormToSignedZero(state, arg0)});
 }
 
 uint32_t EmitFPExp2(EmitterState& state, uint32_t arg0) {
 	return EmitExt(state, TypeF32(state), GLSLstd450Exp2,
-	               {EmitFlushF32DenormToSignedZero(state, arg0)});
+		       {EmitFlushF32DenormToSignedZero(state, arg0)});
 }
 
 uint32_t EmitFPLog2(EmitterState& state, uint32_t arg0) {
 	return EmitExt(state, TypeF32(state), GLSLstd450Log2,
-	               {EmitFlushF32DenormToSignedZero(state, arg0)});
+		       {EmitFlushF32DenormToSignedZero(state, arg0)});
 }
 
 uint32_t EmitFPLdexp(EmitterState& state, uint32_t arg0, uint32_t arg1) {

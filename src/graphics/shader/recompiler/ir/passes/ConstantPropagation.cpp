@@ -187,7 +187,7 @@ bool FoldCompositeExtract(Inst& inst, ValueOpcode construct, size_t components) 
 		if (IsImmediate(lhs, Type::U32) && IsImmediate(rhs, Type::U32)) {
 			const auto sum = static_cast<uint64_t>(lhs.U32()) + rhs.U32();
 			Replace(inst, Value(component == 0u ? static_cast<uint32_t>(sum)
-			                                    : static_cast<uint32_t>(sum >> 32u)));
+							    : static_cast<uint32_t>(sum >> 32u)));
 			return true;
 		}
 	}
@@ -195,7 +195,7 @@ bool FoldCompositeExtract(Inst& inst, ValueOpcode construct, size_t components) 
 }
 
 void FoldInstruction(Block& block, Block::iterator instruction,
-                      std::unordered_set<Inst*>& lowered_ancillary) {
+		      std::unordered_set<Inst*>& lowered_ancillary) {
 	auto& inst = *instruction;
 	switch (inst.GetOpcode()) {
 		case ValueOpcode::Phi: FoldPhi(inst); return;
@@ -215,10 +215,10 @@ void FoldInstruction(Block& block, Block::iterator instruction,
 					return;
 				}
 				const auto mask = count.U32() == 32u
-				                      ? UINT32_MAX
-				                      : ((uint32_t {1} << count.U32()) - 1u) << offset.U32();
+						      ? UINT32_MAX
+						      : ((uint32_t {1} << count.U32()) - 1u) << offset.U32();
 				Replace(inst,
-				        Value((base.U32() & ~mask) | ((insert.U32() << offset.U32()) & mask)));
+					Value((base.U32() & ~mask) | ((insert.U32() << offset.U32()) & mask)));
 			}
 			return;
 		}
@@ -274,7 +274,7 @@ void FoldInstruction(Block& block, Block::iterator instruction,
 				const auto left = 32u - offset.U32() - count.U32();
 				const auto bits = value.U32() << left;
 				Replace(inst, Value(static_cast<uint32_t>(std::bit_cast<int32_t>(bits) >>
-				                                          (left + offset.U32()))));
+									  (left + offset.U32()))));
 			}
 			return;
 		}
@@ -294,7 +294,7 @@ void FoldInstruction(Block& block, Block::iterator instruction,
 			if (IsImmediate(value, Type::U16)) {
 				Replace(inst, Value(static_cast<uint32_t>(value.U16())));
 			} else if (auto* producer = value.TryInstruction();
-			           producer != nullptr && producer->GetOpcode() == ValueOpcode::ConvertU16U32) {
+				   producer != nullptr && producer->GetOpcode() == ValueOpcode::ConvertU16U32) {
 				Replace(inst, producer->Arg(0));
 			}
 			return;
@@ -311,7 +311,7 @@ void FoldInstruction(Block& block, Block::iterator instruction,
 			if (IsImmediate(value, Type::U8)) {
 				Replace(inst, Value(static_cast<uint32_t>(value.U8())));
 			} else if (auto* producer = value.TryInstruction();
-			           producer != nullptr && producer->GetOpcode() == ValueOpcode::ConvertU8U32) {
+				   producer != nullptr && producer->GetOpcode() == ValueOpcode::ConvertU8U32) {
 				Replace(inst, producer->Arg(0));
 			}
 			return;
@@ -333,7 +333,7 @@ void FoldInstruction(Block& block, Block::iterator instruction,
 			const auto high = Arg(inst, 1);
 			if (IsImmediate(low, Type::U32) && IsImmediate(high, Type::U32)) {
 				Replace(inst, Value(static_cast<uint64_t>(low.U32()) |
-				                    (static_cast<uint64_t>(high.U32()) << 32u)));
+						    (static_cast<uint64_t>(high.U32()) << 32u)));
 			}
 			return;
 		}
@@ -388,7 +388,7 @@ void FoldInstruction(Block& block, Block::iterator instruction,
 				const auto low  = expand(static_cast<uint32_t>(value.U64()));
 				const auto high = expand(static_cast<uint32_t>(value.U64() >> 32u));
 				Replace(inst,
-				        Value(static_cast<uint64_t>(low) | (static_cast<uint64_t>(high) << 32u)));
+					Value(static_cast<uint64_t>(low) | (static_cast<uint64_t>(high) << 32u)));
 			}
 			return;
 		}
@@ -404,7 +404,7 @@ void FoldInstruction(Block& block, Block::iterator instruction,
 		case ValueOpcode::SMulHi:
 			FoldU32(inst, [](uint32_t a, uint32_t b) {
 				const auto product = static_cast<int64_t>(std::bit_cast<int32_t>(a)) *
-				                     static_cast<int64_t>(std::bit_cast<int32_t>(b));
+						     static_cast<int64_t>(std::bit_cast<int32_t>(b));
 				return static_cast<uint32_t>(static_cast<uint64_t>(product) >> 32u);
 			});
 			return;
@@ -417,7 +417,7 @@ void FoldInstruction(Block& block, Block::iterator instruction,
 			const auto value = Arg(inst, 0);
 			if (IsImmediate(value, Type::U32)) {
 				Replace(inst,
-				        Value((value.U32() & 0x80000000u) != 0u ? 0u - value.U32() : value.U32()));
+					Value((value.U32() & 0x80000000u) != 0u ? 0u - value.U32() : value.U32()));
 			}
 			return;
 		}
@@ -486,7 +486,7 @@ void FoldInstruction(Block& block, Block::iterator instruction,
 			if (IsImmediate(value, Type::U32)) {
 				Replace(inst, Value(~value.U32()));
 			} else if (auto* producer = value.TryInstruction();
-			           producer != nullptr && producer->GetOpcode() == ValueOpcode::BitwiseNot32) {
+				   producer != nullptr && producer->GetOpcode() == ValueOpcode::BitwiseNot32) {
 				Replace(inst, producer->Arg(0));
 			}
 			return;
@@ -561,12 +561,33 @@ void FoldInstruction(Block& block, Block::iterator instruction,
 		case ValueOpcode::ULessThan64:
 			FoldU64Compare(inst, [](uint64_t a, uint64_t b) { return a < b; });
 			return;
+		case ValueOpcode::ULessThanEqual64:
+			FoldU64Compare(inst, [](uint64_t a, uint64_t b) { return a <= b; });
+			return;
 		case ValueOpcode::UGreaterThan64:
 			FoldU64Compare(inst, [](uint64_t a, uint64_t b) { return a > b; });
+			return;
+		case ValueOpcode::UGreaterThanEqual64:
+			FoldU64Compare(inst, [](uint64_t a, uint64_t b) { return a >= b; });
 			return;
 		case ValueOpcode::SLessThan64:
 			FoldU64Compare(inst, [](uint64_t a, uint64_t b) {
 				return std::bit_cast<int64_t>(a) < std::bit_cast<int64_t>(b);
+			});
+			return;
+		case ValueOpcode::SLessThanEqual64:
+			FoldU64Compare(inst, [](uint64_t a, uint64_t b) {
+				return std::bit_cast<int64_t>(a) <= std::bit_cast<int64_t>(b);
+			});
+			return;
+		case ValueOpcode::SGreaterThan64:
+			FoldU64Compare(inst, [](uint64_t a, uint64_t b) {
+				return std::bit_cast<int64_t>(a) > std::bit_cast<int64_t>(b);
+			});
+			return;
+		case ValueOpcode::SGreaterThanEqual64:
+			FoldU64Compare(inst, [](uint64_t a, uint64_t b) {
+				return std::bit_cast<int64_t>(a) >= std::bit_cast<int64_t>(b);
 			});
 			return;
 		case ValueOpcode::LogicalAnd:
@@ -607,7 +628,7 @@ void FoldInstruction(Block& block, Block::iterator instruction,
 			if (IsImmediate(value, Type::U1)) {
 				Replace(inst, Value(!value.U1()));
 			} else if (auto* producer = value.TryInstruction();
-			           producer != nullptr && producer->GetOpcode() == ValueOpcode::LogicalNot) {
+				   producer != nullptr && producer->GetOpcode() == ValueOpcode::LogicalNot) {
 				Replace(inst, producer->Arg(0));
 			}
 			return;

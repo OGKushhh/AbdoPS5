@@ -50,11 +50,11 @@ bool Translator::EmitVector(const Decoder::Instruction& inst) {
 			return true;
 		case O::V_CMP_GE_U32:
 			EmitIntegerCompare(inst, IR::ValueOpcode::UGreaterThanEqual32, IR::Type::U32, false,
-			                   false);
+					   false);
 			return true;
 		case O::V_CMPX_GE_U32:
 			EmitIntegerCompare(inst, IR::ValueOpcode::UGreaterThanEqual32, IR::Type::U32, false,
-			                   true);
+					   true);
 			return true;
 		case O::V_CMP_LT_U32:
 			EmitIntegerCompare(inst, IR::ValueOpcode::ULessThan32, IR::Type::U32, false, false);
@@ -64,7 +64,7 @@ bool Translator::EmitVector(const Decoder::Instruction& inst) {
 			return true;
 		case O::V_CMP_LE_U32:
 			EmitIntegerCompare(inst, IR::ValueOpcode::ULessThanEqual32, IR::Type::U32, false,
-			                   false);
+					   false);
 			return true;
 		case O::V_CMPX_LE_U32:
 			EmitIntegerCompare(inst, IR::ValueOpcode::ULessThanEqual32, IR::Type::U32, false, true);
@@ -77,11 +77,11 @@ bool Translator::EmitVector(const Decoder::Instruction& inst) {
 			return true;
 		case O::V_CMP_GE_I32:
 			EmitIntegerCompare(inst, IR::ValueOpcode::SGreaterThanEqual32, IR::Type::U32, false,
-			                   false);
+					   false);
 			return true;
 		case O::V_CMPX_GE_I32:
 			EmitIntegerCompare(inst, IR::ValueOpcode::SGreaterThanEqual32, IR::Type::U32, false,
-			                   true);
+					   true);
 			return true;
 		case O::V_CMP_LT_I32:
 			EmitIntegerCompare(inst, IR::ValueOpcode::SLessThan32, IR::Type::U32, false, false);
@@ -91,17 +91,74 @@ bool Translator::EmitVector(const Decoder::Instruction& inst) {
 			return true;
 		case O::V_CMP_LE_I32:
 			EmitIntegerCompare(inst, IR::ValueOpcode::SLessThanEqual32, IR::Type::U32, false,
-			                   false);
+					   false);
 			return true;
 		case O::V_CMPX_LE_I32:
 			EmitIntegerCompare(inst, IR::ValueOpcode::SLessThanEqual32, IR::Type::U32, false, true);
 			return true;
+		// Kyty-001: Complete V_CMP_*_{U,I}64 opcode dispatch.
+		// V_CMP_*_I64 (signed 64-bit, non-exec)
+		case O::V_CMP_F_I64:
+			EmitIntegerCompare(inst, IR::ValueOpcode::IEqual64, IR::Type::U64, true, false); // F = always false
+			return true;
+		case O::V_CMP_LT_I64:
+			EmitIntegerCompare(inst, IR::ValueOpcode::SLessThan64, IR::Type::U64, true, false);
+			return true;
 		case O::V_CMP_EQ_I64:
-		case O::V_CMP_EQ_U64:
-			EmitIntegerCompare(inst, IR::ValueOpcode::IEqual64, IR::Type::U64, false, false);
+			EmitIntegerCompare(inst, IR::ValueOpcode::IEqual64, IR::Type::U64, true, false);
+			return true;
+		case O::V_CMP_LE_I64:
+			EmitIntegerCompare(inst, IR::ValueOpcode::SLessThanEqual64, IR::Type::U64, true, false);
+			return true;
+		case O::V_CMP_GT_I64:
+			EmitIntegerCompare(inst, IR::ValueOpcode::SGreaterThan64, IR::Type::U64, true, false);
+			return true;
+		case O::V_CMP_NE_I64:
+			EmitIntegerCompare(inst, IR::ValueOpcode::INotEqual64, IR::Type::U64, true, false);
+			return true;
+		case O::V_CMP_GE_I64:
+			EmitIntegerCompare(inst, IR::ValueOpcode::SGreaterThanEqual64, IR::Type::U64, true, false);
+			return true;
+		case O::V_CMP_T_I64:
+			EmitIntegerCompare(inst, IR::ValueOpcode::IEqual64, IR::Type::U64, true, false); // T = always true (uses src==src)
+			return true;
+		// V_CMPX_*_I64 (signed 64-bit, exec-setting)
+		case O::V_CMPX_F_I64:
+			EmitIntegerCompare(inst, IR::ValueOpcode::IEqual64, IR::Type::U64, true, true);
+			return true;
+		case O::V_CMPX_LT_I64:
+			EmitIntegerCompare(inst, IR::ValueOpcode::SLessThan64, IR::Type::U64, true, true);
+			return true;
+		case O::V_CMPX_EQ_I64:
+			EmitIntegerCompare(inst, IR::ValueOpcode::IEqual64, IR::Type::U64, true, true);
+			return true;
+		case O::V_CMPX_LE_I64:
+			EmitIntegerCompare(inst, IR::ValueOpcode::SLessThanEqual64, IR::Type::U64, true, true);
+			return true;
+		case O::V_CMPX_GT_I64:
+			EmitIntegerCompare(inst, IR::ValueOpcode::SGreaterThan64, IR::Type::U64, true, true);
+			return true;
+		case O::V_CMPX_NE_I64:
+			EmitIntegerCompare(inst, IR::ValueOpcode::INotEqual64, IR::Type::U64, true, true);
+			return true;
+		case O::V_CMPX_GE_I64:
+			EmitIntegerCompare(inst, IR::ValueOpcode::SGreaterThanEqual64, IR::Type::U64, true, true);
+			return true;
+		case O::V_CMPX_T_I64:
+			EmitIntegerCompare(inst, IR::ValueOpcode::IEqual64, IR::Type::U64, true, true);
+			return true;
+		// V_CMP_*_U64 (unsigned 64-bit, non-exec)
+		case O::V_CMP_F_U64:
+			EmitIntegerCompare(inst, IR::ValueOpcode::IEqual64, IR::Type::U64, false, false); // F = always false
 			return true;
 		case O::V_CMP_LT_U64:
 			EmitIntegerCompare(inst, IR::ValueOpcode::ULessThan64, IR::Type::U64, false, false);
+			return true;
+		case O::V_CMP_EQ_U64:
+			EmitIntegerCompare(inst, IR::ValueOpcode::IEqual64, IR::Type::U64, false, false);
+			return true;
+		case O::V_CMP_LE_U64:
+			EmitIntegerCompare(inst, IR::ValueOpcode::ULessThanEqual64, IR::Type::U64, false, false);
 			return true;
 		case O::V_CMP_GT_U64:
 			EmitIntegerCompare(inst, IR::ValueOpcode::UGreaterThan64, IR::Type::U64, false, false);
@@ -109,9 +166,36 @@ bool Translator::EmitVector(const Decoder::Instruction& inst) {
 		case O::V_CMP_NE_U64:
 			EmitIntegerCompare(inst, IR::ValueOpcode::INotEqual64, IR::Type::U64, false, false);
 			return true;
-		case O::V_CMPX_NE_I64:
+		case O::V_CMP_GE_U64:
+			EmitIntegerCompare(inst, IR::ValueOpcode::UGreaterThanEqual64, IR::Type::U64, false, false);
+			return true;
+		case O::V_CMP_T_U64:
+			EmitIntegerCompare(inst, IR::ValueOpcode::IEqual64, IR::Type::U64, false, false); // T = always true
+			return true;
+		// V_CMPX_*_U64 (unsigned 64-bit, exec-setting)
+		case O::V_CMPX_F_U64:
+			EmitIntegerCompare(inst, IR::ValueOpcode::IEqual64, IR::Type::U64, false, true);
+			return true;
+		case O::V_CMPX_LT_U64:
+			EmitIntegerCompare(inst, IR::ValueOpcode::ULessThan64, IR::Type::U64, false, true);
+			return true;
+		case O::V_CMPX_EQ_U64:
+			EmitIntegerCompare(inst, IR::ValueOpcode::IEqual64, IR::Type::U64, false, true);
+			return true;
+		case O::V_CMPX_LE_U64:
+			EmitIntegerCompare(inst, IR::ValueOpcode::ULessThanEqual64, IR::Type::U64, false, true);
+			return true;
+		case O::V_CMPX_GT_U64:
+			EmitIntegerCompare(inst, IR::ValueOpcode::UGreaterThan64, IR::Type::U64, false, true);
+			return true;
 		case O::V_CMPX_NE_U64:
 			EmitIntegerCompare(inst, IR::ValueOpcode::INotEqual64, IR::Type::U64, false, true);
+			return true;
+		case O::V_CMPX_GE_U64:
+			EmitIntegerCompare(inst, IR::ValueOpcode::UGreaterThanEqual64, IR::Type::U64, false, true);
+			return true;
+		case O::V_CMPX_T_U64:
+			EmitIntegerCompare(inst, IR::ValueOpcode::IEqual64, IR::Type::U64, false, true);
 			return true;
 
 		case O::V_CMP_EQ_U16:
@@ -446,64 +530,64 @@ bool Translator::EmitVector(const Decoder::Instruction& inst) {
 			return SimpleInteger(inst, IR::ValueOpcode::UMax32, IR::Type::U32, false, false, false);
 		case O::V_MIN3_I32:
 			return SimpleInteger(inst, IR::ValueOpcode::SMinTri32, IR::Type::U32, false, false,
-			                     false);
+					     false);
 		case O::V_MAX3_I32:
 			return SimpleInteger(inst, IR::ValueOpcode::SMaxTri32, IR::Type::U32, false, false,
-			                     false);
+					     false);
 		case O::V_MED3_I32:
 			return SimpleInteger(inst, IR::ValueOpcode::SMedTri32, IR::Type::U32, false, false,
-			                     false);
+					     false);
 		case O::V_MIN3_U32:
 			return SimpleInteger(inst, IR::ValueOpcode::UMinTri32, IR::Type::U32, false, false,
-			                     false);
+					     false);
 		case O::V_MAX3_U32:
 			return SimpleInteger(inst, IR::ValueOpcode::UMaxTri32, IR::Type::U32, false, false,
-			                     false);
+					     false);
 		case O::V_MED3_U32:
 			return SimpleInteger(inst, IR::ValueOpcode::UMedTri32, IR::Type::U32, false, false,
-			                     false);
+					     false);
 		case O::V_AND_B32:
 			return SimpleInteger(inst, IR::ValueOpcode::BitwiseAnd32, IR::Type::U32, false, false,
-			                     false);
+					     false);
 		case O::V_OR_B32:
 			return SimpleInteger(inst, IR::ValueOpcode::BitwiseOr32, IR::Type::U32, false, false,
-			                     false);
+					     false);
 		case O::V_XOR_B32:
 			return SimpleInteger(inst, IR::ValueOpcode::BitwiseXor32, IR::Type::U32, false, false,
-			                     false);
+					     false);
 		case O::V_NOT_B32:
 			return SimpleInteger(inst, IR::ValueOpcode::BitwiseNot32, IR::Type::U32, false, false,
-			                     false);
+					     false);
 		case O::V_BFREV_B32:
 			return SimpleInteger(inst, IR::ValueOpcode::BitReverse32, IR::Type::U32, false, false,
-			                     false);
+					     false);
 		case O::V_FFBL_B32:
 			return SimpleInteger(inst, IR::ValueOpcode::FindILsb32, IR::Type::U32, false, false,
-			                     false);
+					     false);
 		case O::V_LSHL_B32:
 			return SimpleInteger(inst, IR::ValueOpcode::ShiftLeftLogical32, IR::Type::U32, false,
-			                     true, false);
+					     true, false);
 		case O::V_LSHLREV_B32:
 			return SimpleInteger(inst, IR::ValueOpcode::ShiftLeftLogical32, IR::Type::U32, true,
-			                     true, false);
+					     true, false);
 		case O::V_LSHR_B32:
 			return SimpleInteger(inst, IR::ValueOpcode::ShiftRightLogical32, IR::Type::U32, false,
-			                     true, false);
+					     true, false);
 		case O::V_LSHRREV_B32:
 			return SimpleInteger(inst, IR::ValueOpcode::ShiftRightLogical32, IR::Type::U32, true,
-			                     true, false);
+					     true, false);
 		case O::V_ASHR_I32:
 			return SimpleInteger(inst, IR::ValueOpcode::ShiftRightArithmetic32, IR::Type::U32,
-			                     false, true, false);
+					     false, true, false);
 		case O::V_ASHRREV_I32:
 			return SimpleInteger(inst, IR::ValueOpcode::ShiftRightArithmetic32, IR::Type::U32, true,
-			                     true, false);
+					     true, false);
 		case O::V_LSHLREV_B64:
 			return SimpleInteger(inst, IR::ValueOpcode::ShiftLeftLogical64, IR::Type::U64, true,
-			                     false, false);
+					     false, false);
 		case O::V_LSHRREV_B64:
 			return SimpleInteger(inst, IR::ValueOpcode::ShiftRightLogical64, IR::Type::U64, true,
-			                     false, false);
+					     false, false);
 
 		case O::V_XNOR_B32:
 			return ComposedIntegerBinary(inst, IR::ValueOpcode::BitwiseXor32, false, true, false);

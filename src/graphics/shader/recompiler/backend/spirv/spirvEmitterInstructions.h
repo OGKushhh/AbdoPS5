@@ -26,7 +26,7 @@ EMIT_NATIVE(CompositeConstructU32x2, OpCompositeConstruct, U32x2, uint32_t, uint
 EMIT_NATIVE(CompositeConstructU32x3, OpCompositeConstruct, U32x3, uint32_t, uint32_t, uint32_t)
 EMIT_NATIVE(CompositeConstructF32x2, OpCompositeConstruct, F32x2, uint32_t, uint32_t)
 EMIT_NATIVE(CompositeConstructU32x4, OpCompositeConstruct, U32x4, uint32_t, uint32_t, uint32_t,
-            uint32_t)
+	    uint32_t)
 uint32_t              EmitCompositeExtractU64(EmitterState& state, uint32_t arg0, IR::Value arg1);
 inline constexpr auto EmitCompositeExtractU32x2 = EmitCompositeExtractU64;
 inline constexpr auto EmitCompositeExtractU32x3 = EmitCompositeExtractU64;
@@ -99,6 +99,12 @@ uint32_t EmitINotEqual64(EmitterState& state, uint32_t arg0, uint32_t arg1);
 uint32_t EmitULessThan64(EmitterState& state, uint32_t arg0, uint32_t arg1);
 uint32_t EmitSLessThan64(EmitterState& state, uint32_t arg0, uint32_t arg1);
 uint32_t EmitUGreaterThan64(EmitterState& state, uint32_t arg0, uint32_t arg1);
+// Kyty-001: Add missing 64-bit comparison emitters for V_CMP_*_{U,I}64
+uint32_t EmitULessThanEqual64(EmitterState& state, uint32_t arg0, uint32_t arg1);
+uint32_t EmitSLessThanEqual64(EmitterState& state, uint32_t arg0, uint32_t arg1);
+uint32_t EmitSGreaterThan64(EmitterState& state, uint32_t arg0, uint32_t arg1);
+uint32_t EmitSGreaterThanEqual64(EmitterState& state, uint32_t arg0, uint32_t arg1);
+uint32_t EmitUGreaterThanEqual64(EmitterState& state, uint32_t arg0, uint32_t arg1);
 EMIT_NATIVE(LogicalOr, OpLogicalOr, U1, uint32_t, uint32_t)
 EMIT_NATIVE(LogicalAnd, OpLogicalAnd, U1, uint32_t, uint32_t)
 EMIT_NATIVE(LogicalXor, OpLogicalNotEqual, U1, uint32_t, uint32_t)
