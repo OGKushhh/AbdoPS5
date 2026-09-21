@@ -57,17 +57,12 @@ struct MemoryInfo {
 	uint32_t                image_sample_flags       = 0;
 	Decoder::ImageDimension image_dimension          = Decoder::ImageDimension::Unknown;
 	uint32_t                image_address_components = 0;
-	uint32_t                image_nsa_dwords         = 0;
-	uint32_t                image_nsa_addr[Decoder::MaxImageNsaAddressComponents] = {};
-	uint32_t                memory_segment                                        = 0;
 	bool                    address_is_full                                       = false;
 	bool                    data_signed                                           = false;
 	bool                    typed                                                 = false;
 	bool                    formatted                                             = false;
 	bool                    image_has_mip                                         = false;
 	bool                    image_r128                                            = false;
-	bool                    glc                                                   = false;
-	bool                    slc                                                   = false;
 	bool                    idxen                                                 = false;
 	bool                    offen                                                 = false;
 	bool                    planning_only                                         = false;
@@ -155,12 +150,28 @@ struct SampledResourcePair {
 	bool operator==(const SampledResourcePair& other) const = default;
 };
 
+enum class TessellationAttribute {
+	LocalOutput,
+	ControlInput,
+	ControlOutput,
+	EvaluationInput,
+	PatchOutput,
+	Factor
+};
+
 enum class StageInputKind {
 	VertexIndex,
+	InvocationId,
+	PrimitiveId,
+	TessCoord,
 	InstanceIndex,
 	FragCoord,
 	FrontFacing,
+	PackedAncillary,
+	Layer,
+	SampleId,
 	BaryCoordSmooth,
+	BaryCoordSmoothCentroid,
 	BaryCoordNoPerspective,
 	WorkgroupId,
 	LocalInvocationId,
@@ -178,7 +189,8 @@ enum class StageOutputKind {
 	PointSize,
 	ClipDistance,
 	CullDistance,
-	Layer
+	Layer,
+	ViewportIndex
 };
 
 struct PositionExportComponent {
@@ -251,9 +263,10 @@ struct StageOutput {
 	bool operator==(const StageOutput& other) const = default;
 };
 
-inline constexpr uint32_t FirstImageBinding        = 1u;
-inline constexpr uint32_t FirstStorageImageBinding = 22u;
-inline constexpr uint32_t ImageBindingCount        = 36u;
+inline constexpr uint32_t FirstImageBinding           = 1u;
+inline constexpr uint32_t FirstComparisonImageBinding = 22u;
+inline constexpr uint32_t FirstStorageImageBinding    = 29u;
+inline constexpr uint32_t ImageBindingCount           = 43u;
 
 enum class DescriptorBindingKind : uint32_t {
 	Buffers  = 0u,
@@ -266,11 +279,12 @@ enum class DescriptorBindingKind : uint32_t {
 	Count,
 };
 
-static_assert(static_cast<uint32_t>(DescriptorBindingKind::Samplers) == 37u);
-static_assert(static_cast<uint32_t>(DescriptorBindingKind::Count) == 43u);
+static_assert(static_cast<uint32_t>(DescriptorBindingKind::Samplers) == 44u);
+static_assert(static_cast<uint32_t>(DescriptorBindingKind::Count) == 50u);
 
 struct PushData {
 	static constexpr uint32_t DwordCount = 32;
+	static constexpr uint32_t MeshDrawDwordCount = 6;
 	static constexpr uint32_t NoStart    = UINT32_MAX;
 	std::array<uint32_t, DwordCount> dwords {};
 
@@ -286,8 +300,12 @@ static_assert(sizeof(PushData) == 128);
 constexpr uint32_t NativePushConstantSize = sizeof(PushData);
 
 [[nodiscard]] constexpr uint32_t NativeBinding(ShaderType stage, DescriptorBindingKind kind) {
+	const uint32_t group = stage == ShaderType::Pixel                    ? 1u
+	                       : stage == ShaderType::TessellationControl    ? 2u
+	                       : stage == ShaderType::TessellationEvaluation ? 3u
+	                                                                     : 0u;
 	return static_cast<uint32_t>(kind) +
-	       (stage == ShaderType::Pixel ? static_cast<uint32_t>(DescriptorBindingKind::Count) : 0u);
+	       group * static_cast<uint32_t>(DescriptorBindingKind::Count);
 }
 
 [[nodiscard]] constexpr ImageResourceClass ImageBindingResourceClass(DescriptorBindingKind kind) {
@@ -311,9 +329,9 @@ DescriptorBindingForImage(const ImageResource& image) {
 	constexpr uint32_t SampledFloatBinding = 1u;
 	constexpr uint32_t SampledUintBinding  = 8u;
 	constexpr uint32_t SampledSintBinding  = 15u;
-	constexpr uint32_t StorageFloatBinding = 22u;
-	constexpr uint32_t StorageUintBinding  = 27u;
-	constexpr uint32_t AtomicUintBinding   = 32u;
+	constexpr uint32_t StorageFloatBinding = FirstStorageImageBinding;
+	constexpr uint32_t StorageUintBinding  = StorageFloatBinding + 5u;
+	constexpr uint32_t AtomicUintBinding   = StorageUintBinding + 5u;
 
 	uint32_t base    = 0;
 	bool     sampled = false;
@@ -323,11 +341,16 @@ DescriptorBindingForImage(const ImageResource& image) {
 		}
 		sampled = true;
 		switch (image.numeric_class) {
-			case Prospero::TextureNumericClass::Float: base = SampledFloatBinding; break;
+			case Prospero::TextureNumericClass::Float:
+				base = image.depth_compare ? FirstComparisonImageBinding : SampledFloatBinding;
+				break;
 			case Prospero::TextureNumericClass::Uint: base = SampledUintBinding; break;
 			case Prospero::TextureNumericClass::Sint: base = SampledSintBinding; break;
 			case Prospero::TextureNumericClass::Unsupported: return std::nullopt;
 			default: return std::nullopt;
+		}
+		if (image.depth_compare && image.numeric_class != Prospero::TextureNumericClass::Float) {
+			return std::nullopt;
 		}
 	} else if (image.resource_class == ImageResourceClass::Storage) {
 		if (image.atomic) {
@@ -404,7 +427,7 @@ struct BindingLayout {
 
 struct ShaderInfo {
 	static constexpr uint32_t MaxBuffers      = 32;
-	static constexpr uint32_t MaxImages       = 32;
+	static constexpr uint32_t MaxImages       = 64;
 	static constexpr uint32_t MaxSamplers     = 32;
 	static constexpr uint32_t MaxSampledPairs = 64;
 
@@ -421,18 +444,6 @@ struct ShaderInfo {
 	bool                             uses_dma           = false;
 
 	bool operator==(const ShaderInfo& other) const = default;
-};
-
-struct SpirvRequirements {
-	bool subgroup_ballot              = false;
-	bool subgroup_shuffle             = false;
-	bool subgroup_local_invocation_id = false;
-	bool compute_derivatives          = false;
-	bool image_gather_extended        = false;
-	bool function_lds                 = false;
-	bool function_scratch             = false;
-	bool pixel_valid_mask             = false;
-	bool buffer_int64_atomics         = false;
 };
 
 struct BlockInfo {
@@ -469,6 +480,13 @@ struct SrtRead {
 	bool operator==(const SrtRead& other) const = default;
 };
 
+struct ResourceBlock {
+	// Conditional successors are ordered true, false; an empty condition follows every edge.
+	Value                 condition;
+	std::vector<uint32_t> successors;
+	std::vector<uint32_t> sources;
+};
+
 // Stable shader metadata consumed by the renderer after native IR has been discarded.
 struct CompiledShaderInfo {
 	ShaderType                    stage               = ShaderType::Unknown;
@@ -482,10 +500,13 @@ struct CompiledShaderInfo {
 	BindingLayout                 bindings;
 };
 
-struct CompiledSrt;
+struct UniformFillPlan {
+	UniformFill          fill;
+	std::array<Value, 4> values;
+};
 
-// Immutable runtime resource analysis retained by the shader cache. It owns only the native
-// value graph reachable from descriptors/SRT reads, rather than the translated shader CFG.
+// Immutable runtime resource analysis retained by the shader cache. It owns descriptor/SRT,
+// uniform condition and fill values without retaining translated blocks.
 struct ResourcePlan {
 	ResourcePlan() = default;
 	~ResourcePlan();
@@ -502,20 +523,15 @@ struct ResourcePlan {
 	std::list<Inst>                     value_storage;
 	std::vector<MemoryInfo>             memory_info;
 	std::vector<DescriptorSource>       descriptor_sources;
+	std::vector<ResourceBlock>          control_flow;
 	std::vector<uint32_t>               materialization_sources;
 	std::vector<SrtRead>                srt_reads;
 	std::vector<uint8_t>                clean_flat_slots;
-	// Number of values carrying an eval slot (see Inst::GetEvalSlot); 0 when not numbered.
-	uint32_t                            eval_slot_count                = 0;
-	// Lazily built flat evaluation program (SrtWalker.cpp). Null until the first evaluation;
-	// a failed compile is remembered so the interpreter is used without retrying.
-	mutable std::shared_ptr<CompiledSrt> compiled_srt;
-	mutable bool                         compiled_srt_attempted   = false;
-	mutable uint32_t                     compiled_srt_verify_left = 32;
 	bool                                requires_specialization_memory = false;
 	bool                                srt_plan_complete          = false;
 	bool                                resource_tracking_complete = false;
 	ShaderInfo                          info;
+	UniformFillPlan                     uniform_fill;
 };
 
 struct Program: ResourcePlan {
@@ -536,19 +552,18 @@ struct Program: ResourcePlan {
 	CFG::FailureKind              cfg_failure_kind    = CFG::FailureKind::None;
 	std::string                   fallback_reason;
 	std::vector<BlockInfo>        block_info;
-	// Decoded MIMG/VMEM metadata carries details such as RDNA2 NSA address registers and
-	// storage-image swizzles. Typed memory instructions carry a dense index into these shader-local
-	// tables until those fields are consumed by emission.
+	// Typed memory and export instructions reference shader-local metadata by dense index.
+	// Decoder-only details (such as NSA register numbers) have already become IR operands.
 	std::vector<ExportInfo>       export_info;
 	std::vector<Value>            dynamic_reads;
 	bool                          shader_info_complete = false;
 	BindingLayout                 bindings;
 	bool                          binding_layout_complete = false;
 
-	std::optional<SpirvRequirements> spirv_requirements;
 };
 
 std::string ProgramToString(const Program& program);
+bool        HasShaderMemoryWrites(const Program& program);
 
 void  ValidateProgram(const Program& program, bool require_ssa);
 void  ResolveControlFlowIdentities(Program& program);

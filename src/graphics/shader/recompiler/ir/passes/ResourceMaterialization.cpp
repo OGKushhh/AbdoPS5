@@ -953,11 +953,6 @@ ResourcePlan ExtractResourcePlan(const Program& program) {
 		MarkCleanFlatSlots(plan, Source(plan, source->indirect_image->heap_source),
 		                   plan.clean_flat_slots);
 	}
-	uint32_t slot = 0;
-	for (auto& inst: plan.value_storage) {
-		inst.SetEvalSlot(slot++);
-	}
-	plan.eval_slot_count = slot;
 	return plan;
 }
 
