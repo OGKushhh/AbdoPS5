@@ -333,6 +333,13 @@ endif()
 
 set(kyty_emulator_link_libraries common Vulkan::Headers spirv-tools-opt spirv-tools SDL2-static imgui xxhash FFmpeg::ffmpeg fmt::fmt nlohmann_json::nlohmann_json LibAtrac9 kyty_git_version Zydis::Zydis xbyak::xbyak)
 
+# Kyty-011: Cubeb audio backend (lower latency than SDL on Linux/PipeWire).
+# Conditionally linked — only when USE_CUBEB is ON (default ON in 3rdparty/CMakeLists.txt).
+if(USE_CUBEB AND TARGET cubeb)
+        list(APPEND kyty_emulator_link_libraries cubeb)
+        target_compile_definitions(kyty_emulator PRIVATE KYTY_USE_CUBEB=1)
+endif()
+
 # Linux system libraries.
 if(LINUX)
         find_package(Threads REQUIRED)
