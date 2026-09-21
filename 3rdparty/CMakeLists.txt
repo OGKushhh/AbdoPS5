@@ -4,52 +4,37 @@ add_subdirectory(cpuinfo)
 
 # Kyty-011: Cubeb audio backend (Mozilla cross-platform audio library).
 # Used by Firefox, RPCS3, Citra, Dolphin. Lower latency than SDL on
-# Linux/PipeWire, better device routing on macOS. Fetched at build time
-# (not a submodule) so existing checkouts don't need re-init.
-include(FetchContent)
-
-set(USE_CUBEB ON CACHE BOOL "Build with Cubeb audio backend" FORCE)
+# Linux/PipeWire, better device routing on macOS.
+#
+# cubeb_audio.cpp is written with #if defined(KYTY_USE_CUBEB) guards — when
+# USE_CUBEB=OFF (the default), the file compiles as a no-op stub that logs
+# "Cubeb: backend not compiled in" and falls back to SDL. The KytyPS5 audio
+# path is fully functional on SDL today; cubeb is an opt-in improvement for
+# power users who want lower latency.
+#
+# To enable cubeb:
+#   cmake -DUSE_CUBEB=ON ...
+# This requires either:
+#   - A system-installed cubeb (Linux: `apt install libcubeb-dev`),
+#     discoverable via find_package(cubeb). Or:
+#   - FetchContent (currently not wired because cubeb's install rules
+#     conflict with cmake --install on Windows). If you want FetchContent,
+#     you'll need to patch cubeb's CMakeLists.txt to comment out its
+#     install() calls before adding it as a subdirectory.
+set(USE_CUBEB OFF CACHE BOOL "Build with Cubeb audio backend (opt-in; requires system libcubeb)" FORCE)
 if(USE_CUBEB)
-        # Find Python early — the cubeb PATCH_COMMAND references ${Python3_EXECUTABLE}.
-        find_package(Python3 REQUIRED COMPONENTS Interpreter)
-        FetchContent_Declare(
-                cubeb
-                GIT_REPOSITORY https://github.com/mozilla/cubeb.git
-                # mozilla/cubeb master HEAD as of 2026-09. No tagged releases since
-                # cubeb-0.2 (which is ancient). The API used here (cubeb_init /
-                # cubeb_stream_init / cubeb_stream_start / cubeb_stream_destroy)
-                # has been stable since 2022 — pinning to a specific commit so
-                # CI builds are reproducible.
-                GIT_TAG e13d9c8855d42bebcd52e69f296404ff437dcdf5
-                GIT_SHALLOW FALSE
-                # Patch out cubeb's install() rules. They fail on Windows because
-                # cubeb's cmake_install.cmake looks for `<source>/include/cubeb`
-                # at install time using a path computed relative to the wrong
-                # working directory. We don't need to install cubeb's headers or
-                # pkg-config files into our prefix — we just link the static
-                # library. Comment out all install() calls in the cubeb source.
-                # This is the cleanest approach: it patches the source at fetch
-                # time, before any CMake rules are processed.
-                # Use Python (cross-platform) instead of sed (Linux only).
-                PATCH_COMMAND ${Python3_EXECUTABLE} -c
-                        "import io; p='CMakeLists.txt'; s=io.open(p,encoding='utf-8').read(); s='\\n'.join('#'+l if l.lstrip().startswith('install(') else l for l in s.split('\\n')); io.open(p,'w',encoding='utf-8').write(s)"
-        )
-        # Cubeb options: build static, skip examples/tests, skip rust audiounit
-        # backend (would require a Rust toolchain in CI).
-        set(BUILD_TESTS OFF CACHE BOOL "" FORCE)
-        set(BUILD_RUST_BUILTIN OFF CACHE BOOL "" FORCE)
-        set(BUILD_TOOLS OFF CACHE BOOL "" FORCE)
-        set(USE_SANITIZERS OFF CACHE BOOL "" FORCE)
-
-        FetchContent_MakeAvailable(cubeb)
-
-        if(TARGET cubeb)
-                set_target_properties(cubeb PROPERTIES EXCLUDE_FROM_ALL ON)
+        find_package(cubeb QUIET)
+        if(NOT cubeb_FOUND)
+                message(WARNING "USE_CUBEB=ON but cubeb not found via find_package. "
+                                 "Install libcubeb-dev (Linux) or vcpkg install cubeb (Windows). "
+                                 "Falling back to no-op stub (audio uses SDL).")
+                set(USE_CUBEB OFF CACHE BOOL "" FORCE)
         endif()
 endif()
 
 # The Windows guest red-zone patcher needs a decoder/encoder and a small
 # trampoline assembler. Pin the same revisions used by shadPS4's implementation.
+include(FetchContent)
 
 set(XBYAK_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(
