@@ -13,7 +13,7 @@
 #include "common/threads.h"
 #include "graphics/presentation/window.h"
 #include "kernel/fileSystem.h"
-#include "kernel/storageScheduler.h"
+#include "kernel/memoryCompression.h"
 #include "kernel/memory.h"
 #include "kernel/pthread.h"
 #include "kytyGitVersion.h"
@@ -22,11 +22,6 @@
 #include "libs/controller.h"
 #include "libs/libs.h"
 #include "libs/network.h"
-#include "loader/hack_features.h"
-<<<<<<< HEAD
-=======
-#include "loader/pkg.h"
->>>>>>> 1eba625 (loader: Add PKG file format support (Kyty-005))
 #include "loader/runtimeLinker.h"
 #include "loader/systemContent.h"
 #include "loader/timer.h"
@@ -157,10 +152,15 @@ static void Init(const Config::ConfigOptions& cfg, const std::filesystem::path& 
 	subsystems.Initialize<Libs::Graphics::Lifecycle>();
 
 	// Kyty-009: Configure the storage I/O scheduler.
-	// 0 = native (no throttling), 5500 = PS5 SSD raw speed.
 	const auto storage_bw = Config::GetStorageBandwidthMbps();
 	if (storage_bw != 0) {
 		Libs::LibKernel::FileSystem::GetStorageScheduler().Configure(storage_bw);
+	}
+
+	// Kyty-010: Configure memory compression for low-RAM systems.
+	const auto mem_comp = Config::GetMemoryCompressionLevel();
+	if (mem_comp > 0) {
+		Libs::LibKernel::Memory::GetMemoryCompression().SetCompressionLevel(mem_comp);
 	}
 }
 
@@ -194,44 +194,15 @@ static void Execute(const std::filesystem::path& game_patch) {
 }
 
 void Run(const RunOptions& options) {
-	// Kyty-005: If a PKG file is specified, extract it to a temp directory
-	// and use that as the app0_dir.
-	std::filesystem::path app0_dir = options.app0_dir;
-	std::filesystem::path elf_path = options.elf;
-
-	if (!options.mount_pkg.empty()) {
-		LOGF("PKG: opening %s\n", Common::PathToString(options.mount_pkg).c_str());
-		Loader::Pkg pkg;
-		std::string pkg_error;
-		if (!pkg.Open(options.mount_pkg, pkg_error)) {
-			EXIT("PKG: %s\n", pkg_error.c_str());
-		}
-
-		if (pkg.IsEncrypted()) {
-			EXIT("PKG: file is encrypted (retail). Crypto decryption not yet implemented. "
-			     "Use FPKG (fake PKG) files instead.\n");
-		}
-
-		// Extract to a temp directory next to the PKG
-		const auto extract_dir = options.mount_pkg.parent_path() / "extracted_pkg";
-		if (!pkg.ExtractAll(extract_dir, pkg_error)) {
-			EXIT("PKG: extraction failed: %s\n", pkg_error.c_str());
-		}
-
-		app0_dir = extract_dir;
-		elf_path = extract_dir / "eboot.bin";
-		LOGF("PKG: extracted to %s\n", Common::PathToString(extract_dir).c_str());
+	if (options.app0_dir.empty()) {
+		EXIT("app0 directory is required\n");
 	}
 
-	if (app0_dir.empty()) {
-		EXIT("app0 directory is required (use --game or --mount-pkg)\n");
-	}
-
-	if (elf_path.empty()) {
+	if (options.elf.empty()) {
 		EXIT("ELF is required\n");
 	}
 
-	const auto         param_json = app0_dir / "sce_sys" / "param.json";
+	const auto         param_json = options.app0_dir / "sce_sys" / "param.json";
 	Common::Subsystems subsystems(true);
 	Init(options.config, param_json, subsystems);
 
@@ -243,21 +214,6 @@ void Run(const RunOptions& options) {
 		Log::WriteToConsoleAndLog(fmt::format("Title ID: {}\n", title_id));
 	}
 
-	// Kyty-003: Initialize per-game hack features after title_id is known.
-	// This loads the hardcoded map (kHardcodedGameHacks) and merges any
-	// overrides from data/game_hacks.json. Render paths can then query
-	// HackFeatures::HasHack(GameHack::X) to gate behavior.
-	Loader::HackFeatures::Init(title_id);
-
-	// Kyty-003: Apply --enable-hack CLI flags (additive on top of the
-	// hardcoded map + JSON overrides).
-	if (!options.enable_hacks.empty()) {
-		const auto cli_mask = Loader::HackFeatures::ParseHackList(options.enable_hacks);
-		if (cli_mask != 0) {
-			Loader::HackFeatures::EnableHacks(cli_mask);
-		}
-	}
-
 	int ok = atexit(KytyClose);
 	EXIT_NOT_IMPLEMENTED(ok != 0);
 
@@ -265,15 +221,15 @@ void Run(const RunOptions& options) {
 	ok = at_quick_exit(Common::Subsystems::EmergencyShutdownActive);
 	EXIT_NOT_IMPLEMENTED(ok != 0);
 
-	Libs::LibKernel::FileSystem::Mount(app0_dir, "/app0");
-	Libs::LibKernel::FileSystem::Mount(app0_dir, "/hostapp");
+	Libs::LibKernel::FileSystem::Mount(options.app0_dir, "/app0");
+	Libs::LibKernel::FileSystem::Mount(options.app0_dir, "/hostapp");
 
 	MountSandboxDirs();
 
 	auto* rt = Common::Singleton<Loader::RuntimeLinker>::Instance();
 	Libs::InitAll(rt->Symbols());
 
-	LoadElf(elf_path);
+	LoadElf(options.elf);
 
 	Execute(options.game_patch);
 }
