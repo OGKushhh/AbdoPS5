@@ -47,6 +47,14 @@ const std::string& GetAudioInputDevice() {
 	return g_config->audio_input_device;
 }
 
+const std::string& GetAudioBackend() { // Kyty-011
+	return g_config->audio_backend;
+}
+
+uint32_t GetStorageBandwidthMbps() { // Kyty-009
+	return g_config->storage_bandwidth_mbps;
+}
+
 PresentMode GetPresentMode() {
 	return g_config->present_mode;
 }

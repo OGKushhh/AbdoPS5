@@ -13,6 +13,7 @@
 #include "common/threads.h"
 #include "graphics/presentation/window.h"
 #include "kernel/fileSystem.h"
+#include "kernel/storageScheduler.h"
 #include "kernel/memory.h"
 #include "kernel/pthread.h"
 #include "kytyGitVersion.h"
@@ -154,6 +155,13 @@ static void Init(const Config::ConfigOptions& cfg, const std::filesystem::path& 
 	subsystems.Initialize<Libs::Controller::Lifecycle>();
 	subsystems.Initialize<Libs::Audio::Lifecycle>();
 	subsystems.Initialize<Libs::Graphics::Lifecycle>();
+
+	// Kyty-009: Configure the storage I/O scheduler.
+	// 0 = native (no throttling), 5500 = PS5 SSD raw speed.
+	const auto storage_bw = Config::GetStorageBandwidthMbps();
+	if (storage_bw != 0) {
+		Libs::LibKernel::FileSystem::GetStorageScheduler().Configure(storage_bw);
+	}
 }
 
 static void LoadElf(const std::filesystem::path& elf, bool dbg_print_reloc = false,

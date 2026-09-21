@@ -57,6 +57,7 @@ static void PrintUsage() {
 	::printf("  --user-id <num>                      Local user ID. Default: %d.\n",
 		 Config::DEFAULT_USER_ID);
 	::printf("  --mic <name>                        Capture from this microphone; omit for silence.\n");
+	::printf("  --storage-bandwidth <mbps>          Storage I/O throttle. 0=native, 5500=PS5 SSD. (Kyty-009)\n");
 	::printf(
 	    "  --present-mode <value>               Fifo, Mailbox, or Immediate. Default: Mailbox.\n");
 	::printf(
@@ -295,6 +296,14 @@ static bool ParseArgs(int argc, char* argv[], RunOptions& options, bool& show_he
 			}
 		} else if (arg == "--mic") {
 			options.config.audio_input_device = value;
+		} else if (arg == "--storage-bandwidth") {
+			// Kyty-009: Storage I/O bandwidth throttle
+			const auto bw = Common::ToInt32(value);
+			if (bw < 0) {
+				::printf("invalid storage bandwidth: %s (must be >= 0)\n", value.c_str());
+				return false;
+			}
+			options.config.storage_bandwidth_mbps = static_cast<uint32_t>(bw);
 		} else if (arg == "--present-mode") {
 			if (!ParseEnum(value, options.config.present_mode)) {
 				::printf("invalid present mode: %s\n", value.c_str());
