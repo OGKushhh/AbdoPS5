@@ -1,0 +1,26 @@
+name: Shader Opcode Coverage
+
+# Kyty-008: CI gate that checks all canonical V_CMP_*_{U,I}64 opcodes
+# are defined in the enum, decoder table, and dispatch switch.
+# This would have caught Kyty-001 (the 25-missing-opcode gap) at build time.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/graphics/shader/recompiler/**'
+      - 'scripts/check_kyty_shader_coverage.py'
+      - '.github/workflows/shader-coverage.yml'
+  pull_request:
+    paths:
+      - 'src/graphics/shader/recompiler/**'
+      - 'scripts/check_kyty_shader_coverage.py'
+      - '.github/workflows/shader-coverage.yml'
+
+jobs:
+  shader-coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check shader opcode coverage
+        run: python3 scripts/check_kyty_shader_coverage.py --verbose
