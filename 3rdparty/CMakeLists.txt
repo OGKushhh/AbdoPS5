@@ -27,7 +27,21 @@ if(USE_CUBEB)
         set(BUILD_RUST_BUILTIN OFF CACHE BOOL "" FORCE)
         set(BUILD_TOOLS OFF CACHE BOOL "" FORCE)
         set(USE_SANITIZERS OFF CACHE BOOL "" FORCE)
+        # Tell cubeb to skip its install() rules. CMAKE_SKIP_INSTALL_RULES=ON
+        # prevents any install() call in a subdirectory from registering an
+        # install target — exactly what we want, since we only need the static
+        # library, not the headers/pkg-config in our install prefix.
+        # (Without this, `cmake --install` fails on Windows because cubeb's
+        # cmake_install.cmake looks for `<source>/include/cubeb` at install
+        # time using a path computed relative to the wrong working directory.)
+        set(CMAKE_SKIP_INSTALL_RULES ON CACHE BOOL "" FORCE)
         FetchContent_MakeAvailable(cubeb)
+        # Re-enable install rules for everything AFTER cubeb.
+        set(CMAKE_SKIP_INSTALL_RULES OFF CACHE BOOL "" FORCE)
+        if(TARGET cubeb)
+                # Extra safety: exclude cubeb from the default install set too.
+                set_target_properties(cubeb PROPERTIES EXCLUDE_FROM_ALL ON)
+        endif()
 endif()
 
 # The Windows guest red-zone patcher needs a decoder/encoder and a small

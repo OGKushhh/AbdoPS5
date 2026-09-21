@@ -26,10 +26,18 @@ set_target_properties(kytyps5_nids PROPERTIES OUTPUT_NAME kytyps5-nids)
 target_compile_features(kytyps5_nids PRIVATE cxx_std_17)
 
 # param_sfo_info — links nlohmann_json.
+# NOTE: nlohmann_json's `json::parse` throws on malformed input, and the
+# tool uses try/catch to print a friendly error. KytyPS5 globally builds
+# with -fno-exceptions (set in src/utils.cmake), so we have to explicitly
+# re-enable exceptions for this single file.
 add_executable(kytyps5_param_sfo param_sfo_info.cpp)
 set_target_properties(kytyps5_param_sfo PROPERTIES OUTPUT_NAME kytyps5-param-sfo)
 target_compile_features(kytyps5_param_sfo PRIVATE cxx_std_17)
 target_link_libraries(kytyps5_param_sfo PRIVATE nlohmann_json::nlohmann_json)
+# Re-enable exceptions (overrides the global -fno-exceptions from utils.cmake).
+if(NOT MSVC)
+        target_compile_options(kytyps5_param_sfo PRIVATE -fexceptions)
+endif()
 
 # pkg_inspect — pure C++ stdlib (defines its own packed PkgHeader struct
 # so it stays standalone; doesn't depend on src/loader/pkg.cpp).
