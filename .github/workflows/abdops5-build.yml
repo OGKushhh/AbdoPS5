@@ -146,8 +146,13 @@ jobs:
           if (Test-Path "data") {
             Copy-Item -Path "data" -Destination "$installDir/data" -Recurse -Force
           }
+          # Tools are already installed by CMake's install(TARGETS) to
+          # $installDir/ (TOOLS_INSTALL_DIR="."). Move them into a tools/
+          # subdir for cleanliness. Use Move-Item (not Copy-Item) to
+          # avoid the 'cannot overwrite with itself' error that occurs
+          # when Get-ChildItem -Recurse finds both the source and dest.
           New-Item -ItemType Directory -Force -Path "$installDir/tools"
-          Get-ChildItem -Path "_Build/windows" -Filter "*.exe" -Recurse | Where-Object { $_.Name -match "kytyps5-(elf-info|nids|param-sfo|pkg-inspect)" } | ForEach-Object { Copy-Item $_.FullName "$installDir/tools/" -Force }
+          Get-ChildItem -Path "$installDir" -Filter "kytyps5-*.exe" | ForEach-Object { Move-Item $_.FullName "$installDir/tools/" -Force }
           if (Test-Path "scripts") {
             New-Item -ItemType Directory -Force -Path "$installDir/scripts"
             Copy-Item -Path "scripts/*.py" -Destination "$installDir/scripts/" -Force
