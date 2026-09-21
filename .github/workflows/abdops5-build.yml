@@ -1,99 +1,276 @@
-name: AbdoPS5 Build & Test
-
-# Build AbdoPS5 on Ubuntu and Windows runners to verify compilation.
-# Also runs the shader coverage checker (Kyty-008).
+name: AbdoPS5 Build, Test & Package
 
 on:
   push:
-    branches: [main, main-with-all-fixes, feature/*]
-  pull_request:
     branches: [main, main-with-all-fixes]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  SCCACHE_GHA_ENABLED: "true"
+  KYTY_BUILD_ORIGIN: "Fork"
+  KYTY_BUILD_REPOSITORY: ${{ github.repository }}
 
 jobs:
-  build-linux:
-    runs-on: ubuntu-24.04
+  metadata:
+    name: Prepare metadata
+    runs-on: ubuntu-latest
+    outputs:
+      release_tag: ${{ steps.tag.outputs.value }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Generate release tag
+        id: tag
+        shell: bash
+        run: echo "value=AbdoPS5-$(date -u +'%Y-%m-%d')-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+  windows:
+    name: Build + Test + Package (Windows x64)
+    needs: metadata
+    runs-on: windows-2022
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
         with:
           submodules: recursive
-          fetch-depth: 1
 
-      - name: Install dependencies
+      - name: Setup Visual Studio environment
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Locate vcpkg
+        id: vcpkg
+        shell: pwsh
+        run: |
+          $vcpkgRoot = Split-Path (Get-Command vcpkg).Source
+          $portHash = (Get-FileHash "$vcpkgRoot\ports\glslang\vcpkg.json" -Algorithm SHA256).Hash
+          "root=$vcpkgRoot" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "port_hash=$($portHash.ToLowerInvariant())" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Cache glslang
+        id: glslang_cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.vcpkg.outputs.root }}\installed\x64-windows
+          key: glslang-${{ runner.os }}-${{ runner.arch }}-${{ steps.vcpkg.outputs.port_hash }}-tools-opt
+
+      - name: Install glslang
+        shell: pwsh
+        run: |
+          $vcpkgRoot = "${{ steps.vcpkg.outputs.root }}"
+          if ("${{ steps.glslang_cache.outputs.cache-hit }}" -ne "true") {
+            vcpkg install glslang[tools,opt]:x64-windows
+          }
+          "$vcpkgRoot\installed\x64-windows\tools\glslang" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Install Qt 6.10.3
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.10.3"
+          host: windows
+          target: desktop
+          arch: win64_msvc2022_64
+          cache: true
+
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.11
+
+      - name: Verify toolchain
+        shell: cmd
+        run: |
+          git --version
+          cmake --version
+          ninja --version
+          clang-cl --version
+          glslangValidator --version
+          echo Qt6_DIR=%Qt6_DIR%
+
+      - name: Configure CMake
+        shell: cmd
+        run: |
+          cmake -S . -B _Build/windows ^
+            -G Ninja ^
+            -DCMAKE_BUILD_TYPE=Release ^
+            -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON ^
+            -DKYTY_BUILD_ORIGIN=%KYTY_BUILD_ORIGIN% ^
+            -DKYTY_BUILD_REPOSITORY=%KYTY_BUILD_REPOSITORY% ^
+            -DKYTY_RELEASE_TAG=${{ needs.metadata.outputs.release_tag }} ^
+            -DCMAKE_C_COMPILER=clang-cl ^
+            -DCMAKE_CXX_COMPILER=clang-cl ^
+            -DCMAKE_C_COMPILER_LAUNCHER=sccache ^
+            -DCMAKE_CXX_COMPILER_LAUNCHER=sccache ^
+            -DCMAKE_PREFIX_PATH="%Qt6_DIR%"
+
+      - name: Build emulator + launcher + tools
+        shell: cmd
+        run: |
+          cmake --build _Build/windows ^
+            --target kyty_emulator launcher audio_out2_port_tests ime_dialog_tests virtual_memory_allocation_tests ^
+            --parallel
+
+      - name: Run tests
+        shell: cmd
+        run: |
+          ctest --test-dir _Build/windows --output-on-failure ^
+            -R "^(audio_out2_port|ime_dialog|virtual_memory_allocation)$"
+
+      - name: Run shader coverage check (Kyty-008)
+        shell: pwsh
+        run: |
+          python scripts/check_kyty_shader_coverage.py --verbose
+        continue-on-error: true
+
+      - name: Build standalone tools
+        shell: cmd
+        run: |
+          cmake --build _Build/windows --target nids_tool elf_info param_sfo_info --parallel
+        continue-on-error: true
+
+      - name: Install (collect all binaries + data)
+        shell: cmd
+        run: |
+          cmake --install _Build/windows --prefix _Build/windows/install
+
+      - name: Copy data files
+        shell: pwsh
+        run: |
+          $installDir = "_Build/windows/install"
+          # Copy data directory (NID database, game hacks, shader skips)
+          if (Test-Path "data") {
+            Copy-Item -Path "data" -Destination "$installDir/data" -Recurse -Force
+          }
+          # Copy tools
+          if (Test-Path "_Build/windows/tools") {
+            New-Item -ItemType Directory -Force -Path "$installDir/tools"
+            Copy-Item -Path "_Build/windows/tools/*.exe" -Destination "$installDir/tools/" -Force -ErrorAction SilentlyContinue
+          }
+          # Copy scripts
+          if (Test-Path "scripts") {
+            New-Item -ItemType Directory -Force -Path "$installDir/scripts"
+            Copy-Item -Path "scripts/*.py" -Destination "$installDir/scripts/" -Force
+          }
+          # Copy .github workflow for reference
+          # (skip — not needed in release)
+
+      - name: Create final ZIP
+        shell: pwsh
+        run: |
+          $tag = "${{ needs.metadata.outputs.release_tag }}"
+          $zipPath = "AbdoPS5-Windows-x64.zip"
+          Compress-Archive -Path "_Build/windows/install/*" -DestinationPath $zipPath -CompressionLevel Optimal
+          Write-Host "Created $zipPath"
+          # Show contents
+          $zipSize = (Get-Item $zipPath).Length / 1MB
+          Write-Host "ZIP size: $([math]::Round($zipSize, 1)) MB"
+
+      - name: Upload final ZIP artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AbdoPS5-Windows-x64
+          path: AbdoPS5-Windows-x64.zip
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-windows
+          path: _Build/windows/Testing/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  linux:
+    name: Build + Test (Linux x64)
+    needs: metadata
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install build dependencies
+        shell: bash
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             clang cmake ninja-build \
             libsdl2-dev libvulkan-dev libfreetype-dev \
             nlohmann-json3-dev libfmt-dev libxxhash-dev \
-            libmagic-dev libglslang-dev libspirv-dev \
-            qt6-base-dev libqt6opengl6-dev \
+            libmagic-dev libglslang-tools libspirv-dev \
+            qt6-base-dev qt6-base-dev-tools \
             libavcodec-dev libavformat-dev libavutil-dev libswscale-dev \
-            libxbyak-dev 2>/dev/null || true
+            libswresample-dev libbz2-dev liblzma-dev
+
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.11
+
+      - name: Verify toolchain
+        shell: bash
+        run: |
+          clang++ --version
+          cmake --version
+          ninja --version
+          glslangValidator --version
 
       - name: Configure CMake
+        shell: bash
         run: |
-          mkdir build && cd build
-          cmake .. -G Ninja \
+          cmake -S . -B _Build/linux \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON \
+            -DKYTY_BUILD_ORIGIN="$KYTY_BUILD_ORIGIN" \
+            -DKYTY_BUILD_REPOSITORY="$KYTY_BUILD_REPOSITORY" \
+            -DKYTY_RELEASE_TAG="${{ needs.metadata.outputs.release_tag }}" \
             -DCMAKE_C_COMPILER=clang \
             -DCMAKE_CXX_COMPILER=clang++ \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DENABLE_QT_GUI=ON
+            -DCMAKE_C_COMPILER_LAUNCHER=sccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
 
-      - name: Build
-        run: cmake --build build --parallel $(nproc) 2>&1 || true
-        continue-on-error: true
-
-      - name: Shader coverage check (Kyty-008)
+      - name: Build emulator + launcher + tests
+        shell: bash
         run: |
-          python3 scripts/check_kyty_shader_coverage.py --verbose || true
+          cmake --build _Build/linux \
+            --target kyty_emulator launcher audio_out2_port_tests ime_dialog_tests virtual_memory_allocation_tests \
+            --parallel $(nproc)
+
+      - name: Run tests
+        shell: bash
+        run: |
+          ctest --test-dir _Build/linux --output-on-failure \
+            -R '^(audio_out2_port|ime_dialog|virtual_memory_allocation)$'
+
+      - name: Run shader coverage check (Kyty-008)
+        shell: bash
+        run: |
+          python3 scripts/check_kyty_shader_coverage.py --verbose
         continue-on-error: true
 
-      - name: Upload build logs on failure
-        if: failure()
+      - name: Install + create ZIP
+        shell: bash
+        run: |
+          cmake --install _Build/linux --prefix _Build/linux/install
+          # Copy data files
+          cp -r data _Build/linux/install/ 2>/dev/null || true
+          cp -r scripts _Build/linux/install/ 2>/dev/null || true
+          # Create zip
+          cd _Build/linux/install
+          zip -r ../../AbdoPS5-Linux-x64.zip .
+          cd ../..
+          ls -lh AbdoPS5-Linux-x64.zip
+
+      - name: Upload Linux ZIP artifact
         uses: actions/upload-artifact@v4
         with:
-          name: build-logs-linux
-          path: build/
-
-  build-windows:
-    runs-on: windows-2022
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-          fetch-depth: 1
-
-      - name: Setup vcpkg
-        uses: lukka/run-vcpkg@v11
-        with:
-          vcpkgGitCommitId: 2024.01.12
-
-      - name: Install Qt6
-        uses: jurplel/install-qt-action@v4
-        with:
-          version: '6.7.*'
-          modules: 'qtwidgets qttools qtbase'
-
-      - name: Configure CMake
-        run: |
-          mkdir build
-          cd build
-          cmake .. -G Ninja `
-            -DCMAKE_C_COMPILER=clang-cl `
-            -DCMAKE_CXX_COMPILER=clang-cl `
-            -DCMAKE_BUILD_TYPE=Release `
-            -DENABLE_QT_GUI=ON
-
-      - name: Build
-        run: cmake --build build --parallel $env:NUMBER_OF_PROCESSORS 2>&1
-        continue-on-error: true
-
-      - name: Shader coverage check (Kyty-008)
-        run: |
-          python scripts/check_kyty_shader_coverage.py --verbose
-        continue-on-error: true
+          name: AbdoPS5-Linux-x64
+          path: AbdoPS5-Linux-x64.zip
+          if-no-files-found: error
+          retention-days: 30
 
   shader-coverage:
+    name: Shader opcode coverage check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
