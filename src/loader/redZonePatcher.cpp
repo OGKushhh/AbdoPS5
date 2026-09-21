@@ -5,6 +5,7 @@
 
 #include "common/assert.h"
 #include "common/logging/log.h"
+#include "common/threads.h"
 #include "common/virtualMemory.h"
 #include "loader/x64InstructionEmulator.h"
 
@@ -70,15 +71,24 @@ struct PatchModule {
 };
 
 static std::map<u64, PatchModule> g_patch_modules;
+// Bug #9 fix: mutex protecting g_patch_modules from concurrent access
+static Common::Mutex g_patch_modules_mutex;
 
 static PatchModule* GetContainingModule(const void* ptr) {
+	// Bug #9 fix: lock the mutex during map lookup
+	g_patch_modules_mutex.Lock();
 	auto upper = g_patch_modules.upper_bound(reinterpret_cast<u64>(ptr));
 	if (upper == g_patch_modules.begin()) {
+		g_patch_modules_mutex.Unlock();
 		return nullptr;
 	}
-	auto* module  = &std::prev(upper)->second;
-	auto* address = static_cast<const u8*>(ptr);
-	return address >= module->start && address < module->end ? module : nullptr;
+	--upper;
+	auto* result = (upper->second.module_addr <= reinterpret_cast<u64>(ptr) &&
+		       reinterpret_cast<u64>(ptr) < upper->second.module_addr + upper->second.module_size)
+			  ? &upper->second
+			  : nullptr;
+	g_patch_modules_mutex.Unlock();
+	return result;
 }
 
 static bool HandleTrampolineError(PatchModule* module, const Xbyak::Error& error) {
@@ -163,7 +173,7 @@ uintptr_t GetRelativeTarget(const DecodedCodeInstruction& decoded) {
 
 		ZyanU64 target {};
 		if (ZYAN_SUCCESS(ZydisCalcAbsoluteAddress(&decoded.instruction, &operand, decoded.address,
-		                                          &target))) {
+							  &target))) {
 			return target;
 		}
 	}
@@ -173,8 +183,8 @@ uintptr_t GetRelativeTarget(const DecodedCodeInstruction& decoded) {
 DecodedCodeInstruction DecodeCodeInstruction(uintptr_t address, uintptr_t end) {
 	DecodedCodeInstruction decoded {.address = address};
 	const auto status = ZydisDecoderDecodeFull(&GetDecoder(), reinterpret_cast<void*>(address),
-	                                           end - address, &decoded.instruction,
-	                                           decoded.operands.data());
+						   end - address, &decoded.instruction,
+						   decoded.operands.data());
 	if (!ZYAN_SUCCESS(status)) {
 		decoded.instruction.length = 0;
 		return decoded;
@@ -216,31 +226,31 @@ DecodedCodeInstruction DecodeCodeInstruction(uintptr_t address, uintptr_t end) {
 		    operands[1].type == ZYDIS_OPERAND_TYPE_MEMORY) {
 			decoded.replaces_stack_pointer = true;
 		} else if ((decoded.instruction.mnemonic == ZYDIS_MNEMONIC_ADD ||
-		            decoded.instruction.mnemonic == ZYDIS_MNEMONIC_SUB) &&
-		           operands[0].type == ZYDIS_OPERAND_TYPE_REGISTER &&
-		           IsStackPointerRegister(operands[0].reg.value) &&
-		           operands[1].type == ZYDIS_OPERAND_TYPE_IMMEDIATE) {
+			    decoded.instruction.mnemonic == ZYDIS_MNEMONIC_SUB) &&
+			   operands[0].type == ZYDIS_OPERAND_TYPE_REGISTER &&
+			   IsStackPointerRegister(operands[0].reg.value) &&
+			   operands[1].type == ZYDIS_OPERAND_TYPE_IMMEDIATE) {
 			const s64 immediate = operands[1].imm.is_signed
-			                          ? operands[1].imm.value.s
-			                          : static_cast<s64>(operands[1].imm.value.u);
+						  ? operands[1].imm.value.s
+						  : static_cast<s64>(operands[1].imm.value.u);
 			decoded.stack_pointer_delta =
 			    decoded.instruction.mnemonic == ZYDIS_MNEMONIC_ADD ? immediate : -immediate;
 		} else if (decoded.instruction.mnemonic == ZYDIS_MNEMONIC_LEA &&
-		           operands[0].type == ZYDIS_OPERAND_TYPE_REGISTER &&
-		           IsStackPointerRegister(operands[0].reg.value) &&
-		           operands[1].type == ZYDIS_OPERAND_TYPE_MEMORY &&
-		           IsStackPointerRegister(operands[1].mem.base) &&
-		           operands[1].mem.index == ZYDIS_REGISTER_NONE) {
+			   operands[0].type == ZYDIS_OPERAND_TYPE_REGISTER &&
+			   IsStackPointerRegister(operands[0].reg.value) &&
+			   operands[1].type == ZYDIS_OPERAND_TYPE_MEMORY &&
+			   IsStackPointerRegister(operands[1].mem.base) &&
+			   operands[1].mem.index == ZYDIS_REGISTER_NONE) {
 			decoded.stack_pointer_delta = operands[1].mem.disp.value;
 		} else if (decoded.instruction.mnemonic == ZYDIS_MNEMONIC_PUSH ||
-		           decoded.instruction.mnemonic == ZYDIS_MNEMONIC_PUSHF ||
-		           decoded.instruction.mnemonic == ZYDIS_MNEMONIC_PUSHFD ||
-		           decoded.instruction.mnemonic == ZYDIS_MNEMONIC_PUSHFQ) {
+			   decoded.instruction.mnemonic == ZYDIS_MNEMONIC_PUSHF ||
+			   decoded.instruction.mnemonic == ZYDIS_MNEMONIC_PUSHFD ||
+			   decoded.instruction.mnemonic == ZYDIS_MNEMONIC_PUSHFQ) {
 			decoded.stack_pointer_delta = -static_cast<s64>(sizeof(u64));
 		} else if (decoded.instruction.mnemonic == ZYDIS_MNEMONIC_POP ||
-		           decoded.instruction.mnemonic == ZYDIS_MNEMONIC_POPF ||
-		           decoded.instruction.mnemonic == ZYDIS_MNEMONIC_POPFD ||
-		           decoded.instruction.mnemonic == ZYDIS_MNEMONIC_POPFQ) {
+			   decoded.instruction.mnemonic == ZYDIS_MNEMONIC_POPF ||
+			   decoded.instruction.mnemonic == ZYDIS_MNEMONIC_POPFD ||
+			   decoded.instruction.mnemonic == ZYDIS_MNEMONIC_POPFQ) {
 			decoded.stack_pointer_delta = sizeof(u64);
 		}
 	}
@@ -283,7 +293,7 @@ DecodedCodeInstruction DecodeCodeInstruction(uintptr_t address, uintptr_t end) {
 bool IsSameRegister(ZydisRegister lhs, ZydisRegister rhs) {
 	return lhs != ZYDIS_REGISTER_NONE && rhs != ZYDIS_REGISTER_NONE &&
 	       ZydisRegisterGetLargestEnclosing(ZYDIS_MACHINE_MODE_LONG_64, lhs) ==
-	           ZydisRegisterGetLargestEnclosing(ZYDIS_MACHINE_MODE_LONG_64, rhs);
+		   ZydisRegisterGetLargestEnclosing(ZYDIS_MACHINE_MODE_LONG_64, rhs);
 }
 
 bool WritesRegister(const DecodedCodeInstruction& decoded, ZydisRegister reg) {
@@ -291,15 +301,15 @@ bool WritesRegister(const DecodedCodeInstruction& decoded, ZydisRegister reg) {
 	    std::span {decoded.operands}.first(decoded.instruction.operand_count),
 	    [reg](const ZydisDecodedOperand& operand) {
 		    return operand.type == ZYDIS_OPERAND_TYPE_REGISTER &&
-		           (operand.actions & ZYDIS_OPERAND_ACTION_MASK_WRITE) != 0 &&
-		           IsSameRegister(operand.reg.value, reg);
+			   (operand.actions & ZYDIS_OPERAND_ACTION_MASK_WRITE) != 0 &&
+			   IsSameRegister(operand.reg.value, reg);
 	    });
 }
 
 std::optional<std::vector<uintptr_t>>
 ResolveBoundedJumpTable(const DecodedFunction& function, uintptr_t branch_address,
-                        uintptr_t function_start, uintptr_t function_end, uintptr_t segment_start,
-                        uintptr_t segment_end) {
+			uintptr_t function_start, uintptr_t function_end, uintptr_t segment_start,
+			uintptr_t segment_end) {
 	const auto branch = function.instructions.find(branch_address);
 	if (branch == function.instructions.end() ||
 	    branch->second.instruction.mnemonic != ZYDIS_MNEMONIC_JMP ||
@@ -314,8 +324,8 @@ ResolveBoundedJumpTable(const DecodedFunction& function, uintptr_t branch_addres
 		}
 		const auto previous = std::prev(instruction);
 		return previous->first + previous->second.instruction.length == instruction->first
-		           ? previous
-		           : function.instructions.end();
+			   ? previous
+			   : function.instructions.end();
 	};
 
 	constexpr size_t MaxInterveningInstructions = 4;
@@ -377,8 +387,8 @@ ResolveBoundedJumpTable(const DecodedFunction& function, uintptr_t branch_addres
 				return std::nullopt;
 			}
 			const s64 bound = decoded.operands[1].imm.is_signed
-			                      ? decoded.operands[1].imm.value.s
-			                      : static_cast<s64>(decoded.operands[1].imm.value.u);
+					      ? decoded.operands[1].imm.value.s
+					      : static_cast<s64>(decoded.operands[1].imm.value.u);
 			if (bound < 0) {
 				return std::nullopt;
 			}
@@ -415,7 +425,7 @@ ResolveBoundedJumpTable(const DecodedFunction& function, uintptr_t branch_addres
 		}
 		ZyanU64 absolute_address {};
 		if (!ZYAN_SUCCESS(ZydisCalcAbsoluteAddress(&decoded.instruction, &decoded.operands[1],
-		                                           decoded.address, &absolute_address))) {
+							   decoded.address, &absolute_address))) {
 			return std::nullopt;
 		}
 		return absolute_address;
@@ -464,8 +474,8 @@ ResolveBoundedJumpTable(const DecodedFunction& function, uintptr_t branch_addres
 		for (size_t index = 0; index < *table_size; ++index) {
 			s32 offset;
 			std::memcpy(&offset,
-			            reinterpret_cast<const void*>(table_address + index * sizeof(offset)),
-			            sizeof(offset));
+				    reinterpret_cast<const void*>(table_address + index * sizeof(offset)),
+				    sizeof(offset));
 			const s64 target = static_cast<s64>(table_address) + offset;
 			if (target < static_cast<s64>(function_start) ||
 			    target >= static_cast<s64>(function_end)) {
@@ -488,7 +498,7 @@ ResolveBoundedJumpTable(const DecodedFunction& function, uintptr_t branch_addres
 }
 
 DecodedFunction DecodeFunction(uintptr_t function_start, uintptr_t function_end,
-                               uintptr_t segment_start, uintptr_t segment_end) {
+			       uintptr_t segment_start, uintptr_t segment_end) {
 	DecodedFunction               function;
 	std::vector<uintptr_t>        blocks {function_start};
 	std::unordered_set<uintptr_t> visited;
@@ -529,7 +539,7 @@ DecodedFunction DecodeFunction(uintptr_t function_start, uintptr_t function_end,
 					    branch_target >= function_start && branch_target < function_end) {
 						blocks.push_back(branch_target);
 					} else if (decoded.instruction.meta.category == ZYDIS_CATEGORY_UNCOND_BR &&
-					           branch_target == 0) {
+						   branch_target == 0) {
 						indirect_branches.insert(address);
 					}
 					break;
@@ -544,7 +554,7 @@ DecodedFunction DecodeFunction(uintptr_t function_start, uintptr_t function_end,
 				continue;
 			}
 			const auto targets = ResolveBoundedJumpTable(function, branch_address, function_start,
-			                                             function_end, segment_start, segment_end);
+								     function_end, segment_start, segment_end);
 			if (!targets) {
 				continue;
 			}
@@ -630,8 +640,8 @@ void AnalyzeRedZoneLiveness(DecodedFunction& function) {
 
 			const RedZoneMask translated_live_out =
 			    decoded.stack_pointer_delta.has_value()
-			        ? TranslateRedZoneMask(live_out, *decoded.stack_pointer_delta)
-			        : live_out;
+				? TranslateRedZoneMask(live_out, *decoded.stack_pointer_delta)
+				: live_out;
 			const RedZoneMask new_live_in =
 			    decoded.red_zone_use | (translated_live_out & ~decoded.red_zone_def);
 			if (new_live_in != live_in[reverse_index]) {
@@ -647,11 +657,11 @@ void AnalyzeRedZoneLiveness(DecodedFunction& function) {
 }
 
 bool EncodeRelocatedInstruction(const DecodedCodeInstruction& decoded,
-                                Xbyak::CodeGenerator&         generator) {
+				Xbyak::CodeGenerator&         generator) {
 	ZydisEncoderRequest request;
 	if (!ZYAN_SUCCESS(ZydisEncoderDecodedInstructionToEncoderRequest(
-	        &decoded.instruction, decoded.operands.data(),
-	        decoded.instruction.operand_count_visible, &request))) {
+		&decoded.instruction, decoded.operands.data(),
+		decoded.instruction.operand_count_visible, &request))) {
 		return false;
 	}
 
@@ -660,16 +670,16 @@ bool EncodeRelocatedInstruction(const DecodedCodeInstruction& decoded,
 		if (operand.type == ZYDIS_OPERAND_TYPE_IMMEDIATE && operand.imm.is_relative) {
 			ZyanU64 absolute_address {};
 			if (!ZYAN_SUCCESS(ZydisCalcAbsoluteAddress(&decoded.instruction, &operand,
-			                                           decoded.address, &absolute_address))) {
+								   decoded.address, &absolute_address))) {
 				return false;
 			}
 			request.operands[index].imm.u = absolute_address;
 		} else if (operand.type == ZYDIS_OPERAND_TYPE_MEMORY &&
-		           (operand.mem.base == ZYDIS_REGISTER_RIP ||
-		            operand.mem.base == ZYDIS_REGISTER_EIP)) {
+			   (operand.mem.base == ZYDIS_REGISTER_RIP ||
+			    operand.mem.base == ZYDIS_REGISTER_EIP)) {
 			ZyanU64 absolute_address {};
 			if (!ZYAN_SUCCESS(ZydisCalcAbsoluteAddress(&decoded.instruction, &operand,
-			                                           decoded.address, &absolute_address))) {
+								   decoded.address, &absolute_address))) {
 				return false;
 			}
 			request.operands[index].mem.displacement = static_cast<ZyanI64>(absolute_address);
@@ -679,8 +689,8 @@ bool EncodeRelocatedInstruction(const DecodedCodeInstruction& decoded,
 	std::array<u8, ZYDIS_MAX_INSTRUCTION_LENGTH> encoded {};
 	ZyanUSize                                    encoded_size = encoded.size();
 	if (!ZYAN_SUCCESS(ZydisEncoderEncodeInstructionAbsolute(
-	        &request, encoded.data(), &encoded_size,
-	        reinterpret_cast<ZyanU64>(generator.getCurr())))) {
+		&request, encoded.data(), &encoded_size,
+		reinterpret_cast<ZyanU64>(generator.getCurr())))) {
 		return false;
 	}
 	generator.db(encoded.data(), encoded_size);
@@ -688,7 +698,7 @@ bool EncodeRelocatedInstruction(const DecodedCodeInstruction& decoded,
 }
 
 bool GenerateProtectedIndirectCall(const DecodedCodeInstruction& decoded,
-                                   Xbyak::CodeGenerator&         generator) {
+				   Xbyak::CodeGenerator&         generator) {
 	ASSERT(decoded.instruction.meta.category == ZYDIS_CATEGORY_CALL);
 	const auto& target = decoded.operands[0];
 	ASSERT(target.type == ZYDIS_OPERAND_TYPE_MEMORY && target.size == sizeof(uintptr_t) * CHAR_BIT);
@@ -702,8 +712,8 @@ bool GenerateProtectedIndirectCall(const DecodedCodeInstruction& decoded,
 
 	ZydisEncoderRequest original_request {};
 	if (!ZYAN_SUCCESS(ZydisEncoderDecodedInstructionToEncoderRequest(
-	        &decoded.instruction, decoded.operands.data(),
-	        decoded.instruction.operand_count_visible, &original_request))) {
+		&decoded.instruction, decoded.operands.data(),
+		decoded.instruction.operand_count_visible, &original_request))) {
 		return false;
 	}
 	request.prefixes             = original_request.prefixes & ZYDIS_ATTRIB_HAS_SEGMENT;
@@ -714,7 +724,7 @@ bool GenerateProtectedIndirectCall(const DecodedCodeInstruction& decoded,
 	if (target.mem.base == ZYDIS_REGISTER_RIP || target.mem.base == ZYDIS_REGISTER_EIP) {
 		ZyanU64 absolute_address {};
 		if (!ZYAN_SUCCESS(ZydisCalcAbsoluteAddress(&decoded.instruction, &target, decoded.address,
-		                                           &absolute_address))) {
+							   &absolute_address))) {
 			return false;
 		}
 		request.operands[1].mem.displacement = static_cast<ZyanI64>(absolute_address);
@@ -726,8 +736,8 @@ bool GenerateProtectedIndirectCall(const DecodedCodeInstruction& decoded,
 	std::array<u8, ZYDIS_MAX_INSTRUCTION_LENGTH> encoded {};
 	ZyanUSize                                    encoded_size = encoded.size();
 	if (!ZYAN_SUCCESS(ZydisEncoderEncodeInstructionAbsolute(
-	        &request, encoded.data(), &encoded_size,
-	        reinterpret_cast<ZyanU64>(generator.getCurr())))) {
+		&request, encoded.data(), &encoded_size,
+		reinterpret_cast<ZyanU64>(generator.getCurr())))) {
 		return false;
 	}
 	generator.db(encoded.data(), encoded_size);
@@ -739,8 +749,8 @@ bool GenerateProtectedIndirectCall(const DecodedCodeInstruction& decoded,
 }
 
 void CollectRedZoneMemoryInstructions(const DecodedFunction& function,
-                                      std::map<uintptr_t, InstructionRewrite>& rewrite_sites,
-                                      RedZonePatchResult& result) {
+				      std::map<uintptr_t, InstructionRewrite>& rewrite_sites,
+				      RedZonePatchResult& result) {
 	if (!function.uses_red_zone) {
 		return;
 	}
@@ -784,11 +794,11 @@ struct ReciprocalSquareRootSite {
 };
 
 void CollectReciprocalSquareRoots(const DecodedFunction& function,
-                                 std::map<uintptr_t, InstructionRewrite>& rewrite_sites,
-                                 std::vector<ReciprocalSquareRootSite>& sites) {
+				 std::map<uintptr_t, InstructionRewrite>& rewrite_sites,
+				 std::vector<ReciprocalSquareRootSite>& sites) {
 	for (const auto& [address, decoded]: function.instructions) {
 		if (!X64InstructionEmulator::IsReciprocalSquareRoot(decoded.instruction,
-		                                                    decoded.operands.data())) {
+								    decoded.operands.data())) {
 			continue;
 		}
 		const bool protect_red_zone = decoded.red_zone_live.any();
@@ -800,8 +810,8 @@ void CollectReciprocalSquareRoots(const DecodedFunction& function,
 }
 
 uint64_t ApplyReciprocalSquareRootPatches(const PatchModule& module,
-                                        std::span<const ReciprocalSquareRootSite> sites,
-                                        uint64_t trampoline_addr, uint64_t trampoline_size) {
+					std::span<const ReciprocalSquareRootSite> sites,
+					uint64_t trampoline_addr, uint64_t trampoline_size) {
 	// Validate every required relocation before introducing any traps.
 	for (const auto& site: sites) {
 		if (site.requires_red_zone_protection &&
@@ -822,8 +832,8 @@ uint64_t ApplyReciprocalSquareRootPatches(const PatchModule& module,
 }
 
 void RelocateRedZoneInstructions(PatchModule* module, const DecodedFunction& function,
-                                const std::map<uintptr_t, InstructionRewrite>& rewrite_sites,
-                                RedZonePatchResult& result) {
+				const std::map<uintptr_t, InstructionRewrite>& rewrite_sites,
+				RedZonePatchResult& result) {
 	struct RelocationSpan {
 		std::vector<const DecodedCodeInstruction*> instructions;
 		uintptr_t                                  patch_start {};
@@ -842,8 +852,8 @@ void RelocateRedZoneInstructions(PatchModule* module, const DecodedFunction& fun
 				const bool protected_indirect_call =
 				    rewrite != rewrite_sites.end() && rewrite->second.protected_indirect_call;
 				const bool protect_red_zone = rewrite != rewrite_sites.end() &&
-				                              rewrite->second.protect_red_zone &&
-				                              !protected_indirect_call;
+							      rewrite->second.protect_red_zone &&
+							      !protected_indirect_call;
 				if (protect_red_zone) {
 					module->trampoline_gen.lea(rsp, ptr[rsp - GuestRedZoneSize]);
 				}
@@ -1053,7 +1063,7 @@ void RelocateRedZoneInstructions(PatchModule* module, const DecodedFunction& fun
 			patch_gen.reset();
 			patch_gen.setSize(site - reinterpret_cast<uintptr_t>(patch_gen.getCode()));
 			patch_gen.jmp(reinterpret_cast<void*>(*relay_slot),
-			              Xbyak::CodeGenerator::LabelType::T_SHORT);
+				      Xbyak::CodeGenerator::LabelType::T_SHORT);
 			patch_gen.nop(site_span.patch_size - ShortJumpSize);
 
 			record_rewrites(site_span);
@@ -1066,11 +1076,11 @@ void RelocateRedZoneInstructions(PatchModule* module, const DecodedFunction& fun
 		const auto find_host = [&](uintptr_t short_jump_address) {
 			std::pair<std::optional<RelocationSpan>, std::optional<size_t>> result;
 			const s64 minimum_host = static_cast<s64>(short_jump_address) +
-			                         static_cast<s64>(ShortJumpSize) -
-			                         static_cast<s64>(NearJumpSize) + ShortJumpMin;
+						 static_cast<s64>(ShortJumpSize) -
+						 static_cast<s64>(NearJumpSize) + ShortJumpMin;
 			const s64 maximum_host = static_cast<s64>(short_jump_address) +
-			                         static_cast<s64>(ShortJumpSize) -
-			                         static_cast<s64>(NearJumpSize) + ShortJumpMax;
+						 static_cast<s64>(ShortJumpSize) -
+						 static_cast<s64>(NearJumpSize) + ShortJumpMax;
 
 			auto candidate = function.instructions.lower_bound(
 			    static_cast<uintptr_t>(std::max<s64>(minimum_host, 0)));
@@ -1078,7 +1088,7 @@ void RelocateRedZoneInstructions(PatchModule* module, const DecodedFunction& fun
 			       static_cast<s64>(candidate->first) <= maximum_host;
 			     ++candidate) {
 				RelocationSpan span {.patch_start  = candidate->first,
-				                     .continuation = candidate->first};
+						     .continuation = candidate->first};
 				while (span.patch_size < NearJumpSize * 2) {
 					const auto instruction = function.instructions.find(span.continuation);
 					if (instruction == function.instructions.end() ||
@@ -1105,7 +1115,7 @@ void RelocateRedZoneInstructions(PatchModule* module, const DecodedFunction& fun
 
 				const uintptr_t relay_address = span.patch_start + NearJumpSize;
 				const s64 displacement = static_cast<s64>(relay_address) -
-				                         static_cast<s64>(short_jump_address + ShortJumpSize);
+							 static_cast<s64>(short_jump_address + ShortJumpSize);
 				if (displacement < ShortJumpMin || displacement > ShortJumpMax) {
 					continue;
 				}
@@ -1139,9 +1149,9 @@ void RelocateRedZoneInstructions(PatchModule* module, const DecodedFunction& fun
 				const auto near_slot =
 				    std::ranges::find_if(relay_slots, [current](uintptr_t address) {
 					    const s64 displacement = static_cast<s64>(address) -
-					                             static_cast<s64>(current + ShortJumpSize);
+								     static_cast<s64>(current + ShortJumpSize);
 					    return address != current && displacement >= ShortJumpMin &&
-					           displacement <= ShortJumpMax;
+						   displacement <= ShortJumpMax;
 				    });
 				if (near_slot != relay_slots.end()) {
 					final_relay_slot = *near_slot;
@@ -1197,7 +1207,7 @@ void RelocateRedZoneInstructions(PatchModule* module, const DecodedFunction& fun
 
 			patch_gen.reset();
 			patch_gen.setSize(host_span->patch_start -
-			                  reinterpret_cast<uintptr_t>(patch_gen.getCode()));
+					  reinterpret_cast<uintptr_t>(patch_gen.getCode()));
 			patch_gen.jmp(host_trampoline, Xbyak::CodeGenerator::LabelType::T_NEAR);
 			patch_gen.jmp(site_trampoline, Xbyak::CodeGenerator::LabelType::T_NEAR);
 			patch_gen.nop(host_span->patch_size - NearJumpSize * 2);
@@ -1207,9 +1217,9 @@ void RelocateRedZoneInstructions(PatchModule* module, const DecodedFunction& fun
 		while (final_short_jump != site) {
 			patch_gen.reset();
 			patch_gen.setSize(final_short_jump -
-			                  reinterpret_cast<uintptr_t>(patch_gen.getCode()));
+					  reinterpret_cast<uintptr_t>(patch_gen.getCode()));
 			patch_gen.jmp(reinterpret_cast<void*>(jump_target),
-			              Xbyak::CodeGenerator::LabelType::T_SHORT);
+				      Xbyak::CodeGenerator::LabelType::T_SHORT);
 			jump_target       = final_short_jump;
 			const auto parent = relay_parent.find(final_short_jump);
 			ASSERT(parent != relay_parent.end());
@@ -1221,7 +1231,7 @@ void RelocateRedZoneInstructions(PatchModule* module, const DecodedFunction& fun
 		patch_gen.reset();
 		patch_gen.setSize(site - reinterpret_cast<uintptr_t>(patch_gen.getCode()));
 		patch_gen.jmp(reinterpret_cast<void*>(jump_target),
-		              Xbyak::CodeGenerator::LabelType::T_SHORT);
+			      Xbyak::CodeGenerator::LabelType::T_SHORT);
 		patch_gen.nop(site_span.patch_size - ShortJumpSize);
 
 		if (host_span) {
@@ -1241,14 +1251,18 @@ void RelocateRedZoneInstructions(PatchModule* module, const DecodedFunction& fun
 } // namespace
 
 RedZonePatchResult PatchGuestInstructions(u64 segment_addr, u64 segment_size,
-                                          std::span<const uintptr_t> function_starts,
-                                          bool protect_memory, bool emulate_rsqrt) {
+					  std::span<const uintptr_t> function_starts,
+					  bool protect_memory, bool emulate_rsqrt) {
 	RedZonePatchResult result {};
 	auto*              module = GetContainingModule(reinterpret_cast<void*>(segment_addr));
 	if (module == nullptr || function_starts.empty()) {
 		return result;
 	}
 
+	// Bug #10 fix: prevent integer overflow on segment_end
+	if (segment_size > UINTPTR_MAX - segment_addr) {
+		return result; // overflow — bail out
+	}
 	const uintptr_t        segment_end = segment_addr + segment_size;
 	std::vector<uintptr_t> starts;
 	starts.reserve(function_starts.size());
@@ -1338,7 +1352,7 @@ bool ReadEhValue(const uint8_t** cursor, const uint8_t* end, T* value) {
 }
 
 bool ReadEncodedEhPointer(const uint8_t** cursor, const uint8_t* end, uint8_t encoding,
-                          uintptr_t datarel_base, uintptr_t* value) {
+			  uintptr_t datarel_base, uintptr_t* value) {
 	if (cursor == nullptr || *cursor == nullptr || value == nullptr || encoding == DW_EH_PE_OMIT) {
 		return false;
 	}
@@ -1424,6 +1438,10 @@ bool ReadEncodedEhPointer(const uint8_t** cursor, const uint8_t* end, uint8_t en
 		decoded = base + raw;
 	}
 	if ((encoding & DW_EH_PE_INDIRECT) != 0) {
+		// Bug #11 fix: validate decoded pointer before dereferencing
+		if (decoded == 0) {
+			return false;
+		}
 		const auto* indirect = reinterpret_cast<const uint8_t*>(decoded);
 		uintptr_t   target   = 0;
 		std::memcpy(&target, indirect, sizeof(target));
@@ -1436,7 +1454,7 @@ bool ReadEncodedEhPointer(const uint8_t** cursor, const uint8_t* end, uint8_t en
 } // namespace
 
 bool DecodeEhFrameFunctionStarts(uint64_t eh_frame_header_addr, uint64_t eh_frame_header_size,
-                                 std::vector<uintptr_t>* function_starts) {
+				 std::vector<uintptr_t>* function_starts) {
 	if (function_starts == nullptr) {
 		return false;
 	}
@@ -1461,7 +1479,7 @@ bool DecodeEhFrameFunctionStarts(uint64_t eh_frame_header_addr, uint64_t eh_fram
 
 	uintptr_t ignored_eh_frame = 0;
 	if (!ReadEncodedEhPointer(&cursor, end, eh_frame_encoding, eh_frame_header_addr,
-	                          &ignored_eh_frame)) {
+				  &ignored_eh_frame)) {
 		return false;
 	}
 	if (count_encoding == DW_EH_PE_OMIT || table_encoding == DW_EH_PE_OMIT) {
@@ -1481,9 +1499,9 @@ bool DecodeEhFrameFunctionStarts(uint64_t eh_frame_header_addr, uint64_t eh_fram
 		uintptr_t function_start = 0;
 		uintptr_t ignored_fde    = 0;
 		if (!ReadEncodedEhPointer(&cursor, end, table_encoding, eh_frame_header_addr,
-		                          &function_start) ||
+					  &function_start) ||
 		    !ReadEncodedEhPointer(&cursor, end, table_encoding, eh_frame_header_addr,
-		                          &ignored_fde)) {
+					  &ignored_fde)) {
 			function_starts->clear();
 			return false;
 		}
@@ -1493,16 +1511,19 @@ bool DecodeEhFrameFunctionStarts(uint64_t eh_frame_header_addr, uint64_t eh_fram
 }
 
 void RegisterRedZonePatchModule(void* module_ptr, uint64_t module_size, void* trampoline_area_ptr,
-                                uint64_t trampoline_area_size) {
+				uint64_t trampoline_area_size) {
 #if defined(_WIN32)
 	EXIT_IF(module_ptr == nullptr || module_size == 0 || trampoline_area_ptr == nullptr ||
-	        trampoline_area_size == 0);
+		trampoline_area_size == 0);
 	const auto module_addr = reinterpret_cast<u64>(module_ptr);
+	// Bug #9 fix: lock the mutex during map mutation
+	g_patch_modules_mutex.Lock();
 	g_patch_modules.erase(module_addr);
 	g_patch_modules.emplace(std::piecewise_construct, std::forward_as_tuple(module_addr),
-	                        std::forward_as_tuple(static_cast<u8*>(module_ptr), module_size,
-	                                              static_cast<u8*>(trampoline_area_ptr),
-	                                              trampoline_area_size));
+				std::forward_as_tuple(static_cast<u8*>(module_ptr), module_size,
+						      static_cast<u8*>(trampoline_area_ptr),
+						      trampoline_area_size));
+	g_patch_modules_mutex.Unlock();
 #else
 	(void)module_ptr;
 	(void)module_size;
@@ -1513,7 +1534,10 @@ void RegisterRedZonePatchModule(void* module_ptr, uint64_t module_size, void* tr
 
 void UnregisterRedZonePatchModule(void* module_ptr) {
 #if defined(_WIN32)
+	// Bug #9 fix: lock the mutex during map mutation
+	g_patch_modules_mutex.Lock();
 	g_patch_modules.erase(reinterpret_cast<u64>(module_ptr));
+	g_patch_modules_mutex.Unlock();
 #else
 	(void)module_ptr;
 #endif

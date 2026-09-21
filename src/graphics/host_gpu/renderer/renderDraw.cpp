@@ -674,6 +674,8 @@ static uint64_t VertexBufferDescriptorSize(const ShaderVertexInputBuffer& buffer
 
 	uint64_t size = 0;
 	for (int i = 0; i < buffer.attr_num; i++) {
+		// Bug #12 fix: bounds-check attr_indices against resources_num
+		EXIT_IF(buffer.attr_indices[i] >= info.resources_num);
 		const auto& resource = info.resources[buffer.attr_indices[i]];
 		// RDNA2 OOB_SELECT=2 only checks NumRecords != 0. A constant attribute still
 		// fetches its entire format; NumRecords is not a byte count in this mode.

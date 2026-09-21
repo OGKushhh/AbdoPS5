@@ -1502,6 +1502,9 @@ void RuntimeLinker::Execute(const std::filesystem::path& game_patch) {
 	while (expanded_size < static_cast<size_t>(768) * 1024) {
 		sys_dbg_stack_info_t stack {};
 		SysStackUsage(stack);
+		// Bug #16 fix: guard against zero guard_size causing infinite loop
+		EXIT_IF(stack.guard_size == 0);
+		EXIT_IF(stack.guard_addr == 0);
 		*reinterpret_cast<uint32_t*>(stack.guard_addr) = 0;
 		expanded_size += stack.guard_size;
 	}
@@ -2108,7 +2111,10 @@ void RuntimeLinker::LoadProgramToMemory(Program* program) {
 #endif
 	}
 
-	g_desired_base_addr += CODE_BASE_INCR * (1 + program->mapped_size / CODE_BASE_INCR);
+	// Bug #15 fix: prevent integer overflow on g_desired_base_addr
+	const uint64_t increment = CODE_BASE_INCR * (1 + program->mapped_size / CODE_BASE_INCR);
+	EXIT_IF(g_desired_base_addr > UINT64_MAX - increment);
+	g_desired_base_addr += increment;
 
 	EXIT_IF(program->base_size_aligned < program->base_size);
 	LOGF("base_vaddr             = 0x%016" PRIx64 "\n"
