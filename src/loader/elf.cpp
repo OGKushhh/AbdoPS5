@@ -232,7 +232,7 @@ static void DbgPrintDynamic64(const Elf64_Dyn* dyn, Common::File& f) {
 		DBG_NAME(DT_NULL)
 	}
 	f.Printf("d_tag = 0x%016" PRIx64 ", d_val = 0x%016" PRIx64 ", name = %s\n", dyn->d_tag,
-	         dyn->d_un.d_val, name);
+		 dyn->d_un.d_val, name);
 }
 
 Elf64::~Elf64() {
@@ -250,6 +250,9 @@ void Elf64::LoadSegment(uint64_t vaddr, uint64_t file_offset, uint64_t size) {
 			const auto& seg = m_self_segments[i];
 			if ((seg.type & 0x800u) != 0) {
 				auto phdr_id = ((seg.type >> 20u) & 0xFFFu);
+
+				// Bug #6 fix: bounds-check phdr_id against e_phnum
+				EXIT_NOT_IMPLEMENTED(phdr_id >= m_ehdr->e_phnum);
 
 				const auto& phdr = m_phdr[phdr_id];
 
@@ -284,7 +287,12 @@ void Elf64::LoadSegment(uint64_t vaddr, uint64_t file_offset, uint64_t size) {
 }
 
 const Elf64_Dyn* Elf64::GetDynValue(Elf64_Sxword tag) const {
-	for (const auto* dyn = GetDynamic(); dyn->d_tag != DT_NULL; dyn++) {
+	// Bug #5 fix: guard against null m_dynamic (ELF with no PT_DYNAMIC)
+	const auto* dyn = GetDynamic();
+	if (dyn == nullptr) {
+		return nullptr;
+	}
+	for (; dyn->d_tag != DT_NULL; dyn++) {
 		if (dyn->d_tag == tag) {
 			return dyn;
 		}
@@ -294,7 +302,12 @@ const Elf64_Dyn* Elf64::GetDynValue(Elf64_Sxword tag) const {
 
 std::vector<const Elf64_Dyn*> Elf64::GetDynList(Elf64_Sxword tag) const {
 	std::vector<const Elf64_Dyn*> ret;
-	for (const auto* dyn = GetDynamic(); dyn->d_tag != DT_NULL; dyn++) {
+	// Bug #5 fix: guard against null m_dynamic
+	const auto* dyn = GetDynamic();
+	if (dyn == nullptr) {
+		return ret;
+	}
+	for (; dyn->d_tag != DT_NULL; dyn++) {
 		if (dyn->d_tag == tag) {
 			ret.push_back(dyn);
 		}
@@ -363,7 +376,7 @@ void Elf64::DbgDump(const std::string& folder) {
 		Common::File fout;
 		fout.Create(folder_str + str);
 
-		auto buf = std::make_unique<char[]>(static_cast<uint32_t>(m_phdr[i].p_filesz));
+		EXIT_IF(m_phdr[i].p_filesz > 0xFFFFFFFFULL); auto buf = std::make_unique<char[]>(static_cast<size_t>(m_phdr[i].p_filesz));
 
 		// m_f->Seek(m_phdr[i].p_offset);
 		// m_f->Read(buf, static_cast<uint32_t>(m_phdr[i].p_filesz));
@@ -387,7 +400,7 @@ void Elf64::DbgDump(const std::string& folder) {
 		Common::File fout;
 		fout.Create(folder_str + str);
 
-		auto buf = std::make_unique<char[]>(static_cast<uint32_t>(m_shdr[i].sh_size));
+		EXIT_IF(m_shdr[i].sh_size > 0xFFFFFFFFULL); auto buf = std::make_unique<char[]>(static_cast<size_t>(m_shdr[i].sh_size));
 
 		m_f->Seek(m_shdr[i].sh_offset);
 		m_f->Read(buf.get(), static_cast<uint32_t>(m_shdr[i].sh_size));
@@ -418,8 +431,11 @@ void Elf64::DbgDump(const std::string& folder) {
 	fout.Close();
 
 	fout.Create(folder_str + "dynamic.txt");
-	for (const auto* dyn = GetDynamic(); dyn->d_tag != DT_NULL; dyn++) {
-		DbgPrintDynamic64(dyn, fout);
+	// Bug #5 fix: guard against null m_dynamic
+	if (const auto* dyn = GetDynamic(); dyn != nullptr) {
+		for (; dyn->d_tag != DT_NULL; dyn++) {
+			DbgPrintDynamic64(dyn, fout);
+		}
 	}
 	fout.Close();
 }
@@ -438,9 +454,9 @@ bool Elf64::IsSelf() const {
 	}
 
 	const bool known_magic = (m_self->ident[0] == 0x4f && m_self->ident[1] == 0x15 &&
-	                          m_self->ident[2] == 0x3d && m_self->ident[3] == 0x1d) ||
-	                         (m_self->ident[0] == 0x54 && m_self->ident[1] == 0x14 &&
-	                          m_self->ident[2] == 0xf5 && m_self->ident[3] == 0xee);
+				  m_self->ident[2] == 0x3d && m_self->ident[3] == 0x1d) ||
+				 (m_self->ident[0] == 0x54 && m_self->ident[1] == 0x14 &&
+				  m_self->ident[2] == 0xf5 && m_self->ident[3] == 0xee);
 	if (!known_magic) {
 		return false;
 	}
@@ -608,10 +624,10 @@ void Elf64::Save(const std::filesystem::path& file_name) {
 				continue;
 			}
 
-			auto buf = std::make_unique<char[]>(static_cast<uint32_t>(m_phdr[i].p_filesz));
+			EXIT_IF(m_phdr[i].p_filesz > 0xFFFFFFFFULL); auto buf = std::make_unique<char[]>(static_cast<size_t>(m_phdr[i].p_filesz));
 
 			LoadSegment(reinterpret_cast<uint64_t>(buf.get()), m_phdr[i].p_offset,
-			            m_phdr[i].p_filesz);
+				    m_phdr[i].p_filesz);
 
 			uint32_t bytes_written = 0;
 
@@ -626,7 +642,7 @@ void Elf64::Save(const std::filesystem::path& file_name) {
 				continue;
 			}
 
-			auto buf = std::make_unique<char[]>(static_cast<uint32_t>(m_shdr[i].sh_size));
+			EXIT_IF(m_shdr[i].sh_size > 0xFFFFFFFFULL); auto buf = std::make_unique<char[]>(static_cast<size_t>(m_shdr[i].sh_size));
 
 			m_f->Seek(m_shdr[i].sh_offset);
 			m_f->Read(buf.get(), static_cast<uint32_t>(m_shdr[i].sh_size));

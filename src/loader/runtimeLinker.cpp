@@ -137,10 +137,18 @@ static std::atomic_uint32_t             g_unresolved_stub_call_log_count {0};
 static std::vector<uint64_t>            g_unresolved_stub_thunk_pages;
 static uint64_t                         g_unresolved_stub_thunk_offset = 0;
 static constexpr uint64_t               UNRESOLVED_STUB_PAGE_SIZE      = 4096;
+// Bug #2 fix: mutex protecting g_stubbed_imports against concurrent access
+// from guest threads (ResolveImportStubWithId) and loader threads (RegisterStubbedImport)
+static Common::Mutex g_stubbed_imports_mutex;
 
 static KYTY_SYSV_ABI uint64_t ResolveImportStubWithId(uint64_t record_id);
 
 static bool PatchGuestMemory64(uint64_t vaddr, uint64_t value) {
+	// Bug #3 fix: validate vaddr is non-zero before dereferencing
+	if (vaddr == 0) {
+		LOGF("PatchGuestMemory64: skipping null vaddr\n");
+		return false;
+	}
 	auto* ptr     = reinterpret_cast<uint64_t*>(vaddr);
 	bool  changed = (*ptr != value);
 	std::memcpy(ptr, &value, sizeof(value));
@@ -278,6 +286,9 @@ static uint64_t RegisterStubbedImport(uint32_t index, const Program* program,
 				      const RelocationInfo& ri) {
 	const auto program_name = program != nullptr ? Common::PathToString(program->file_name) : "";
 
+	// Bug #2 fix: lock the mutex to prevent concurrent access from ResolveImportStubWithId
+	std::scoped_lock lock(g_stubbed_imports_mutex);
+
 	for (auto& record: g_stubbed_imports) {
 		if (record.patch_vaddr == ri.vaddr) {
 			record.index   = index;
@@ -298,15 +309,46 @@ static uint64_t RegisterStubbedImport(uint32_t index, const Program* program,
 	record.program     = program_name;
 	g_stubbed_imports.push_back(record);
 	const auto record_id                     = g_stubbed_imports.size() - 1;
-	const auto thunk                         = AllocateUnresolvedImportThunk(record_id);
+	// Unlock before AllocateUnresolvedImportThunk (it allocates memory, takes time)
+	// and re-lock to set thunk_vaddr
+	lock.unlock();
+	const auto thunk = AllocateUnresolvedImportThunk(record_id);
+	lock.lock();
 	g_stubbed_imports[record_id].thunk_vaddr = thunk;
 	return thunk;
 }
 
 static KYTY_SYSV_ABI uint64_t ResolveImportStubWithId(uint64_t record_id) {
-	if (record_id < g_stubbed_imports.size()) {
-		auto& record = g_stubbed_imports[record_id];
-		auto  nid    = record.name;
+	// Bug #2 fix: copy the record under the mutex to avoid use-after-free
+	// when the vector is reallocated by a concurrent RegisterStubbedImport call.
+	// We copy by value so the reference doesn't outlive the lock.
+	std::string nid;
+	std::string record_name;
+	std::string record_program;
+	uint64_t   record_thunk_vaddr = 0;
+	uint64_t   record_patch_vaddr = 0;
+	Loader::SymbolType record_type = Loader::SymbolType::Func;
+	Loader::BindType record_bind = Loader::BindType::Global;
+	uint32_t   record_index = 0;
+	bool       record_valid = false;
+
+	{
+		std::scoped_lock lock(g_stubbed_imports_mutex);
+		if (record_id < g_stubbed_imports.size()) {
+			const auto& record = g_stubbed_imports[record_id];
+			nid = record.name;
+			record_name = record.name;
+			record_program = record.program;
+			record_thunk_vaddr = record.thunk_vaddr;
+			record_patch_vaddr = record.patch_vaddr;
+			record_type = record.type;
+			record_bind = record.bind;
+			record_index = record.index;
+			record_valid = true;
+		}
+	}
+
+	if (record_valid) {
 		auto  pos    = nid.find('[');
 		if (pos != std::string::npos) {
 			nid.resize(pos);
@@ -314,14 +356,14 @@ static KYTY_SYSV_ABI uint64_t ResolveImportStubWithId(uint64_t record_id) {
 
 		SymbolRecord resolved {};
 		if (!nid.empty() &&
-		    Common::Singleton<RuntimeLinker>::Instance()->ResolveLoadedSymbolByNid(nid, record.type,
+		    Common::Singleton<RuntimeLinker>::Instance()->ResolveLoadedSymbolByNid(nid, record_type,
 											   &resolved) &&
-		    resolved.vaddr != 0 && resolved.vaddr != record.thunk_vaddr) {
-			LOGF("Late-resolved import: %s -> %s [0x%016" PRIx64 "]\n", record.name.c_str(),
+		    resolved.vaddr != 0 && resolved.vaddr != record_thunk_vaddr) {
+			LOGF("Late-resolved import: %s -> %s [0x%016" PRIx64 "]\n", record_name.c_str(),
 			     resolved.name.c_str(), resolved.vaddr);
 
-			if (record.patch_vaddr != 0) {
-				PatchGuestMemory64(record.patch_vaddr, resolved.vaddr);
+			if (record_patch_vaddr != 0) {
+				PatchGuestMemory64(record_patch_vaddr, resolved.vaddr);
 			}
 
 			return resolved.vaddr;
@@ -330,14 +372,13 @@ static KYTY_SYSV_ABI uint64_t ResolveImportStubWithId(uint64_t record_id) {
 
 	const auto log_index = g_unresolved_stub_call_log_count.fetch_add(1);
 	if (log_index < 1024) {
-		if (record_id < g_stubbed_imports.size()) {
-			const auto& record = g_stubbed_imports[record_id];
-			printf("Unresolved import stub called: %s\n", record.name.c_str());
+		if (record_valid) {
+			printf("Unresolved import stub called: %s\n", record_name.c_str());
 			LOGF("Unresolved import stub called [%u]: patch_vaddr=0x%016" PRIx64
 			     " jmprela_index=%" PRIu32 " symbol=%s type=%s bind=%s program=%s\n",
-			     log_index, record.patch_vaddr, record.index, record.name.c_str(),
-			     magic_enum::enum_name(record.type), magic_enum::enum_name(record.bind),
-			     record.program.c_str());
+			     log_index, record_patch_vaddr, record_index, record_name.c_str(),
+			     magic_enum::enum_name(record_type), magic_enum::enum_name(record_bind),
+			     record_program.c_str());
 		} else {
 			printf("Unresolved import stub called: <bad-record>\n");
 			LOGF("Unresolved import stub called [%u]: record_id=%" PRIu64 " symbol=<bad-record>\n",
@@ -356,7 +397,11 @@ constexpr uint64_t INVALID_MEMORY   = SYSTEM_RESERVED + INVALID_OFFSET;
 static uint64_t g_desired_base_addr = SYSTEM_RESERVED + CODE_BASE_OFFSET;
 static uint64_t g_invalid_memory    = 0;
 
-static Program*              g_tls_main_program        = nullptr;
+// Bug #8 fix: make g_tls_main_program atomic to prevent TOCTOU use-after-free.
+// Guest threads read this via TlsMainGetAddr(); the loader thread writes it
+// via Clear()/SetTlsMainProgram(). Without atomicity, the guest thread can
+// read a stale pointer that's being concurrently freed.
+static std::atomic<Program*> g_tls_main_program {nullptr};
 static thread_local Program* g_tls_cached_main_program = nullptr;
 static thread_local uint8_t* g_tls_cached_main_tcb     = nullptr;
 
@@ -964,6 +1009,9 @@ static RelocationInfo GetRelocationInfo(Elf64_Rela* r, Program* program) {
 		case R_X86_64_GLOB_DAT:
 		case R_X86_64_JUMP_SLOT: addend = 0; [[fallthrough]];
 		case R_X86_64_64: {
+			// Bug #4 fix: bounds-check symbol index against symbol table size
+			EXIT_IF(static_cast<uint64_t>(symbol) * sizeof(Elf64_Sym) >=
+				program->dynamic_info->symbol_table_total_size);
 			auto         sym          = symbols[symbol];
 			auto         bind         = sym.GetBind();
 			auto         sym_type     = sym.GetType();
@@ -1145,15 +1193,19 @@ static KYTY_SYSV_ABI uint64_t RelocateHandler(RelocateHandlerStack s) {
 }
 
 static KYTY_MS_ABI uint8_t* TlsMainGetAddr() {
-	EXIT_IF(g_tls_main_program == nullptr);
+	// Bug #8 fix: re-validate the program pointer on every call to avoid
+	// TOCTOU use-after-free when Clear() sets g_tls_main_program to nullptr.
+	// We use an atomic snapshot so we never dereference a freed pointer.
+	auto* program = g_tls_main_program.load();
+	EXIT_IF(program == nullptr);
 
-	if (g_tls_cached_main_program == g_tls_main_program && g_tls_cached_main_tcb != nullptr) {
+	if (g_tls_cached_main_program == program && g_tls_cached_main_tcb != nullptr) {
 		return g_tls_cached_main_tcb;
 	}
 
-	g_tls_cached_main_program = g_tls_main_program;
+	g_tls_cached_main_program = program;
 	g_tls_cached_main_tcb =
-	    RuntimeLinker::TlsGetAddr(g_tls_main_program) + g_tls_main_program->tls.tcb_offset;
+	    RuntimeLinker::TlsGetAddr(program) + program->tls.tcb_offset;
 	return g_tls_cached_main_tcb;
 }
 
@@ -1500,7 +1552,7 @@ void RuntimeLinker::Clear() {
 		EXIT_IF(!Libs::LibKernel::Memory::FreeGuestMemory(g_invalid_memory, 4096));
 		g_invalid_memory = 0;
 	}
-	g_tls_main_program        = nullptr;
+	g_tls_main_program.store(nullptr);
 	g_tls_cached_main_program = nullptr;
 	g_tls_cached_main_tcb     = nullptr;
 	g_desired_base_addr       = SYSTEM_RESERVED + CODE_BASE_OFFSET;
@@ -2190,8 +2242,8 @@ void RuntimeLinker::LoadProgramToMemory(Program* program) {
 
 void RuntimeLinker::DeleteProgram(Program* p) {
 	auto program = std::unique_ptr<Program>(p);
-	if (g_tls_main_program == program.get()) {
-		g_tls_main_program = nullptr;
+	if (g_tls_main_program.load() == program.get()) {
+		g_tls_main_program.store(nullptr);
 	}
 	if (g_tls_cached_main_program == program.get()) {
 		g_tls_cached_main_program = nullptr;
@@ -2529,12 +2581,12 @@ void RuntimeLinker::CreateSymbolDatabase(Program* program) {
 
 void RuntimeLinker::SetupTlsHandler(Program* program) {
 	EXIT_IF(program == nullptr);
-	EXIT_IF(g_tls_main_program != nullptr);
+	EXIT_IF(g_tls_main_program.load() != nullptr);
 	EXIT_IF(program->elf == nullptr);
 	EXIT_IF(program->elf->IsShared());
 	EXIT_IF(program->tls.handler_vaddr == 0);
 
-	g_tls_main_program = program;
+	g_tls_main_program.store(program);
 
 	auto* code = new (reinterpret_cast<void*>(program->tls.handler_vaddr)) Jit::SafeCall;
 
