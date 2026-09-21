@@ -96,8 +96,6 @@ private:
 	std::jthread                 m_priority_thread;
 	bool                         m_priority_active      = false;
 	uint64_t                     m_priority_active_tick = 0;
-	uint64_t                     m_last_refresh_qpc     = 0;
-	uint64_t                     m_refresh_interval_qpc = 0;
 	OperationState               m_operation_state      = OperationState::Open;
 };
 

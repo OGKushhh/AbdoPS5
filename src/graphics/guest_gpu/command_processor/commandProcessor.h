@@ -32,11 +32,12 @@ private:
 
 	struct BufferCursor {
 		std::span<const uint32_t> commands;
-		uint32_t                  offset_dw           = 0;
-		uint32_t                  deferred_advance_dw = 0;
+		uint32_t                  offset_dw = 0;
 	};
 
 	std::vector<BufferCursor> m_buffer_stack;
+	std::span<const uint32_t> m_next_buffer;
+	bool                      m_chain         = false;
 	bool                      m_suspended     = false;
 	bool                      m_made_progress = false;
 };
@@ -61,9 +62,6 @@ public:
 
 	void            BufferInit();
 	void            BufferFlush();
-	// Flush wanted for prompt fence completion, not for correctness. Rate-limited: the slice end
-	// always flushes, so deferring only delays a fence by at most one slice.
-	void            RequestBufferFlush();
 	void            BufferFlushAndWait();
 	void            BufferWait();
 	HW::Context&    GetCtx() { return m_ctx; }
@@ -132,7 +130,7 @@ public:
 	[[nodiscard]] bool ShouldSkipPredicatedPackets() const { return m_predicate_skip; }
 
 	Pm4ProcessResult Process(Pm4Execution& execution, std::span<const uint32_t> commands);
-	void             ProcessIndirectBuffer(std::span<const uint32_t> commands);
+	void             ProcessIndirectBuffer(std::span<const uint32_t> commands, bool chain);
 
 	void SetFlip(const FlipInfo& flip) { m_flip = flip; }
 
@@ -146,12 +144,11 @@ private:
 	                      uint32_t cache_action, uint32_t event_index, uint32_t event_write_source,
 	                      void* dst_gpu_addr, T value, uint32_t interrupt_selector,
 	                      uint32_t interrupt_context_id);
-	void ProcessPm4(Pm4Execution& execution, size_t stop_depth);
+	void ProcessPm4(Pm4Execution& execution);
 	void SuspendPm4();
 	CommandScheduler&   GetScheduler() const { return m_renderer.GetCommandScheduler(); }
 	CommandBuffer&      CurrentBuffer() { return GetScheduler().Current(); }
 	void                CheckBuffer() const { GetScheduler().CheckActive(); }
-	GpuResourceManager& GetGpuResources() const { return m_renderer.GetGpuResources(); }
 
 	RenderContext&   m_renderer;
 	HW::Context      m_ctx;
@@ -176,9 +173,9 @@ private:
 
 	FlipInfo  m_flip;
 	const int m_interrupt_event_id;
-	uint64_t m_submit_id      = 0;
-	bool     m_predicate_skip = false;
-	uint64_t m_last_flush_qpc = 0;
+	uint64_t  m_submit_id                   = 0;
+	uint64_t  m_synthetic_occlusion_counter = 0;
+	bool      m_predicate_skip              = false;
 };
 
 } // namespace Libs::Graphics
