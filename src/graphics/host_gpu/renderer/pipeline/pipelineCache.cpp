@@ -13,6 +13,7 @@
 #include "graphics/host_gpu/renderer/render.h"
 #include "graphics/host_gpu/renderer/renderContext.h"
 #include "graphics/shader/recompiler/ShaderRecompiler.h"
+#include "graphics/shader/skipList.h"
 #include "graphics/shader/shaderCompiler.h"
 #include "kernel/memory.h"
 #include "kytyGitVersion.h"
@@ -68,7 +69,7 @@ std::string DriverCacheSignature(const vk::PhysicalDeviceProperties& properties)
 		uuid[i * 2 + 1] = hex[properties.pipelineCacheUUID[i] & 0xfu];
 	}
 	return fmt::format("KytyPC1:{}:{:08x}:{:08x}:{:08x}:{}\n", KYTY_GIT_REVISION,
-	                   properties.vendorID, properties.deviceID, properties.driverVersion, uuid);
+			   properties.vendorID, properties.deviceID, properties.driverVersion, uuid);
 }
 
 std::string PipelineCacheTitleId() {
@@ -98,13 +99,13 @@ bool ReadShaderGuestMemory(void*, uint64_t address, uint32_t* value) {
 }
 
 void DumpShaderSpirv(const char* stage_name, uint64_t shader_hash,
-                     const std::vector<uint32_t>& spirv) {
+		     const std::vector<uint32_t>& spirv) {
 	if (!Config::GraphicsDebugDumpEnabled()) {
 		return;
 	}
 	static std::atomic_int id = 0;
 	const auto path = Config::GetShaderLogFolder() / fmt::format("{:04d}_new_shader_{}_{:016x}.spv",
-	                                                             id++, stage_name, shader_hash);
+								     id++, stage_name, shader_hash);
 	Common::File::CreateDirectories(path.parent_path());
 	Common::File file(path);
 	if (file.IsInvalid()) {
@@ -116,19 +117,19 @@ void DumpShaderSpirv(const char* stage_name, uint64_t shader_hash,
 }
 
 void DumpShaderOriginal(const char* stage_name, uint64_t shader_hash,
-                        std::span<const uint32_t> code, const std::string& decoded_dump) {
+			std::span<const uint32_t> code, const std::string& decoded_dump) {
 	if (!Config::GraphicsDebugDumpEnabled()) {
 		return;
 	}
 	EXIT_IF(code.empty());
 	static std::atomic_int id = 0;
 	const auto base = Config::GetShaderLogFolder() / "original" /
-	                  fmt::format("{:04d}_new_shader_{}_{:016x}", id++, stage_name, shader_hash);
+			  fmt::format("{:04d}_new_shader_{}_{:016x}", id++, stage_name, shader_hash);
 	Common::File::CreateDirectories(base.parent_path());
 	for (const auto& [suffix, data, size]: {
-	         std::tuple {".bin", static_cast<const void*>(code.data()), code.size_bytes()},
-	         std::tuple {".rdna2", static_cast<const void*>(decoded_dump.data()),
-	                     decoded_dump.size()},
+		 std::tuple {".bin", static_cast<const void*>(code.data()), code.size_bytes()},
+		 std::tuple {".rdna2", static_cast<const void*>(decoded_dump.data()),
+			     decoded_dump.size()},
 	     }) {
 		if (size == 0) {
 			continue;
@@ -146,17 +147,17 @@ void DumpShaderOriginal(const char* stage_name, uint64_t shader_hash,
 }
 
 bool ValidateShaderSpirv(const char* label, uint64_t shader_hash,
-                         const std::vector<uint32_t>& spirv) {
+			 const std::vector<uint32_t>& spirv) {
 	if (!Config::ShaderValidationEnabled()) {
 		return true;
 	}
 	spvtools::SpirvTools tools(SPV_ENV_VULKAN_1_3);
 	std::string          messages;
 	tools.SetMessageConsumer([&messages](spv_message_level_t, const char*,
-	                                     const spv_position_t& position, const char* message) {
+					     const spv_position_t& position, const char* message) {
 		messages += fmt::format("{}: {} ({}) {}\n", static_cast<int>(position.line),
-		                        static_cast<int>(position.column), static_cast<int>(position.index),
-		                        message);
+					static_cast<int>(position.column), static_cast<int>(position.index),
+					message);
 	});
 	if (tools.Validate(spirv)) {
 		return true;
@@ -164,13 +165,13 @@ bool ValidateShaderSpirv(const char* label, uint64_t shader_hash,
 	spvtools::SpirvTools disassembler(SPV_ENV_VULKAN_1_2);
 	std::string          text;
 	disassembler.Disassemble(spirv, &text,
-	                         static_cast<uint32_t>(SPV_BINARY_TO_TEXT_OPTION_NO_HEADER) |
-	                             static_cast<uint32_t>(SPV_BINARY_TO_TEXT_OPTION_FRIENDLY_NAMES) |
-	                             static_cast<uint32_t>(SPV_BINARY_TO_TEXT_OPTION_COMMENT) |
-	                             static_cast<uint32_t>(SPV_BINARY_TO_TEXT_OPTION_INDENT) |
-	                             static_cast<uint32_t>(SPV_BINARY_TO_TEXT_OPTION_COLOR));
+				 static_cast<uint32_t>(SPV_BINARY_TO_TEXT_OPTION_NO_HEADER) |
+				     static_cast<uint32_t>(SPV_BINARY_TO_TEXT_OPTION_FRIENDLY_NAMES) |
+				     static_cast<uint32_t>(SPV_BINARY_TO_TEXT_OPTION_COMMENT) |
+				     static_cast<uint32_t>(SPV_BINARY_TO_TEXT_OPTION_INDENT) |
+				     static_cast<uint32_t>(SPV_BINARY_TO_TEXT_OPTION_COLOR));
 	LOGF_COLOR(Log::Color::BrightRed, "%s SPIR-V validation failed hash=0x%016" PRIx64 ":\n%s",
-	           label, shader_hash, messages.c_str());
+		   label, shader_hash, messages.c_str());
 	LOGF("%s\n", text.c_str());
 	return false;
 }
@@ -223,10 +224,10 @@ struct PipelineCache::ProgramCache {
 	static constexpr std::size_t MaxStaticKeyWords = 13 + ShaderVertexInputInfo::RES_MAX * 13;
 
 	Permutation CompilePermutation(const ShaderParams&                          params,
-	                               const ShaderRecompiler::CompileOptions&      options,
-	                               ShaderRecompiler::TranslateResult            translated,
-	                               ShaderRecompiler::IR::ResourceSpecialization specialization,
-	                               uint32_t push_data_start_dword) {
+				       const ShaderRecompiler::CompileOptions&      options,
+				       ShaderRecompiler::TranslateResult            translated,
+				       ShaderRecompiler::IR::ResourceSpecialization specialization,
+				       uint32_t push_data_start_dword) {
 		const char* stage_name = nullptr;
 		switch (options.stage) {
 			case ShaderType::Vertex: stage_name = "vs"; break;
@@ -239,7 +240,7 @@ struct PipelineCache::ProgramCache {
 			default: EXIT("invalid pipeline shader stage\n");
 		}
 		auto result = ShaderRecompiler::CompileProgram(std::move(translated), options,
-		                                               specialization, push_data_start_dword);
+							       specialization, push_data_start_dword);
 		DumpShaderOriginal(stage_name, options.shader_hash, params.code, result.decoded_dump);
 		if (!ValidateShaderSpirv(options.dump_label, options.shader_hash, result.spirv)) {
 			DumpShaderSpirv(stage_name, options.shader_hash, result.spirv);
@@ -263,7 +264,7 @@ struct PipelineCache::ProgramCache {
 
 	template <typename InputInfo>
 	ShaderProgram Get(const ShaderParams& params, InputInfo& input_info,
-	                  uint32_t& push_data_cursor) {
+			  uint32_t& push_data_cursor) {
 		ShaderType stage;
 		if constexpr (std::is_same_v<InputInfo, ShaderVertexInputInfo>) {
 			stage = input_info.logical_stage;
@@ -291,16 +292,16 @@ struct PipelineCache::ProgramCache {
 			EXIT_IF(!ShaderRecompiler::IR::MaterializeResources(
 			    entry->second.resource_plan, runtime, resources, specialization));
 			if (const auto permutation = std::ranges::find_if(
-			        entry->second.permutations, [&](const Permutation& candidate) {
-				        const auto& layout = candidate.program.bindings;
-				        return layout.push_data_start_dword ==
-				                   ShaderRecompiler::IR::PushData::StartFor(
-				                       push_data_cursor, layout.ShaderDataDwords()) &&
-				               candidate.specialization == specialization;
-			        });
+				entry->second.permutations, [&](const Permutation& candidate) {
+					const auto& layout = candidate.program.bindings;
+					return layout.push_data_start_dword ==
+						   ShaderRecompiler::IR::PushData::StartFor(
+						       push_data_cursor, layout.ShaderDataDwords()) &&
+					       candidate.specialization == specialization;
+				});
 			    permutation != entry->second.permutations.end()) {
 				input_info.stage = {.program   = &permutation->program,
-				                    .resources = std::move(resources)};
+						    .resources = std::move(resources)};
 				permutation->program.bindings.AdvancePushData(push_data_cursor);
 				return permutation->handle;
 			}
@@ -348,7 +349,7 @@ struct PipelineCache::ProgramCache {
 		if (entry == programs.end()) {
 			auto resource_plan = ShaderRecompiler::IR::ExtractResourcePlan(translated.program);
 			EXIT_IF(!ShaderRecompiler::IR::MaterializeResources(resource_plan, runtime, resources,
-			                                                    specialization));
+									    specialization));
 			entry = programs.try_emplace(lookup_key, std::move(resource_plan)).first;
 		}
 		entry->second.permutations.push_back(CompilePermutation(
@@ -363,13 +364,13 @@ struct PipelineCache::ProgramCache {
 		}
 		// Guest geometry shaders are compiled through the host mesh stage.
 		std::printf("Shaders: VS %zu | PS %zu | CS %zu | GS %zu | LS %zu | HS %zu | TES %zu\n",
-		            counts[static_cast<size_t>(ShaderType::Vertex)],
-		            counts[static_cast<size_t>(ShaderType::Pixel)],
-		            counts[static_cast<size_t>(ShaderType::Compute)],
-		            counts[static_cast<size_t>(ShaderType::Mesh)],
-		            counts[static_cast<size_t>(ShaderType::Local)],
-		            counts[static_cast<size_t>(ShaderType::TessellationControl)],
-		            counts[static_cast<size_t>(ShaderType::TessellationEvaluation)]);
+			    counts[static_cast<size_t>(ShaderType::Vertex)],
+			    counts[static_cast<size_t>(ShaderType::Pixel)],
+			    counts[static_cast<size_t>(ShaderType::Compute)],
+			    counts[static_cast<size_t>(ShaderType::Mesh)],
+			    counts[static_cast<size_t>(ShaderType::Local)],
+			    counts[static_cast<size_t>(ShaderType::TessellationControl)],
+			    counts[static_cast<size_t>(ShaderType::TessellationEvaluation)]);
 		return permutation.handle;
 	}
 
@@ -419,6 +420,11 @@ void PipelineCache::InitializeDriverCache() {
 	if (title_id.empty()) {
 		return;
 	}
+
+	// Kyty-015: Initialize the shader skip list for this game.
+	// Loads data/shader_skips/<title_id>.json if it exists.
+	Libs::Graphics::ShaderSkipList::Init(title_id);
+
 	if (KYTY_BUILD != KYTY_BUILD_RELEASE) {
 		PipelineCacheLog("Vulkan pipeline cache: disabled (non-Release build)");
 		return;
@@ -456,10 +462,10 @@ void PipelineCache::InitializeDriverCache() {
 			uint32_t hash_read      = 0;
 			uint32_t payload_read   = 0;
 			file.Read(cached_signature.data(), static_cast<uint32_t>(cached_signature.size()),
-			          &signature_read);
+				  &signature_read);
 			file.Read(&payload_hash, sizeof(payload_hash), &hash_read);
 			file.Read(initial_data.data(), static_cast<uint32_t>(initial_data.size()),
-			          &payload_read);
+				  &payload_read);
 			file.Close();
 			if (signature_read != cached_signature.size() || hash_read != sizeof(payload_hash) ||
 			    payload_read != initial_data.size() || cached_signature != signature ||
@@ -481,7 +487,7 @@ void PipelineCache::InitializeDriverCache() {
 	auto result = m_graphics.device.createPipelineCache(&create, nullptr, &m_driver_cache);
 	if (result != vk::Result::eSuccess && !initial_data.empty()) {
 		PipelineCacheLog("Vulkan pipeline cache: driver rejected {} ({}); starting empty", path,
-		                 vk::to_string(result));
+				 vk::to_string(result));
 		initial_data.clear();
 		create.initialDataSize = 0;
 		create.pInitialData    = nullptr;
@@ -494,7 +500,7 @@ void PipelineCache::InitializeDriverCache() {
 	}
 	if (!initial_data.empty()) {
 		PipelineCacheLog("Vulkan pipeline cache: loaded {} bytes from {}", initial_data.size(),
-		                 path);
+				 path);
 	} else {
 		PipelineCacheLog("Vulkan pipeline cache: initialized empty");
 	}
@@ -525,7 +531,7 @@ void PipelineCache::Save() {
 	if (result != vk::Result::eSuccess || size == 0 ||
 	    size > std::numeric_limits<uint32_t>::max()) {
 		PipelineCacheLog("Vulkan pipeline cache: save failed ({}, {} bytes)",
-		                 vk::to_string(result), size);
+				 vk::to_string(result), size);
 		return;
 	}
 	payload.resize(size);
@@ -550,11 +556,11 @@ void PipelineCache::Save() {
 	if (prefix_written != prefix.size() || payload_written != payload.size() || !flushed ||
 	    !Common::File::RenameFile(temp_path, m_driver_cache_path)) {
 		PipelineCacheLog("Vulkan pipeline cache: failed to write {}",
-		                 Common::PathToString(m_driver_cache_path));
+				 Common::PathToString(m_driver_cache_path));
 		return;
 	}
 	PipelineCacheLog("Vulkan pipeline cache: saved {} bytes to {}", payload.size(),
-	                 Common::PathToString(m_driver_cache_path));
+			 Common::PathToString(m_driver_cache_path));
 	m_graphics.device.destroyPipelineCache(m_driver_cache, nullptr);
 	m_driver_cache = nullptr;
 }
@@ -580,7 +586,7 @@ PipelineCache::GraphicsPrograms PipelineCache::GetGraphicsPrograms(
 		const auto  logical_threads =
 		    mesh.threads_num[0] * mesh.threads_num[1] * mesh.threads_num[2];
 		const auto host_threads = ((logical_threads + mesh.wave_size - 1u) / mesh.wave_size) *
-		                          std::min(mesh.host_subgroup_size, mesh.wave_size);
+					  std::min(mesh.host_subgroup_size, mesh.wave_size);
 		if (host_threads > limits.maxMeshWorkGroupInvocations ||
 		    host_threads > limits.maxMeshWorkGroupSize[0] ||
 		    mesh.max_vertices > limits.maxMeshOutputVertices ||
@@ -637,8 +643,8 @@ PipelineCache::GraphicsPrograms PipelineCache::GetGraphicsPrograms(
 }
 
 ShaderProgram PipelineCache::GetComputeProgram(const HW::ComputeShaderInfo& regs,
-                                               const HW::ShaderRegisters&   sh,
-                                               ShaderComputeInputInfo&      input_info) {
+					       const HW::ShaderRegisters&   sh,
+					       ShaderComputeInputInfo&      input_info) {
 	input_info.host_subgroup_size = m_graphics.SupportsComputeWave64() ? 64u : 32u;
 	const auto        params      = PrepareProgram(regs, sh, input_info);
 	Common::LockGuard lock(m_mutex);
@@ -713,11 +719,11 @@ PipelineCache::Pipeline& PipelineCache::GetGraphicsPipeline(
 	if (with_depth) {
 		const auto aspects       = ImageViewOps::DepthAspectMask(depth.desc.view_info.format);
 		rendering.depth_format   = aspects & vk::ImageAspectFlagBits::eDepth
-		                               ? depth.desc.view_info.format
-		                               : vk::Format::eUndefined;
+					       ? depth.desc.view_info.format
+					       : vk::Format::eUndefined;
 		rendering.stencil_format = aspects & vk::ImageAspectFlagBits::eStencil
-		                               ? depth.desc.view_info.format
-		                               : vk::Format::eUndefined;
+					       ? depth.desc.view_info.format
+					       : vk::Format::eUndefined;
 		if (attachment_samples == 0) {
 			attachment_samples = depth.desc.info.samples;
 		} else if (attachment_samples != depth.desc.info.samples) {
@@ -732,7 +738,7 @@ PipelineCache::Pipeline& PipelineCache::GetGraphicsPipeline(
 		    vulkan_sample_count(attachment_samples)));
 	}
 	EXIT_IF(attachment_samples == 0 ||
-	        vulkan_sample_count(attachment_samples) == vk::SampleCountFlagBits {});
+		vulkan_sample_count(attachment_samples) == vk::SampleCountFlagBits {});
 
 	if (ps_active && depth.depth_test_enable && ps_input_info->ps_execute_on_noop) {
 		static std::atomic<uint32_t> log_count {0};
@@ -765,9 +771,9 @@ PipelineCache::Pipeline& PipelineCache::GetGraphicsPipeline(
 
 	if (vs_input_info.stage.program->stage != ShaderType::Mesh) {
 		EXIT_IF(vs_input_info.buffers_num < 0 ||
-		        vs_input_info.buffers_num > ShaderVertexInputInfo::RES_MAX ||
-		        vs_input_info.resources_num < 0 ||
-		        vs_input_info.resources_num > ShaderVertexInputInfo::RES_MAX);
+			vs_input_info.buffers_num > ShaderVertexInputInfo::RES_MAX ||
+			vs_input_info.resources_num < 0 ||
+			vs_input_info.resources_num > ShaderVertexInputInfo::RES_MAX);
 		key.vertex_input.binding_count   = static_cast<uint8_t>(vs_input_info.buffers_num);
 		key.vertex_input.attribute_count = static_cast<uint8_t>(vs_input_info.resources_num);
 		uint32_t attributes_num          = 0;
@@ -777,7 +783,7 @@ PipelineCache::Pipeline& PipelineCache::GetGraphicsPipeline(
 			attributes_num += static_cast<uint32_t>(buffer.attr_num);
 			EXIT_IF(attributes_num > static_cast<uint32_t>(vs_input_info.resources_num));
 			key.vertex_input.bindings[binding] = {.stride   = buffer.stride,
-			                                      .instance = buffer.fetch_index != 0};
+							      .instance = buffer.fetch_index != 0};
 			for (int attribute = 0; attribute < buffer.attr_num; attribute++) {
 				const auto index = buffer.attr_indices[attribute];
 				EXIT_IF(index < 0 || index >= vs_input_info.resources_num);
@@ -807,7 +813,7 @@ PipelineCache::Pipeline& PipelineCache::GetGraphicsPipeline(
 	auto cached = std::make_unique<Pipeline>();
 	LogPipelineTrace("CreatePipelineInternal begin", vs_id, ps_id);
 	CreatePipelineInternal(m_graphics, *cached, rendering, key.vertex_input, vertex_info,
-	                       ps_input_info, programs, static_params, m_driver_cache);
+			       ps_input_info, programs, static_params, m_driver_cache);
 	LogPipelineTrace("CreatePipelineInternal done", vs_id, ps_id);
 
 	EXIT_NOT_IMPLEMENTED(cached->pipeline == nullptr);
@@ -821,7 +827,7 @@ PipelineCache::Pipeline& PipelineCache::GetGraphicsPipeline(
 
 PipelineCache::Pipeline&
 PipelineCache::GetComputePipeline(const ShaderComputeInputInfo& input_info,
-                                  const ShaderProgram&          compute_program) {
+				  const ShaderProgram&          compute_program) {
 	KYTY_PROFILER_BLOCK("PipelineCache::CreatePipeline(Compute)", profiler::colors::RedA100);
 
 	EXIT_IF(!compute_program);

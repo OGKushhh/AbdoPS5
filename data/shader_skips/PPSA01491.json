@@ -1,0 +1,6 @@
+{
+  "_comment": "Kyty-015: Per-game shader skip list for Sifu (PPSA01491). Add shader hashes here to skip them during compilation.",
+  "skips": [],
+  "skip_all_compute": false,
+  "skip_all_graphics": false
+}
