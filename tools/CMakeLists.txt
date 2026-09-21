@@ -54,13 +54,13 @@ install(TARGETS
         kytyps5_pkg_inspect
         RUNTIME DESTINATION ${TOOLS_INSTALL_DIR})
 
-# Copy tools next to the emulator/launcher at build time too, so the build
-# tree is usable without `cmake --install`.
-foreach(tool kytyps5_elf_info kytyps5_nids kytyps5_param_sfo kytyps5_pkg_inspect)
-        add_custom_command(TARGET ${tool} POST_BUILD
-                COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                        $<TARGET_FILE:${tool}>
-                        $<TARGET_FILE_DIR:launcher>/$<TARGET_FILE_NAME:${tool}>
-                COMMENT "Copying ${tool} next to launcher"
-                VERBATIM)
-endforeach()
+# Note: we deliberately do NOT add a POST_BUILD copy step here. Earlier
+# attempts added `cmake -E copy_if_different $<TARGET_FILE:tool>
+# $<TARGET_FILE_DIR:launcher>/...` to put tools next to the launcher
+# during development. But the CI workflow's 'Copy data + scripts + tools'
+# step uses Get-ChildItem -Recurse to find tool .exe files and Copy-Item
+# them to the install dir — when POST_BUILD also copied them next to the
+# launcher (in the same build dir tree), Get-ChildItem found two copies
+# of each tool, and Copy-Item tried to overwrite one with itself, failing
+# with: Cannot overwrite the item ... with itself.
+# The CI step handles deployment; we don't need POST_BUILD here.

@@ -117,11 +117,11 @@ def main():
     # Summary
     total_missing = len(missing_enum) + len(missing_table) + len(missing_dispatch)
     if total_missing == 0:
-        print(f"\n✅ ALL {len(CANONICAL_OPCODES)} V_CMP_*_{{U,I}}64 opcodes are fully covered.")
+        print(f"\n[OK] ALL {len(CANONICAL_OPCODES)} V_CMP_*_{{U,I}}64 opcodes are fully covered.")
         print("   This check would have caught Kyty-001 at build time.")
         return 0
     else:
-        print(f"\n❌ {total_missing} coverage gaps found. See details above.")
+        print(f"\n[FAIL] {total_missing} coverage gaps found. See details above.")
         print("   These gaps will cause EXIT() at Dispatch.cpp:15 when a game uses them.")
         return 1
 
