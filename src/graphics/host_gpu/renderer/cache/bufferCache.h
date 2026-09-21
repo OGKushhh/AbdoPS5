@@ -70,23 +70,30 @@ public:
 	void               ProcessFaultBuffer();
 	void               SynchronizeBuffersInRange(uint64_t vaddr, uint64_t size);
 	void               RunGarbageCollector();
-	// Records host-visible shadows of hot readback buffers written since the last call. Call
-	// before every submit so a CPU read never has to drain the GPU for data already produced.
-	void RecordHotShadows();
 
 private:
 	friend struct BufferCacheTestAccess;
 
-	struct DownloadCopy;
+	bool IsBufferInvalid(BufferId id) const {
+		const auto* buffer = m_slot_buffers.try_get(id);
+		return buffer == nullptr || buffer->is_deleted;
+	}
+
+	using BufferMap = std::map<uint64_t, BufferId>;
+	struct OverlapResult {
+		BufferMap::iterator first;
+		BufferMap::iterator last;
+		uint64_t            begin;
+		uint64_t            end;
+		bool                has_stream_leap;
+	};
+
 	using PageTable = MultiLevelPageTable<BufferId, CACHING_PAGEBITS, 40, 16>;
 	static_assert(CACHING_PAGESIZE == (uint64_t {1} << PageTable::kPageBits));
-	static constexpr uint64_t               DOWNLOAD_ALIGNMENT = 64;
-	[[nodiscard]] static constexpr uint64_t AlignDownload(uint64_t size) noexcept {
-		return (size + DOWNLOAD_ALIGNMENT - 1) & ~(DOWNLOAD_ALIGNMENT - 1);
-	}
-	[[nodiscard]] static std::pair<uint64_t, uint64_t> DownloadEnvelope(const DownloadCopy& copy);
 	void WriteDataBuffer(Buffer& buffer, uint64_t address, const void* source, uint64_t size);
 	void TouchBuffer(const Buffer& buffer);
+	[[nodiscard]] OverlapResult ResolveOverlaps(uint64_t vaddr, uint64_t size);
+	void JoinOverlap(BufferId new_id, BufferId overlap_id, bool accumulate_stream_score);
 	[[nodiscard]] BufferId CreateBuffer(uint64_t vaddr, uint64_t size);
 	void                   Register(BufferId id);
 	void Unregister(BufferId id);
@@ -98,10 +105,8 @@ private:
 	[[nodiscard]] vk::Buffer UploadCopies(Buffer& buffer, std::span<vk::BufferCopy> copies,
 	                                      uint64_t total_size);
 	[[nodiscard]] bool SynchronizeBufferFromImage(Buffer& buffer, uint64_t vaddr, uint64_t size);
-	void DownloadBufferMemory(std::span<const DownloadCopy> copies);
-	void WriteBackShadow(BufferId id, uint64_t tick);
-	void WriteHostMemory(uint64_t vaddr, std::span<const uint8_t> data);
-	void ReadMemoryOnGpu(uint64_t vaddr, uint64_t size, bool is_write);
+	// Queues backing publication; callers wait before clearing dirty pages or reusing their data.
+	[[nodiscard]] bool DownloadBufferMemory(Buffer& buffer, uint64_t vaddr, uint64_t size);
 
 	GraphicContext&                                   m_graphics;
 	CommandScheduler&                                 m_scheduler;
@@ -110,10 +115,9 @@ private:
 	Buffer                                            m_bda_pagetable_buffer;
 	Common::SlotVector<Buffer>                        m_slot_buffers;
 	Common::LeastRecentlyUsedCache<BufferId, uint64_t> m_lru_cache;
-	std::map<uint64_t, BufferId>                      m_buffers;
+	BufferMap                                         m_buffers;
 	PageTable                                         m_page_table;
 	RangeSet                                          m_gpu_modified_ranges;
-	std::vector<BufferId>                             m_hot_written;
 	MemoryTracker                                     m_memory_tracker;
 	StreamBuffer                                      m_staging_buffer;
 	StreamBuffer                                      m_stream_buffer;

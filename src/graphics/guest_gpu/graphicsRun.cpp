@@ -268,9 +268,6 @@ void CommandProcessor::BufferInit() {
 
 void CommandProcessor::BufferFlush() {
 	m_last_flush_qpc = Common::Timer::QueryPerformanceCounter();
-	if (GetScheduler().Active()) {
-		m_renderer.GetGpuResources().GetBufferCache().RecordHotShadows();
-	}
 	GetScheduler().Flush();
 }
 
