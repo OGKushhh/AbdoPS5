@@ -131,7 +131,7 @@ jobs:
       - name: Build standalone tools
         shell: cmd
         run: |
-          cmake --build _Build/windows --target nids_tool elf_info param_sfo_info --parallel
+          cmake --build _Build/windows --target kytyps5_elf_info kytyps5_nids kytyps5_param_sfo kytyps5_pkg_inspect --parallel
         continue-on-error: true
 
       - name: Install (collect all binaries + data)
@@ -147,7 +147,7 @@ jobs:
             Copy-Item -Path "data" -Destination "$installDir/data" -Recurse -Force
           }
           New-Item -ItemType Directory -Force -Path "$installDir/tools"
-          Get-ChildItem -Path "_Build/windows" -Filter "*.exe" -Recurse | Where-Object { $_.Name -match "nids_tool|elf_info|param_sfo" } | ForEach-Object { Copy-Item $_.FullName "$installDir/tools/" -Force }
+          Get-ChildItem -Path "_Build/windows" -Filter "*.exe" -Recurse | Where-Object { $_.Name -match "kytyps5-(elf-info|nids|param-sfo|pkg-inspect)" } | ForEach-Object { Copy-Item $_.FullName "$installDir/tools/" -Force }
           if (Test-Path "scripts") {
             New-Item -ItemType Directory -Force -Path "$installDir/scripts"
             Copy-Item -Path "scripts/*.py" -Destination "$installDir/scripts/" -Force
@@ -257,7 +257,7 @@ jobs:
       - name: Build standalone tools
         shell: bash
         run: |
-          cmake --build _Build/linux --target nids_tool elf_info param_sfo_info --parallel
+          cmake --build _Build/linux --target kytyps5_elf_info kytyps5_nids kytyps5_param_sfo kytyps5_pkg_inspect --parallel
         continue-on-error: true
 
       - name: Install + create ZIP
@@ -267,7 +267,7 @@ jobs:
           cp -r data _Build/linux/install/ 2>/dev/null || true
           cp -r scripts _Build/linux/install/ 2>/dev/null || true
           mkdir -p _Build/linux/install/tools
-          find _Build/linux -maxdepth 2 -name "nids_tool" -o -name "elf_info" -o -name "param_sfo_info" | xargs -I{} cp {} _Build/linux/install/tools/ 2>/dev/null || true
+          find _Build/linux -maxdepth 2 \( -name "kytyps5-elf-info" -o -name "kytyps5-nids" -o -name "kytyps5-param-sfo" -o -name "kytyps5-pkg-inspect" \) | xargs -I{} cp {} _Build/linux/install/tools/ 2>/dev/null || true
           cd $GITHUB_WORKSPACE/_Build/linux/install
           zip -r $GITHUB_WORKSPACE/AbdoPS5-Linux-x64.zip .
           cd $GITHUB_WORKSPACE
