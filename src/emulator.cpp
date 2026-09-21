@@ -21,6 +21,7 @@
 #include "libs/controller.h"
 #include "libs/libs.h"
 #include "libs/network.h"
+#include "loader/hack_features.h"
 #include "loader/runtimeLinker.h"
 #include "loader/systemContent.h"
 #include "loader/timer.h"
@@ -119,12 +120,12 @@ static void ClearDebugTextureFolder() {
 
 	if (!ClearDirectoryContents(debug_texture_folder)) {
 		LOGF_COLOR(Log::Color::BrightYellow, "TextureDump: failed to completely clear %s\n",
-		           debug_texture_folder.c_str());
+			   debug_texture_folder.c_str());
 	}
 }
 
 static void Init(const Config::ConfigOptions& cfg, const std::filesystem::path& param_json,
-                 Common::Subsystems& subsystems) {
+		 Common::Subsystems& subsystems) {
 	EXIT_IF(!Common::Thread::IsMainThread());
 
 	subsystems.Initialize<Config::Lifecycle>();
@@ -152,7 +153,7 @@ static void Init(const Config::ConfigOptions& cfg, const std::filesystem::path& 
 }
 
 static void LoadElf(const std::filesystem::path& elf, bool dbg_print_reloc = false,
-                    const std::filesystem::path& save_name = {}) {
+		    const std::filesystem::path& save_name = {}) {
 	auto* rt = Common::Singleton<Loader::RuntimeLinker>::Instance();
 
 	auto* program = rt->LoadProgram(
@@ -164,7 +165,7 @@ static void LoadElf(const std::filesystem::path& elf, bool dbg_print_reloc = fal
 
 	if (!save_name.empty()) {
 		rt->SaveProgram(program, Libs::LibKernel::FileSystem::GetRealFilename(
-		                             Common::PathToGenericString(save_name)));
+					     Common::PathToGenericString(save_name)));
 	}
 }
 
@@ -199,6 +200,21 @@ void Run(const RunOptions& options) {
 	std::string title_id;
 	if (Loader::SystemContentParamSfoGetString("TITLE_ID", &title_id) && !title_id.empty()) {
 		Log::WriteToConsoleAndLog(fmt::format("Title ID: {}\n", title_id));
+	}
+
+	// Kyty-003: Initialize per-game hack features after title_id is known.
+	// This loads the hardcoded map (kHardcodedGameHacks) and merges any
+	// overrides from data/game_hacks.json. Render paths can then query
+	// HackFeatures::HasHack(GameHack::X) to gate behavior.
+	Loader::HackFeatures::Init(title_id);
+
+	// Kyty-003: Apply --enable-hack CLI flags (additive on top of the
+	// hardcoded map + JSON overrides).
+	if (!options.enable_hacks.empty()) {
+		const auto cli_mask = Loader::HackFeatures::ParseHackList(options.enable_hacks);
+		if (cli_mask != 0) {
+			Loader::HackFeatures::EnableHacks(cli_mask);
+		}
 	}
 
 	int ok = atexit(KytyClose);

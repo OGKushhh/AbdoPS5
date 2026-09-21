@@ -1,0 +1,7 @@
+{
+  "_comment": "Kyty-003: Per-game hack flags. Override or add to the hardcoded map in src/loader/hack_features.cpp. Format: \"PPSA_ID\": [\"HackName1\", \"HackName2\"]. Available hacks: DepthDisable, ComputeDisable, DisableAsyncCompute, DisableSRGB, DisableFMV, SkipUnknownTiling, ForceDepthRangeRestricted, UseColorImageForComparison, SkipShaderAssert, ImageLoadNoReload, MemoryBound, ForcePs4ProMode, ForceDevKitMode",
+  
+  "_example_Sifu": "PPSA01491 is hardcoded to DisableAsyncCompute+ForceDepthRangeRestricted. To ADD SkipShaderAssert without removing the hardcoded hacks, add the entry below — overrides are OR'd with the hardcoded map.",
+
+  "PPSA01491": ["DisableAsyncCompute", "ForceDepthRangeRestricted", "SkipShaderAssert"]
+}

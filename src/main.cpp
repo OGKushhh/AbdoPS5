@@ -33,7 +33,7 @@ static std::string GetBuildString() {
 
 	std::string str =
 	    fmt::format("{}, {}, ver = {}, git = {}, date = {}", type.c_str(), compiler.c_str(),
-	                KYTY_VERSION, KYTY_GIT_VERSION, date.ToString().c_str());
+			KYTY_VERSION, KYTY_GIT_VERSION, date.ToString().c_str());
 
 	return str;
 }
@@ -44,12 +44,16 @@ static void PrintUsage() {
 	::printf("Options:\n");
 	::printf("  --game <dir|elf>                     Game directory or ELF to load.\n");
 	::printf("  --game-patch <json>                  ETAHen cheat file.\n");
+	::printf("  --enable-hack <name,name,...>        Enable per-game hack flags. Available:\n");
+	::printf("                                       DisableAsyncCompute, ForceDepthRangeRestricted,\n");
+	::printf("                                       SkipShaderAssert, DepthDisable, DisableSRGB,\n");
+	::printf("                                       DisableFMV, SkipUnknownTiling, ImageLoadNoReload.\n");
 	::printf("  --screen-width <num>                 Window width. Default: 1280.\n");
 	::printf("  --screen-height <num>                Window height. Default: 720.\n");
 	::printf(
 	    "  --user-name <name>                   Local user name (1-16 bytes). Default: Kyty.\n");
 	::printf("  --user-id <num>                      Local user ID. Default: %d.\n",
-	         Config::DEFAULT_USER_ID);
+		 Config::DEFAULT_USER_ID);
 	::printf("  --mic <name>                        Capture from this microphone; omit for silence.\n");
 	::printf(
 	    "  --present-mode <value>               Fifo, Mailbox, or Immediate. Default: Mailbox.\n");
@@ -62,7 +66,7 @@ static void PrintUsage() {
 	::printf("  --console-language <0-29>            Console language. Default: 1 (English US).\n");
 	::printf("  --vulkan-validation <true|false>     Enable Vulkan validation.\n");
 	::printf("  --gpu-assisted-validation <t|f>      Bounds-check shader accesses on the GPU.\n"
-	         "                                       Implies --vulkan-validation; very slow.\n");
+		 "                                       Implies --vulkan-validation; very slow.\n");
 	::printf("  --shader-validation <true|false>     Enable shader validation.\n");
 	::printf("  --tessellation                      Draw tessellation patches; skipped by default.\n");
 	::printf("  --shader-optimization-type <value>   None, Size, or Performance.\n");
@@ -245,6 +249,14 @@ static bool ParseArgs(int argc, char* argv[], RunOptions& options, bool& show_he
 				return false;
 			}
 			options.game_patch = path;
+		} else if (arg == "--enable-hack") {
+			// Kyty-003: Per-game hack flags. Parse the comma-separated list
+			// at startup; the actual mask is applied after HackFeatures::Init()
+			// runs (which requires the title_id from param.sfo).
+			if (!options.enable_hacks.empty()) {
+				options.enable_hacks += ",";
+			}
+			options.enable_hacks += value;
 		} else if (arg == "--screen-width") {
 			options.config.screen_width = static_cast<uint32_t>(Common::ToInt32(value));
 		} else if (arg == "--screen-height") {
@@ -252,7 +264,7 @@ static bool ParseArgs(int argc, char* argv[], RunOptions& options, bool& show_he
 		} else if (arg == "--user-name") {
 			if (value.empty() || value.size() > Config::MAX_USER_NAME_LENGTH) {
 				::printf("invalid user name: must contain 1-%zu bytes\n",
-				         Config::MAX_USER_NAME_LENGTH);
+					 Config::MAX_USER_NAME_LENGTH);
 				return false;
 			}
 			options.config.user_name = value;
@@ -389,17 +401,17 @@ int wmain(int argc, wchar_t* argv[]) {
     utf8_args.reserve(static_cast<size_t>(argc));
 
     for (int index = 0; index < argc; index++) {
-        const std::wstring_view wide(argv[index]);
-        const std::u16string utf16(wide.begin(), wide.end());
+	const std::wstring_view wide(argv[index]);
+	const std::u16string utf16(wide.begin(), wide.end());
 
-        utf8_args.push_back(Common::Utf16ToUtf8(utf16));
+	utf8_args.push_back(Common::Utf16ToUtf8(utf16));
     }
 
     std::vector<char*> utf8_argv;
     utf8_argv.reserve(utf8_args.size());
 
     for (auto& argument: utf8_args) {
-        utf8_argv.push_back(argument.data());
+	utf8_argv.push_back(argument.data());
     }
 
     return Main(argc, utf8_argv.data());
