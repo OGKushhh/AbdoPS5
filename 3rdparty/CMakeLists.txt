@@ -10,6 +10,8 @@ include(FetchContent)
 
 set(USE_CUBEB ON CACHE BOOL "Build with Cubeb audio backend" FORCE)
 if(USE_CUBEB)
+        # FetchContent declaration stays in the parent scope so the cubeb
+        # source is fetched before any target uses it.
         FetchContent_Declare(
                 cubeb
                 GIT_REPOSITORY https://github.com/mozilla/cubeb.git
@@ -28,25 +30,23 @@ if(USE_CUBEB)
         set(BUILD_TOOLS OFF CACHE BOOL "" FORCE)
         set(USE_SANITIZERS OFF CACHE BOOL "" FORCE)
 
-        # Override install() with a no-op for the duration of cubeb's
-        # add_subdirectory call. CMake's install() is a builtin command, but
-        # we can shadow it with a function. This is the cleanest way to prevent
-        # cubeb from registering install rules that fail on Windows (its
-        # cmake_install.cmake looks for `<source>/include/cubeb` at install
-        # time using a path computed relative to the wrong working directory).
-        function(install)
-                # Silently swallow all install() calls from cubeb's CMakeLists.
-        endfunction()
+        # We need to suppress cubeb's install() rules (they fail on Windows
+        # because cubeb's cmake_install.cmake looks for `<source>/include/cubeb`
+        # at install time using a path computed relative to the wrong working
+        # directory). CMake doesn't have a clean way to suppress install() for
+        # just one subdirectory — function definitions propagate to child
+        # scopes (so a no-op install() in this file would also affect sibling
+        # add_subdirectory() calls). To prevent that, we delegate to a wrapper
+        # subdirectory: 3rdparty/cubeb-wrapper/CMakeLists.txt. That wrapper's
+        # scope is a child of this scope, so install() shadowing in the wrapper
+        # only propagates DOWN (into cubeb's CMakeLists) — not up or sideways.
+        add_subdirectory(cubeb-wrapper)
 
-        FetchContent_MakeAvailable(cubeb)
-
-        # Restore the real install() builtin by undefining our function.
-        # CMake doesn't have a clean way to 'undefine' a function — but since
-        # functions are scope-local, the install() above is only shadowed within
-        # this file's scope. The next add_subdirectory (which has its own scope)
-        # will see the original builtin again.
-        # To be safe, also mark cubeb as EXCLUDE_FROM_ALL.
         if(TARGET cubeb)
+                # Mark cubeb excluded from install so `cmake --install` skips its
+                # install rules too. (EXCLUDE_FROM_ALL doesn't prevent install rules
+                # registered via install(TARGETS ...) from running, but combined
+                # with the install() shadow it's belt-and-suspenders.)
                 set_target_properties(cubeb PROPERTIES EXCLUDE_FROM_ALL ON)
         endif()
 endif()
