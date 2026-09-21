@@ -268,10 +268,10 @@ jobs:
           cp -r scripts _Build/linux/install/ 2>/dev/null || true
           mkdir -p _Build/linux/install/tools
           find _Build/linux -maxdepth 2 -name "nids_tool" -o -name "elf_info" -o -name "param_sfo_info" | xargs -I{} cp {} _Build/linux/install/tools/ 2>/dev/null || true
-          cd _Build/linux/install
-          zip -r ../../AbdoPS5-Linux-x64.zip .
-          cd ../..
-          ls -lh AbDoPS5-Linux-x64.zip || ls -lh AbdoPS5-Linux-x64.zip
+          cd $GITHUB_WORKSPACE/_Build/linux/install
+          zip -r $GITHUB_WORKSPACE/AbdoPS5-Linux-x64.zip .
+          cd $GITHUB_WORKSPACE
+          ls -lh AbdoPS5-Linux-x64.zip
 
       - name: Upload Linux ZIP artifact
         uses: actions/upload-artifact@v4
