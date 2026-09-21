@@ -61,7 +61,7 @@ void CheatsPatches::setupUI() {
 		auto* checkbox = new QCheckBox(QString(hack.description));
 		checkbox->setChecked(hack.default_enabled);
 		checkbox->setProperty("hack_name", QString(hack.name));
-		m_hacksCheckboxes[QString(hack.name)] = checkbox;
+		m_hackCheckboxes[QString(hack.name)] = checkbox;
 		m_hacksLayout->addWidget(checkbox);
 	}
 
@@ -124,8 +124,8 @@ void CheatsPatches::loadHacks() {
 				for (const auto& hack : hacks) {
 					if (hack.isString()) {
 						auto name = hack.toString();
-						if (m_hacksCheckboxes.contains(name)) {
-							m_hacksCheckboxes[name]->setChecked(true);
+						if (m_hackCheckboxes.contains(name)) {
+							m_hackCheckboxes[name]->setChecked(true);
 						}
 					}
 				}
@@ -148,7 +148,7 @@ void CheatsPatches::saveHacks() {
 
 	// Build hacks array for this title
 	QJsonArray hacksArray;
-	for (auto it = m_hacksCheckboxes.begin(); it != m_hacksCheckboxes.end(); ++it) {
+	for (auto it = m_hackCheckboxes.begin(); it != m_hackCheckboxes.end(); ++it) {
 		if (it.value()->isChecked()) {
 			hacksArray.append(it.key());
 		}
@@ -215,7 +215,7 @@ void CheatsPatches::onApplyPatches() {
 
 void CheatsPatches::onResetHacks() {
 	for (const auto& hack : kHacks) {
-		auto* cb = m_hacksCheckboxes.value(QString(hack.name));
+		auto* cb = m_hackCheckboxes.value(QString(hack.name));
 		if (cb) {
 			cb->setChecked(hack.default_enabled);
 		}

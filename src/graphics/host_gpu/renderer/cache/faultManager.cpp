@@ -23,12 +23,12 @@ constexpr size_t PageFaultAreaSize = MaxPageFaults * sizeof(uint64_t);
 } // namespace
 
 FaultManager::FaultManager(GraphicContext& graphics, CommandScheduler& scheduler,
-                           BufferCache& buffer_cache)
+			   BufferCache& buffer_cache)
     : m_graphics(graphics), m_scheduler(scheduler), m_buffer_cache(buffer_cache),
       m_fault_buffer(graphics, scheduler, MemoryUsage::DeviceLocal, 0, AllFlags,
-                     BufferCache::CACHING_NUMPAGES / 8),
+		     BufferCache::CACHING_NUMPAGES / 8),
       m_download_buffer(graphics, scheduler, MemoryUsage::Download, 0, AllFlags,
-                        MaxPendingFaults * PageFaultAreaSize) {
+			MaxPendingFaults * PageFaultAreaSize) {
 	SetVulkanObjectNameF(m_graphics.device, m_fault_buffer.Handle(), "Fault Buffer");
 
 	const vk::DescriptorSetLayoutBinding bindings[] {
@@ -41,7 +41,7 @@ FaultManager::FaultManager(GraphicContext& graphics, CommandScheduler& scheduler
 	layout_info.pBindings    = bindings;
 	RequireVulkanSuccess(
 	    m_graphics.device.createDescriptorSetLayout(&layout_info, nullptr,
-	                                                &m_fault_process_desc_layout),
+							&m_fault_process_desc_layout),
 	    "create fault-buffer descriptor layout");
 
 	const auto module = CompileSPV(FAULT_BUFFER_PROCESS_SPV, m_graphics.device);
@@ -49,10 +49,13 @@ FaultManager::FaultManager(GraphicContext& graphics, CommandScheduler& scheduler
 	vk::PipelineLayoutCreateInfo pipeline_layout_info {};
 	pipeline_layout_info.setLayoutCount = 1;
 	pipeline_layout_info.pSetLayouts    = &m_fault_process_desc_layout;
-	RequireVulkanSuccess(
-	    m_graphics.device.createPipelineLayout(&pipeline_layout_info, nullptr,
-	                                           &m_fault_process_pipeline_layout),
-	    "create fault-buffer pipeline layout");
+	// Bug #14 fix: if createPipelineLayout fails, clean up desc_layout before exiting
+	if (m_graphics.device.createPipelineLayout(&pipeline_layout_info, nullptr,
+						    &m_fault_process_pipeline_layout) != vk::Result::eSuccess) {
+		m_graphics.device.destroyDescriptorSetLayout(m_fault_process_desc_layout, nullptr);
+		m_fault_process_desc_layout = nullptr;
+		EXIT("create fault-buffer pipeline layout");
+	}
 
 	vk::PipelineShaderStageCreateInfo stage {};
 	stage.stage  = vk::ShaderStageFlagBits::eCompute;
@@ -64,7 +67,14 @@ FaultManager::FaultManager(GraphicContext& graphics, CommandScheduler& scheduler
 	const auto result = m_graphics.device.createComputePipelines(
 	    nullptr, 1, &pipeline_info, nullptr, &m_fault_process_pipeline);
 	m_graphics.device.destroyShaderModule(module, nullptr);
-	RequireVulkanSuccess(result, "create fault-buffer pipeline");
+	// Bug #14 fix: if createComputePipelines fails, clean up pipeline_layout + desc_layout
+	if (result != vk::Result::eSuccess) {
+		m_graphics.device.destroyPipelineLayout(m_fault_process_pipeline_layout, nullptr);
+		m_fault_process_pipeline_layout = nullptr;
+		m_graphics.device.destroyDescriptorSetLayout(m_fault_process_desc_layout, nullptr);
+		m_fault_process_desc_layout = nullptr;
+		EXIT("create fault-buffer pipeline");
+	}
 	SetVulkanObjectNameF(m_graphics.device, m_fault_process_pipeline, "Fault Buffer Parser");
 }
 
@@ -120,7 +130,7 @@ void FaultManager::ProcessFaultBuffer() {
 	command.pipelineBarrier2(dependency);
 	command.bindPipeline(vk::PipelineBindPoint::eCompute, m_fault_process_pipeline);
 	command.pushDescriptorSetKHR(vk::PipelineBindPoint::eCompute,
-	                             m_fault_process_pipeline_layout, 0, writes);
+				     m_fault_process_pipeline_layout, 0, writes);
 	const auto num_threads    = BufferCache::CACHING_NUMPAGES / 32;
 	const auto num_workgroups = (num_threads + 63) / 64;
 	command.dispatch(static_cast<uint32_t>(num_workgroups), 1, 1);

@@ -312,7 +312,10 @@ const void* Audio::PrepareOutputBuffer(const PortOut& port, const void* data,
 		return data;
 	}
 
-	buffer->resize(frames * output_channels * bytes_per_sample);
+	// Bug #18 fix: validate against integer overflow before resize
+	const auto total_size = static_cast<uint64_t>(frames) * output_channels * bytes_per_sample;
+	EXIT_IF(total_size > 16 * 1024 * 1024); // 16 MB max for audio buffer
+	buffer->resize(total_size);
 
 	// SDL wants back speakers before side speakers; non-STD PCM has them reversed.
 	static constexpr uint32_t SDL_8CH_MAP[8] = {0, 1, 2, 3, 6, 7, 4, 5};
@@ -3438,8 +3441,16 @@ int KYTY_SYSV_ABI Ngs2VoiceControl(uintptr_t voice_handle, const Ngs2VoiceParamH
 		if (param->next == 0) {
 			break;
 		}
-		param = reinterpret_cast<const Ngs2VoiceParamHeader*>(reinterpret_cast<uintptr_t>(param) +
-								      param->next);
+		// Bug #20 fix: validate param->next doesn't walk backwards or out of bounds
+		const auto next_addr = reinterpret_cast<uintptr_t>(param) + param->next;
+		const auto list_base = reinterpret_cast<uintptr_t>(param_list);
+		const auto list_end = list_base + sizeof(Ngs2VoiceParamHeader) * 256; // reasonable upper bound
+		if (next_addr < list_base || next_addr > list_end) {
+			LOGF("Ngs2VoiceControl: param->next walks out of bounds (next=%d, offset=0x%llx)\n",
+			     param->next, static_cast<unsigned long long>(next_addr - list_base));
+			break; // Stop processing instead of crashing
+		}
+		param = reinterpret_cast<const Ngs2VoiceParamHeader*>(next_addr);
 	}
 
 	return OK;

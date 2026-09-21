@@ -4,14 +4,14 @@
 
 #pragma once
 
-#include <QAudioOutput>
-#include <QMediaPlayer>
 #include <QObject>
 #include <QString>
 
-// Background music player for the launcher UI.
-// Plays ambient background music while browsing the game list.
-// Ported from the shadPS4 Shadlix fork, adapted for Qt6/KytyPS5.
+// Forward declare Qt Multimedia types to avoid hard dependency.
+// When Qt6 Multimedia is available, link against it and the real types work.
+// When not available, BackgroundMusicPlayer is a no-op (methods return without doing anything).
+class QMediaPlayer;
+class QAudioOutput;
 
 class BackgroundMusicPlayer : public QObject {
 	Q_OBJECT
@@ -34,9 +34,8 @@ public:
 private:
 	BackgroundMusicPlayer(QObject* parent = nullptr);
 
-	QMediaPlayer* m_mediaPlayer;
-	QAudioOutput* m_audioOutput;
-	QUrl         m_currentMusic;
-	bool         m_playing = false;
-	int          m_volume   = 50;
+	QMediaPlayer* m_mediaPlayer = nullptr;
+	QAudioOutput* m_audioOutput = nullptr;
+	bool          m_playing = false;
+	int           m_volume   = 50;
 };
