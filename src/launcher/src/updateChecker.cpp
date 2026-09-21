@@ -46,7 +46,7 @@ UpdateChecker::UpdateInfo UpdateChecker::ParseUpdateInfo(const QByteArray& data)
 
 	const auto root = document.object();
 	UpdateInfo info {root.value(QStringLiteral("tag")).toString(),
-	                 QUrl(root.value(QStringLiteral("html_url")).toString()), {}};
+			 QUrl(root.value(QStringLiteral("html_url")).toString()), {}};
 	if (info.tag.isEmpty()) {
 		info.tag = root.value(QStringLiteral("tag_name")).toString();
 	}
@@ -69,7 +69,7 @@ void UpdateChecker::Check(bool manual) {
 void UpdateChecker::FetchUpdateInfo(const char* url, bool fallback, bool manual) {
 	QNetworkRequest request(QUrl(QString::fromLatin1(url)));
 	request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
-	                     QNetworkRequest::NoLessSafeRedirectPolicy);
+			     QNetworkRequest::NoLessSafeRedirectPolicy);
 	request.setRawHeader("User-Agent", "Kyty-Launcher");
 	request.setRawHeader("Accept", "application/vnd.github+json");
 	request.setTransferTimeout(15000);
@@ -101,7 +101,7 @@ void UpdateChecker::ShowUpdateResult(const UpdateInfo& info, bool manual) {
 		qWarning() << "Could not check for updates:" << info.error;
 		if (manual) {
 			QMessageBox::warning(m_parent, tr("Update Check"),
-			                     tr("Could not check for updates:\n%1").arg(info.error));
+					     tr("Could not check for updates:\n%1").arg(info.error));
 		}
 		return;
 	}
@@ -110,17 +110,17 @@ void UpdateChecker::ShowUpdateResult(const UpdateInfo& info, bool manual) {
 	if (current) {
 		if (manual) {
 			QMessageBox::information(m_parent, tr("Update Check"),
-			                         tr("You are using the latest version (%1).").arg(info.tag));
+						 tr("You are using the latest version (%1).").arg(info.tag));
 		}
 		return;
 	}
 	const auto message =
 	    tr("An update is available.\n\nCurrent: %1\nLatest: %2\n\n"
 	       "Open the release page?")
-	        .arg(QString::fromLatin1(KYTY_RELEASE_TAG), info.tag);
+		.arg(QString::fromLatin1(KYTY_RELEASE_TAG), info.tag);
 	if (QMessageBox::question(m_parent, tr("KytyPS5 Update"), message,
-	                          QMessageBox::Open | QMessageBox::Cancel,
-	                          QMessageBox::Open) == QMessageBox::Open) {
+				  QMessageBox::Open | QMessageBox::Cancel,
+				  QMessageBox::Open) == QMessageBox::Open) {
 		QDesktopServices::openUrl(info.page_url);
 	}
 }

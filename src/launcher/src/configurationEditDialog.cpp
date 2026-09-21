@@ -111,18 +111,18 @@ ConfigurationEditDialog::ConfigurationEditDialog(Configuration& info, QWidget* p
 	connect(m_ui->cancel_button, &QPushButton::clicked, this, &QDialog::reject);
 	connect(m_ui->clear_button, &QPushButton::clicked, this, &ConfigurationEditDialog::clear);
 	connect(m_ui->comboBox_shader_log_direction, &QComboBox::currentTextChanged, this,
-	        [this](const QString& text) {
-		        auto log = TextToEnum<Configuration::LogDirection>(text);
-		        m_ui->lineEdit_shader_log_folder->setEnabled(
-		            log == Configuration::LogDirection::File);
-	        });
+		[this](const QString& text) {
+			auto log = TextToEnum<Configuration::LogDirection>(text);
+			m_ui->lineEdit_shader_log_folder->setEnabled(
+			    log == Configuration::LogDirection::File);
+		});
 	connect(m_ui->checkBox_cmd_dump, &QCheckBox::toggled, this,
-	        [this](bool flag) { m_ui->lineEdit_cmd_dump_folder->setEnabled(flag); });
+		[this](bool flag) { m_ui->lineEdit_cmd_dump_folder->setEnabled(flag); });
 	connect(m_ui->comboBox_printf_direction, &QComboBox::currentTextChanged, this,
-	        [this](const QString& text) {
-		        auto log = TextToEnum<Configuration::LogDirection>(text);
-		        m_ui->lineEdit_printf_file->setEnabled(log == Configuration::LogDirection::File);
-	        });
+		[this](const QString& text) {
+			auto log = TextToEnum<Configuration::LogDirection>(text);
+			m_ui->lineEdit_printf_file->setEnabled(log == Configuration::LogDirection::File);
+		});
 
 	// Keep the controls at a usable minimum while allowing the settings window
 	// and its expanding fields to use any additional space the user gives them.
@@ -187,11 +187,11 @@ void ConfigurationEditDialog::Init(const Configuration& info) {
 		SDL_QuitSubSystem(SDL_INIT_AUDIO);
 	} else {
 		microphone->setToolTip(tr("Microphones could not be listed: %1")
-		                           .arg(QString::fromUtf8(SDL_GetError())));
+					   .arg(QString::fromUtf8(SDL_GetError())));
 	}
 	if (microphone->findData(info.audio_input_device) < 0) {
 		microphone->addItem(tr("%1 (unavailable)").arg(info.audio_input_device),
-		                    info.audio_input_device);
+				    info.audio_input_device);
 	}
 	microphone->setCurrentIndex(microphone->findData(info.audio_input_device));
 	ListInit(m_ui->comboBox_screen_resolution, info.screen_resolution);
@@ -227,7 +227,7 @@ void ConfigurationEditDialog::Init(const Configuration& info) {
 #endif
 	m_ui->comboBox_gpu->setCurrentIndex(
 	    info.gpu_index >= 0 && info.gpu_index < m_ui->comboBox_gpu->count() - 1 ? info.gpu_index + 1
-	                                                                            : 0);
+										    : 0);
 	m_ui->checkBox_fullscreen->setChecked(info.fullscreen_enabled);
 	m_ui->checkBox_readback->setChecked(info.readback_linear_images);
 	m_ui->checkBox_tessellation->setChecked(info.tessellation_enabled);
@@ -236,8 +236,8 @@ void ConfigurationEditDialog::Init(const Configuration& info) {
 	m_ui->comboBox_console_language->addItems(CONSOLE_LANGUAGE_NAMES);
 	m_ui->comboBox_console_language->setCurrentIndex(
 	    info.console_language >= 0 && info.console_language < CONSOLE_LANGUAGE_NAMES.size()
-	        ? info.console_language
-	        : Configuration::DEFAULT_CONSOLE_LANGUAGE);
+		? info.console_language
+		: Configuration::DEFAULT_CONSOLE_LANGUAGE);
 	m_ui->checkBox_shader_validation->setChecked(info.shader_validation_enabled);
 	m_ui->checkBox_vulkan_validation->setChecked(info.vulkan_validation_enabled);
 	m_ui->checkBox_renderdoc_capture->setChecked(info.renderdoc_enabled);
@@ -254,14 +254,14 @@ void ConfigurationEditDialog::Init(const Configuration& info) {
 	ListInit(m_ui->comboBox_shader_log_direction, info.shader_log_direction);
 	m_ui->lineEdit_shader_log_folder->setText(info.shader_log_folder);
 	m_ui->lineEdit_shader_log_folder->setEnabled(info.shader_log_direction ==
-	                                             Configuration::LogDirection::File);
+						     Configuration::LogDirection::File);
 	m_ui->checkBox_cmd_dump->setChecked(info.command_buffer_dump_enabled);
 	m_ui->lineEdit_cmd_dump_folder->setText(info.command_buffer_dump_folder);
 	m_ui->lineEdit_cmd_dump_folder->setEnabled(info.command_buffer_dump_enabled);
 	ListInit(m_ui->comboBox_printf_direction, info.printf_direction);
 	m_ui->lineEdit_printf_file->setText(info.printf_output_file);
 	m_ui->lineEdit_printf_file->setEnabled(info.printf_direction ==
-	                                       Configuration::LogDirection::File);
+					       Configuration::LogDirection::File);
 	m_ui->checkBox_profiler->setChecked(info.profiler_enabled);
 }
 
@@ -301,9 +301,9 @@ void ConfigurationEditDialog::InitGameDirectories() {
 
 	connect(add_button, &QToolButton::clicked, this, &ConfigurationEditDialog::add_game_directory);
 	connect(m_remove_game_dir_button, &QToolButton::clicked, this,
-	        &ConfigurationEditDialog::remove_selected_game_directories);
+		&ConfigurationEditDialog::remove_selected_game_directories);
 	connect(m_game_dirs_list, &QListWidget::itemSelectionChanged, this,
-	        &ConfigurationEditDialog::update_game_directory_buttons);
+		&ConfigurationEditDialog::update_game_directory_buttons);
 
 	update_game_directory_buttons();
 }
@@ -408,13 +408,13 @@ void ConfigurationEditDialog::save() {
 	const auto user_name = m_ui->lineEdit_user_name->text().trimmed();
 	if (user_name.isEmpty() || user_name.toUtf8().size() > Config::MAX_USER_NAME_LENGTH) {
 		QMessageBox::critical(this, tr("Save failed"),
-		                      tr("User name must contain 1-16 UTF-8 bytes"));
+				      tr("User name must contain 1-16 UTF-8 bytes"));
 		return;
 	}
 	m_ui->lineEdit_user_name->setText(user_name);
 	if (!Config::IsConfiguredUserIdValid(m_ui->spinBox_user_id->value())) {
 		QMessageBox::critical(this, tr("Save failed"),
-		                      tr("User ID cannot be 254 (everyone) or 255 (system)"));
+				      tr("User ID cannot be 254 (everyone) or 255 (system)"));
 		return;
 	}
 

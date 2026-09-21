@@ -165,7 +165,7 @@ ConfigurationItem::ConfigurationItem(std::unique_ptr<Configuration> info, QTreeW
 		setData(SizeColumn, Qt::UserRole, bytes);
 		if (bytes >= 0) {
 			setText(SizeColumn,
-			        QLocale().formattedDataSize(bytes, 2, QLocale::DataSizeTraditionalFormat));
+				QLocale().formattedDataSize(bytes, 2, QLocale::DataSizeTraditionalFormat));
 		}
 		watcher->deleteLater();
 	});
@@ -175,7 +175,7 @@ ConfigurationItem::ConfigurationItem(std::unique_ptr<Configuration> info, QTreeW
 		}
 		qint64       bytes = 0;
 		QDirIterator files(path, QDir::Files | QDir::Hidden | QDir::System | QDir::NoSymLinks,
-		                   QDirIterator::Subdirectories);
+				   QDirIterator::Subdirectories);
 		while (files.hasNext()) {
 			files.next();
 			if (files.fileInfo().isFile()) {
@@ -195,9 +195,9 @@ void ConfigurationItem::Update() {
 	setText(NameColumn, m_info->name);
 	setText(SerialColumn, m_info->title_id);
 	setText(GameVersionColumn,
-	        m_info->gameVersion.isEmpty() ? QStringLiteral("\u2014") : m_info->gameVersion);
+		m_info->gameVersion.isEmpty() ? QStringLiteral("\u2014") : m_info->gameVersion);
 	setText(FirmwareVersionColumn,
-	        m_info->firmwareVer.isEmpty() ? QStringLiteral("\u2014") : m_info->firmwareVer);
+		m_info->firmwareVer.isEmpty() ? QStringLiteral("\u2014") : m_info->firmwareVer);
 	setText(PathColumn, path);
 	setText(StatusColumn, {});
 	setText(CommentsColumn, {});
@@ -233,13 +233,13 @@ bool ConfigurationItem::operator<(const QTreeWidgetItem& other) const {
 			const auto& version =
 			    column == GameVersionColumn ? m_info->gameVersion : m_info->firmwareVer;
 			const auto& other_version = column == GameVersionColumn
-			                                ? other_item->m_info->gameVersion
-			                                : other_item->m_info->firmwareVer;
+							? other_item->m_info->gameVersion
+							: other_item->m_info->firmwareVer;
 			if (version.isEmpty() || other_version.isEmpty()) {
 				return version.isEmpty() && !other_version.isEmpty();
 			}
 			return QVersionNumber::compare(QVersionNumber::fromString(version),
-			                               QVersionNumber::fromString(other_version)) < 0;
+						       QVersionNumber::fromString(other_version)) < 0;
 		}
 		case CommentsColumn:
 			return m_info->game_comment.toCaseFolded() <

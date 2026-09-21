@@ -108,21 +108,21 @@ static bool ReadUcp(const QString& file_name, QMap<QString, QByteArray>& files, 
 	const QByteArray data = file.readAll();
 	if (data.size() < UCP_HEADER_LEN) {
 		error = QObject::tr("%1 is too small to be a trophy package.")
-		            .arg(QFileInfo(file_name).fileName());
+			    .arg(QFileInfo(file_name).fileName());
 		return false;
 	}
 
 	const auto magic = qFromBigEndian<quint32>(data.constData() + 0x00);
 	if (magic != UCP_MAGIC) {
 		error = QObject::tr("%1 has an invalid trophy package magic.")
-		            .arg(QFileInfo(file_name).fileName());
+			    .arg(QFileInfo(file_name).fileName());
 		return false;
 	}
 
 	const auto version = qFromBigEndian<quint32>(data.constData() + 0x04);
 	if (version != UCP_VERSION) {
 		error = QObject::tr("%1 uses unsupported trophy package version %2.")
-		            .arg(QFileInfo(file_name).fileName(), QString::number(version));
+			    .arg(QFileInfo(file_name).fileName(), QString::number(version));
 		return false;
 	}
 
@@ -140,13 +140,13 @@ static bool ReadUcp(const QString& file_name, QMap<QString, QByteArray>& files, 
 	if (toc_offset > data_size || table_size > data_size - toc_offset ||
 	    !std::in_range<qsizetype>(toc_offset + table_size)) {
 		error = QObject::tr("%1 has an invalid table of contents.")
-		            .arg(QFileInfo(file_name).fileName());
+			    .arg(QFileInfo(file_name).fileName());
 		return false;
 	}
 
 	for (quint32 i = 0; i < file_count; i++) {
 		const auto entry_offset = static_cast<qsizetype>(toc_offset + UCP_TOC_SKIP +
-		                                                 static_cast<quint64>(i) * UCP_ENTRY_LEN);
+								 static_cast<quint64>(i) * UCP_ENTRY_LEN);
 		UcpEntry   entry;
 		entry.name   = ReadFixedString(data, entry_offset, UCP_NAME_LEN).trimmed();
 		entry.offset = qFromBigEndian<quint64>(data.constData() + entry_offset + 0x20);
@@ -158,12 +158,12 @@ static bool ReadUcp(const QString& file_name, QMap<QString, QByteArray>& files, 
 		if (entry.offset > data_size || entry.size > data_size - entry.offset ||
 		    !std::in_range<qsizetype>(entry.offset) || !std::in_range<qsizetype>(entry.size)) {
 			error = QObject::tr("%1 has an invalid entry for %2.")
-			            .arg(QFileInfo(file_name).fileName(), entry.name);
+				    .arg(QFileInfo(file_name).fileName(), entry.name);
 			return false;
 		}
 
 		files.insert(entry.name.toCaseFolded(), data.mid(static_cast<qsizetype>(entry.offset),
-		                                                 static_cast<qsizetype>(entry.size)));
+								 static_cast<qsizetype>(entry.size)));
 	}
 
 	return true;
@@ -186,7 +186,7 @@ static const QByteArray* FindFirstTrophyMetadataFile(const QMap<QString, QByteAr
 }
 
 static bool ReadJsonObject(const QByteArray& data, const QString& file_name, QJsonObject& object,
-                           QString& error) {
+			   QString& error) {
 	QJsonParseError parse_error;
 	const auto      doc = QJsonDocument::fromJson(data, &parse_error);
 	if (parse_error.error != QJsonParseError::NoError || !doc.isObject()) {
@@ -302,7 +302,7 @@ static QPixmap LoadTrophyIcon(const QMap<QString, QByteArray>& files, const QStr
 
 static QString TrophyTabTitle(const QString& file_name) {
 	static const QRegularExpression trophy_file_re(QStringLiteral("^trophy(\\d+)\\.ucp$"),
-	                                               QRegularExpression::CaseInsensitiveOption);
+						       QRegularExpression::CaseInsensitiveOption);
 
 	const auto name  = QFileInfo(file_name).fileName();
 	const auto match = trophy_file_re.match(name);
@@ -342,7 +342,7 @@ static bool BuildTrophySet(const QString& ucp_file, TrophySet& set, QString& err
 	}
 	if (meta_data == nullptr) {
 		error = QObject::tr("%1 does not contain readable trophy metadata.")
-		            .arg(QFileInfo(ucp_file).fileName());
+			    .arg(QFileInfo(ucp_file).fileName());
 		return false;
 	}
 
@@ -399,7 +399,7 @@ static QStringList FindTrophyFiles(const Configuration* info) {
 
 	const auto files =
 	    trophy_dir.entryInfoList({QStringLiteral("Trophy*.ucp"), QStringLiteral("trophy*.ucp")},
-	                             QDir::Files | QDir::NoSymLinks, QDir::Name | QDir::IgnoreCase);
+				     QDir::Files | QDir::NoSymLinks, QDir::Name | QDir::IgnoreCase);
 
 	QStringList   trophy_files;
 	QSet<QString> seen;
@@ -422,7 +422,7 @@ static QStringList FindTrophyFiles(const Configuration* info) {
 static void PrepareTable(QTableWidget* table) {
 	table->setColumnCount(4);
 	table->setHorizontalHeaderLabels({QObject::tr("Unlocked"), QObject::tr("Trophy"),
-	                                  QObject::tr("Name"), QObject::tr("Description")});
+					  QObject::tr("Name"), QObject::tr("Description")});
 	table->setAlternatingRowColors(true);
 	table->setEditTriggers(QAbstractItemView::NoEditTriggers);
 	table->setSelectionBehavior(QAbstractItemView::SelectRows);
@@ -561,7 +561,7 @@ bool TrophyViewerDialog::LoadGame(const Configuration& info, QString& error) {
 
 	if (m_tabs->count() == 0) {
 		error = errors.isEmpty() ? tr("No readable trophy data found.")
-		                         : errors.join(QLatin1Char('\n'));
+					 : errors.join(QLatin1Char('\n'));
 		return false;
 	}
 

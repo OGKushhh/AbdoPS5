@@ -60,9 +60,9 @@ private:
 		}
 
 		m_scaled     = m_source.scaled(viewport()->size(), Qt::KeepAspectRatioByExpanding,
-		                               Qt::FastTransformation);
+					       Qt::FastTransformation);
 		m_scaled_pos = QPoint((viewport()->width() - m_scaled.width()) / 2,
-		                      (viewport()->height() - m_scaled.height()) / 2);
+				      (viewport()->height() - m_scaled.height()) / 2);
 	}
 
 	QString m_path;

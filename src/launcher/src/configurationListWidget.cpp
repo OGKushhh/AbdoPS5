@@ -150,7 +150,7 @@ static void ConfigureGameList(Ui::ConfigurationListWidget* ui) {
 }
 
 static void AddSaveDataDir(QStringList* dirs, QSet<QString>* seen, const QString& root,
-                           const QString& title_id) {
+			   const QString& title_id) {
 	const auto path = QDir(root).filePath(
 	    QStringLiteral("%1/%2").arg(QString::fromLatin1(SAVE_DATA_DIR), title_id));
 	QDir dir(path);
@@ -231,25 +231,25 @@ ConfigurationListWidget::ConfigurationListWidget(QWidget* parent)
 	m_ui->cfgs_list->sortItems(GAME_NAME_COLUMN, Qt::AscendingOrder);
 
 	connect(m_ui->refresh_action, &QAction::triggered, this,
-	        &ConfigurationListWidget::ScanGameDirectory);
+		&ConfigurationListWidget::ScanGameDirectory);
 	connect(m_ui->global_settings_button, &QToolButton::clicked, this,
-	        &ConfigurationListWidget::edit_global_settings);
+		&ConfigurationListWidget::edit_global_settings);
 	connect(m_ui->input_mapping_button, &QToolButton::clicked, this,
-	        &ConfigurationListWidget::edit_input_mapping);
+		&ConfigurationListWidget::edit_input_mapping);
 	connect(m_ui->edit_button, &QToolButton::clicked, this,
-	        &ConfigurationListWidget::edit_configuration);
+		&ConfigurationListWidget::edit_configuration);
 	connect(m_ui->delete_button, &QToolButton::clicked, this,
-	        &ConfigurationListWidget::delete_configuartion);
+		&ConfigurationListWidget::delete_configuartion);
 	connect(m_ui->cfgs_list, &QTreeWidget::currentItemChanged, this,
-	        &ConfigurationListWidget::SelectItem);
+		&ConfigurationListWidget::SelectItem);
 	connect(m_ui->cfgs_list, &QTreeWidget::itemDoubleClicked, this,
-	        &ConfigurationListWidget::list_itemDoubleClicked);
+		&ConfigurationListWidget::list_itemDoubleClicked);
 	connect(m_ui->cfgs_list, &QTreeWidget::customContextMenuRequested, this,
-	        &ConfigurationListWidget::show_context_menu);
+		&ConfigurationListWidget::show_context_menu);
 	connect(m_ui->search_line_edit, &QLineEdit::textChanged, this,
-	        &ConfigurationListWidget::filter_configurations);
+		&ConfigurationListWidget::filter_configurations);
 	connect(m_compatibility, &CompatibilityDatabase::Updated, this,
-	        &ConfigurationListWidget::ApplyCompatibility);
+		&ConfigurationListWidget::ApplyCompatibility);
 
 	m_ui->cfgs_list->setDragDropMode(QAbstractItemView::NoDragDrop);
 
@@ -277,7 +277,7 @@ void ConfigurationListWidget::changeEvent(QEvent* event) {
 
 void ConfigurationListWidget::UpdateToolbarIcons() {
 	const auto color = palette().color(QPalette::Window).lightness() < 128 ? QColor(Qt::white)
-	                                                                      : QColor(Qt::black);
+									      : QColor(Qt::black);
 	const auto set_icon = [&color](QToolButton* button, const QString& resource) {
 		auto pixmap = QIcon(resource).pixmap(button->iconSize(), button->devicePixelRatioF());
 		QPainter painter(&pixmap);
@@ -302,10 +302,10 @@ void ConfigurationListWidget::WriteSettings() {
 	} else {
 #ifdef __linux__
 		s = std::make_unique<QSettings>(QSettings::IniFormat, QSettings::UserScope, CONF_ORG_NAME,
-		                                CONF_APP_NAME);
+						CONF_APP_NAME);
 #else
 		s = std::make_unique<QSettings>(QSettings::IniFormat, QSettings::SystemScope, CONF_ORG_NAME,
-		                                CONF_APP_NAME);
+						CONF_APP_NAME);
 #endif
 	}
 
@@ -341,10 +341,10 @@ void ConfigurationListWidget::ReadSettings() {
 	} else {
 #ifdef __linux__
 		s = std::make_unique<QSettings>(QSettings::IniFormat, QSettings::UserScope, CONF_ORG_NAME,
-		                                CONF_APP_NAME);
+						CONF_APP_NAME);
 #else
 		s = std::make_unique<QSettings>(QSettings::IniFormat, QSettings::SystemScope, CONF_ORG_NAME,
-		                                CONF_APP_NAME);
+						CONF_APP_NAME);
 #endif
 	}
 
@@ -443,14 +443,14 @@ static QString GetLocalizedTitleName(const QJsonObject& root) {
 	const auto default_language = GetJsonString(localized, QStringLiteral("defaultLanguage"));
 	if (!default_language.isEmpty()) {
 		const auto title = GetJsonString(localized.value(default_language).toObject(),
-		                                 QStringLiteral("titleName"));
+						 QStringLiteral("titleName"));
 		if (!title.isEmpty()) {
 			return title;
 		}
 	}
 
 	const auto english_title = GetJsonString(localized.value(QStringLiteral("en-US")).toObject(),
-	                                         QStringLiteral("titleName"));
+						 QStringLiteral("titleName"));
 	if (!english_title.isEmpty()) {
 		return english_title;
 	}
@@ -522,7 +522,7 @@ static GameMetadata GetGameMetadata(const QString& param_file, const QString& fa
 }
 
 static void SetGameFiles(Configuration& info, const QString& game_dir, const QString& game_path,
-                         const GameMetadata& metadata) {
+			 const GameMetadata& metadata) {
 	QDir game(game_dir);
 
 	info.game_path   = game_path;
@@ -538,7 +538,7 @@ static void SetGameFiles(Configuration& info, const QString& game_dir, const QSt
 }
 
 static Configuration* FindCustomInfo(QMap<QString, Configuration*>* custom_infos,
-                                     const QString& game_path, const QString& legacy_game_path) {
+				     const QString& game_path, const QString& legacy_game_path) {
 	auto custom = custom_infos->find(game_path);
 	if (custom != custom_infos->end()) {
 		return custom.value();
@@ -563,7 +563,7 @@ bool ConfigurationListWidget::EnsureGameDirectory() {
 	}
 
 	QMessageBox::information(this, tr("Game folders"),
-	                         tr("Add at least one game folder in global settings."));
+				 tr("Add at least one game folder in global settings."));
 	edit_global_settings();
 
 	return HasValidGameDirectory();
@@ -654,30 +654,30 @@ void ConfigurationListWidget::ScanGameDirectory() {
 					item->GetInfo().CopyGameInfoFrom(*info);
 					item->Update();
 					item->SetCompatibilityEditable(m_compatibility->IsLocal() &&
-					                               !item->GetInfo().title_id.trimmed().isEmpty());
+								       !item->GetInfo().title_id.trimmed().isEmpty());
 					continue;
 				}
 
 				auto* item = new ConfigurationItem(std::move(info), m_ui->cfgs_list);
 				item->SetCompatibilityEditable(m_compatibility->IsLocal() &&
-				                               !item->GetInfo().title_id.trimmed().isEmpty());
+							       !item->GetInfo().title_id.trimmed().isEmpty());
 				connect(item->GetStatusCombo(), &QComboBox::currentIndexChanged, item,
-				        [this, item](int /*index*/) {
-					        if (!m_compatibility->IsLocal()) {
-						        return;
-					        }
+					[this, item](int /*index*/) {
+						if (!m_compatibility->IsLocal()) {
+							return;
+						}
 
-					        const auto& title_id = item->GetInfo().title_id;
-					        if (title_id.trimmed().isEmpty()) {
-						        return;
-					        }
-					        item->GetInfo().game_status = static_cast<Configuration::GameStatus>(
-					            item->GetStatusCombo()->currentData().toInt());
-					        item->Update();
-					        m_compatibility->SetStatus(title_id, item->GetInfo().game_status);
-					        m_ui->cfgs_list->setCurrentItem(item);
-					        SelectItem(item);
-				        });
+						const auto& title_id = item->GetInfo().title_id;
+						if (title_id.trimmed().isEmpty()) {
+							return;
+						}
+						item->GetInfo().game_status = static_cast<Configuration::GameStatus>(
+						    item->GetStatusCombo()->currentData().toInt());
+						item->Update();
+						m_compatibility->SetStatus(title_id, item->GetInfo().game_status);
+						m_ui->cfgs_list->setCurrentItem(item);
+						SelectItem(item);
+					});
 				connect(item->GetCommentEdit(), &QLineEdit::editingFinished, item, [this, item]() {
 					if (!m_compatibility->IsLocal()) {
 						return;
@@ -751,7 +751,7 @@ void ConfigurationListWidget::delete_configuartion() {
 	}
 
 	if (QMessageBox::Yes == QMessageBox::question(this, tr("Clear custom settings"),
-	                                              tr("Do you want to clear custom settings?"))) {
+						      tr("Do you want to clear custom settings?"))) {
 		delete m_custom_infos.take(item->GetInfo().game_path);
 		item->GetInfo().custom_settings = false;
 		WriteSettings();
@@ -825,7 +825,7 @@ void ConfigurationListWidget::remove_save_data() {
 	const auto save_data_dirs = GetSaveDataDirs(item->GetInfo());
 	if (save_data_dirs.isEmpty()) {
 		QMessageBox::information(this, tr("Remove save data"),
-		                         tr("No save data folder found for this game."));
+					 tr("No save data folder found for this game."));
 		return;
 	}
 
@@ -833,7 +833,7 @@ void ConfigurationListWidget::remove_save_data() {
 	    !item->GetInfo().name.isEmpty() ? item->GetInfo().name : item->GetInfo().title_id;
 	const auto text =
 	    tr("Remove save data for \"%1\"?\n\nThis will delete:\n%2\n\nThis cannot be undone.")
-	        .arg(title, save_data_dirs.join(QLatin1Char('\n')));
+		.arg(title, save_data_dirs.join(QLatin1Char('\n')));
 
 	if (QMessageBox::Yes != QMessageBox::question(this, tr("Remove save data"), text)) {
 		return;
@@ -849,7 +849,7 @@ void ConfigurationListWidget::remove_save_data() {
 
 	if (!failed_dirs.isEmpty()) {
 		QMessageBox::warning(this, tr("Remove save data"),
-		                     tr("Could not remove:\n%1").arg(failed_dirs.join(QLatin1Char('\n'))));
+				     tr("Could not remove:\n%1").arg(failed_dirs.join(QLatin1Char('\n'))));
 	}
 }
 
@@ -865,8 +865,8 @@ void ConfigurationListWidget::filter_configurations(const QString& text) {
 		}
 
 		const bool match = !has_query ||
-		                   item->text(GAME_NAME_COLUMN).contains(query, Qt::CaseInsensitive) ||
-		                   item->text(GAME_SERIAL_COLUMN).contains(query, Qt::CaseInsensitive);
+				   item->text(GAME_NAME_COLUMN).contains(query, Qt::CaseInsensitive) ||
+				   item->text(GAME_SERIAL_COLUMN).contains(query, Qt::CaseInsensitive);
 		item->setHidden(!match);
 
 		if (match && item == m_selected_item) {
@@ -924,31 +924,31 @@ void ConfigurationListWidget::show_context_menu(const QPoint& pos) {
 	QAction* action_run = menu.addAction(tr("Run"), this, SIGNAL(Run()));
 	QAction* action_open_folder =
 	    menu.addAction(style()->standardIcon(QStyle::SP_DirOpenIcon), tr("Open game folder"), this,
-	                   SLOT(open_game_folder()));
+			   SLOT(open_game_folder()));
 	QAction* action_view_trophies = menu.addAction(
 	    style()->standardIcon(QStyle::SP_FileDialogContentsView), tr("View trophies..."));
 	connect(action_view_trophies, &QAction::triggered, this,
-	        &ConfigurationListWidget::ViewTrophies);
+		&ConfigurationListWidget::ViewTrophies);
 	QAction* action_patches = menu.addAction(tr("Cheats (experimental)..."));
 	connect(action_patches, &QAction::triggered, this,
-	        [this, item = QPointer<ConfigurationItem>(item)]() {
-		        if (item != nullptr) {
-			        auto* dialog = new PatchesDialog(item->GetInfo(), this);
-			        dialog->show();
-		        }
-	        });
+		[this, item = QPointer<ConfigurationItem>(item)]() {
+			if (item != nullptr) {
+				auto* dialog = new PatchesDialog(item->GetInfo(), this);
+				dialog->show();
+			}
+		});
 	action_patches->setVisible(item != nullptr &&
-	                           PatchesDialog::IsSupportedTitleId(item->GetInfo().title_id));
+				   PatchesDialog::IsSupportedTitleId(item->GetInfo().title_id));
 	QAction* action_remove_save_data =
 	    menu.addAction(style()->standardIcon(QStyle::SP_DialogDiscardButton),
-	                   tr("Remove save data..."), this, SLOT(remove_save_data()));
+			   tr("Remove save data..."), this, SLOT(remove_save_data()));
 	menu.addSeparator();
 	QAction* action_edit =
 	    menu.addAction(style()->standardIcon(QStyle::SP_FileIcon), tr("Edit game settings..."),
-	                   this, SLOT(edit_configuration()));
+			   this, SLOT(edit_configuration()));
 	QAction* action_delete =
 	    menu.addAction(style()->standardIcon(QStyle::SP_DialogDiscardButton),
-	                   tr("Clear custom settings"), this, SLOT(delete_configuartion()));
+			   tr("Clear custom settings"), this, SLOT(delete_configuartion()));
 
 	if (item == nullptr) {
 		menu.addSeparator();

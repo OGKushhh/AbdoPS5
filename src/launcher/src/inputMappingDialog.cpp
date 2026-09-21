@@ -221,8 +221,8 @@ InputMappingDialog::InputMappingDialog(const QStringList& mapping, QWidget* pare
 	auto* layout = new QVBoxLayout(this);
 	layout->addWidget(
 	    new QLabel(tr("Map keyboard or mouse buttons to DualSense controls.\n"
-	                  "Press F7 in-game to toggle mouse movement on the right stick."),
-	               this));
+			  "Press F7 in-game to toggle mouse movement on the right stick."),
+		       this));
 
 	const auto parsed = ParseMapping(mapping);
 	m_custom_bindings = !parsed.isEmpty();
@@ -253,7 +253,7 @@ InputMappingDialog::InputMappingDialog(const QStringList& mapping, QWidget* pare
 		item->setText(0, tr(control.label));
 		item->setData(0, Qt::UserRole, QString::fromLatin1(control.id));
 		SetBinding(item, m_custom_bindings ? parsed.value(QString::fromLatin1(control.id))
-		                                   : QString::fromLatin1(control.default_binding));
+						   : QString::fromLatin1(control.default_binding));
 	}
 	m_bindings->setCurrentItem(m_bindings->topLevelItem(0));
 
@@ -271,7 +271,7 @@ InputMappingDialog::InputMappingDialog(const QStringList& mapping, QWidget* pare
 	layout->addWidget(buttons);
 
 	connect(m_bindings, &QTreeWidget::itemDoubleClicked, this,
-	        [this](QTreeWidgetItem*, int) { ChangeBinding(); });
+		[this](QTreeWidgetItem*, int) { ChangeBinding(); });
 	connect(m_bindings, &QTreeWidget::itemSelectionChanged, this, [this]() { UpdateButtons(); });
 	connect(m_change_button, &QPushButton::clicked, this, [this]() { ChangeBinding(); });
 	connect(m_clear_button, &QPushButton::clicked, this, [this]() { ClearBinding(); });
@@ -294,7 +294,7 @@ QStringList InputMappingDialog::Mapping() const {
 	}
 	if (m_sensitivity->value() != DEFAULT_MOUSE_SENSITIVITY) {
 		result.append(QLatin1String(MOUSE_SENSITIVITY) +
-		              QString::number(m_sensitivity->value(), 'f', 1));
+			      QString::number(m_sensitivity->value(), 'f', 1));
 	}
 	return result;
 }
@@ -313,8 +313,8 @@ void InputMappingDialog::ChangeBinding() {
 	for (int index = 0; index < m_bindings->topLevelItemCount(); index++) {
 		auto* other = m_bindings->topLevelItem(index);
 		if (other != item && other->data(BINDING_COLUMN, Qt::UserRole)
-		                             .toString()
-		                             .compare(dialog.Binding(), Qt::CaseInsensitive) == 0) {
+					     .toString()
+					     .compare(dialog.Binding(), Qt::CaseInsensitive) == 0) {
 			SetBinding(other, {});
 		}
 	}
@@ -330,7 +330,7 @@ void InputMappingDialog::ClearBinding() {
 void InputMappingDialog::RestoreDefaults() {
 	for (int index = 0; index < m_bindings->topLevelItemCount(); index++) {
 		SetBinding(m_bindings->topLevelItem(index),
-		           QString::fromLatin1(PAD_CONTROLS[index].default_binding));
+			   QString::fromLatin1(PAD_CONTROLS[index].default_binding));
 	}
 	m_sensitivity->setValue(DEFAULT_MOUSE_SENSITIVITY);
 	m_custom_bindings = false;
@@ -352,5 +352,5 @@ void InputMappingDialog::UpdateButtons() {
 	const auto* item = m_bindings->currentItem();
 	m_change_button->setEnabled(item != nullptr);
 	m_clear_button->setEnabled(item != nullptr &&
-	                           !item->data(BINDING_COLUMN, Qt::UserRole).toString().isEmpty());
+				   !item->data(BINDING_COLUMN, Qt::UserRole).toString().isEmpty());
 }

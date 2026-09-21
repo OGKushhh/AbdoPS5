@@ -118,13 +118,13 @@ void MainDialogPrivate::Setup(MainDialog* main_dialog) {
 	main_dialog->setWindowFlags(Qt::Dialog /*| Qt::MSWindowsFixedSizeDialogHint*/);
 
 	connect(main_dialog, &MainDialog::Start, this, &MainDialogPrivate::FindInterpreter,
-	        Qt::QueuedConnection);
+		Qt::QueuedConnection);
 	connect(m_ui->widget, &ConfigurationListWidget::Select, this, &MainDialogPrivate::Update);
 	connect(m_ui->widget, &ConfigurationListWidget::Run, this, &MainDialogPrivate::Run);
 	connect(m_ui->check_updates_link, &QLabel::linkActivated, this,
-	        [this](const QString&) { m_update_checker->Check(true); });
+		[this](const QString&) { m_update_checker->Check(true); });
 	connect(m_update_checker, &UpdateChecker::CheckingChanged, m_ui->check_updates_link,
-	        &QLabel::setDisabled);
+		&QLabel::setDisabled);
 	connect(m_ui->check_updates_on_startup, &QCheckBox::toggled, this, [this](bool checked) {
 		g_check_updates_on_startup = checked;
 		m_ui->widget->WriteSettings();
@@ -135,13 +135,13 @@ void MainDialogPrivate::Setup(MainDialog* main_dialog) {
 	});
 
 	connect(&m_process,
-	        static_cast<void (QProcess::*)(int, QProcess::ExitStatus)>(&QProcess::finished),
-	        [this](int /*exitCode*/, QProcess::ExitStatus /*exitStatus*/) {
-		        if (m_running_item != nullptr) {
-			        m_running_item->SetRunning(false);
-		        }
-		        Update();
-	        });
+		static_cast<void (QProcess::*)(int, QProcess::ExitStatus)>(&QProcess::finished),
+		[this](int /*exitCode*/, QProcess::ExitStatus /*exitStatus*/) {
+			if (m_running_item != nullptr) {
+				m_running_item->SetRunning(false);
+			}
+			Update();
+		});
 
 	m_ui->label_settings_file->setText(tr("Settings file: ") + m_ui->widget->GetSettingsFile());
 
@@ -280,7 +280,7 @@ static QString BashQuote(QString value) {
 }
 
 static bool CreateBashScript(const QString& interpreter, const QStringList& args,
-                             const QString& file_name) {
+			     const QString& file_name) {
 	QFile file(file_name);
 	if (file.open(QIODevice::WriteOnly | QIODevice::Text)) {
 		QTextStream s(&file);
@@ -297,7 +297,7 @@ static bool CreateBashScript(const QString& interpreter, const QStringList& args
 		file.close();
 
 		return file.setPermissions(file.permissions() | QFile::ExeUser | QFile::ExeOwner |
-		                           QFile::ExeGroup);
+					   QFile::ExeGroup);
 	}
 	return false;
 }
@@ -419,7 +419,7 @@ void MainDialog::RunInterpreter(QProcess* process, const Configuration& info) {
 		process->setProgram(CMD_EXE);
 		process->setArguments({});
 		process->setNativeArguments(QStringLiteral("/K \"") +
-		                            BuildWinCmdKCommand(interpreter, args) + QLatin1Char('"'));
+					    BuildWinCmdKCommand(interpreter, args) + QLatin1Char('"'));
 	}
 #else
 	process->setProgram(interpreter);

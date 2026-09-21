@@ -24,8 +24,8 @@ inline QStringList EnumToList() {
 	for (int i = 0; i < count; i++) {
 		auto key = QString(me.key(i));
 		ret << (key.startsWith('R') && key.size() > 2 && key.at(1).isDigit()
-		            ? key.remove('R').toLower()
-		            : key);
+			    ? key.remove('R').toLower()
+			    : key);
 	}
 	return ret;
 }
@@ -42,7 +42,7 @@ QString EnumToText(T value) {
 	auto me  = QMetaEnum::fromType<T>();
 	auto key = QString(me.valueToKey(static_cast<int>(value)));
 	return (key.startsWith('R') && key.size() > 2 && key.at(1).isDigit() ? key.remove('R').toLower()
-	                                                                     : key);
+									     : key);
 }
 
 class Configuration: public QObject {
@@ -201,8 +201,8 @@ public:
 		bool user_id_ok    = false;
 		auto saved_user_id = s->value("user_id", user_id).toInt(&user_id_ok);
 		user_id            = user_id_ok && Config::IsConfiguredUserIdValid(saved_user_id)
-		                         ? saved_user_id
-		                         : Config::DEFAULT_USER_ID;
+					 ? saved_user_id
+					 : Config::DEFAULT_USER_ID;
 		audio_input_device = s->value("audio_input_device", audio_input_device).toString();
 		KYTY_CFG_GET(present_mode);
 		gpu_index = s->value("gpu_index", -1).toInt();

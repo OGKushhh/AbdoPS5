@@ -80,8 +80,8 @@ LoadResult Parse(const QByteArray& data) {
 			continue;
 		}
 		ret.entries.insert(title_id,
-		                   {StatusFromText(object.value(QStringLiteral("status")).toString()),
-		                    object.value(QStringLiteral("comment")).toString()});
+				   {StatusFromText(object.value(QStringLiteral("status")).toString()),
+				    object.value(QStringLiteral("comment")).toString()});
 	}
 	return ret;
 }
@@ -90,7 +90,7 @@ LoadResult DownloadOnce() {
 	QNetworkAccessManager manager;
 	QNetworkRequest       request(QUrl(QString::fromLatin1(URL)));
 	request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
-	                     QNetworkRequest::NoLessSafeRedirectPolicy);
+			     QNetworkRequest::NoLessSafeRedirectPolicy);
 	request.setRawHeader("User-Agent", "Kyty-Launcher");
 
 	auto*      reply = manager.get(request);
@@ -187,8 +187,8 @@ void CompatibilityDatabase::Save() const {
 	QJsonObject root;
 	for (auto it = m_entries.constBegin(); it != m_entries.constEnd(); ++it) {
 		root.insert(it.key(),
-		            QJsonObject {{QStringLiteral("status"), StatusToText(it.value().status)},
-		                         {QStringLiteral("comment"), it.value().comment}});
+			    QJsonObject {{QStringLiteral("status"), StatusToText(it.value().status)},
+					 {QStringLiteral("comment"), it.value().comment}});
 	}
 
 	QSaveFile  file(QDir(".").absoluteFilePath(FILE_NAME));
