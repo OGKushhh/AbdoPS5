@@ -10,7 +10,6 @@ namespace Libs::Graphics::ShaderRecompiler::IR {
 class Value;
 
 using SrtMemoryReader = bool (*)(void* userdata, uint64_t address, uint32_t* value);
-using SrtMemoryRangeValidator = bool (*)(void* userdata, uint64_t address, uint64_t size);
 
 struct SrtRuntime {
 	std::span<const uint32_t> user_data;
@@ -18,7 +17,6 @@ struct SrtRuntime {
 	SrtMemoryReader           read_memory                = nullptr;
 	void*                     userdata                   = nullptr;
 	SrtMemoryReader           read_specialization_memory = nullptr;
-	SrtMemoryRangeValidator   validate_memory_range       = nullptr;
 };
 
 enum class RuntimeValueType { Any, Integer };
