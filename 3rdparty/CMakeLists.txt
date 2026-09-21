@@ -27,19 +27,26 @@ if(USE_CUBEB)
         set(BUILD_RUST_BUILTIN OFF CACHE BOOL "" FORCE)
         set(BUILD_TOOLS OFF CACHE BOOL "" FORCE)
         set(USE_SANITIZERS OFF CACHE BOOL "" FORCE)
-        # Tell cubeb to skip its install() rules. CMAKE_SKIP_INSTALL_RULES=ON
-        # prevents any install() call in a subdirectory from registering an
-        # install target — exactly what we want, since we only need the static
-        # library, not the headers/pkg-config in our install prefix.
-        # (Without this, `cmake --install` fails on Windows because cubeb's
+
+        # Override install() with a no-op for the duration of cubeb's
+        # add_subdirectory call. CMake's install() is a builtin command, but
+        # we can shadow it with a function. This is the cleanest way to prevent
+        # cubeb from registering install rules that fail on Windows (its
         # cmake_install.cmake looks for `<source>/include/cubeb` at install
-        # time using a path computed relative to the wrong working directory.)
-        set(CMAKE_SKIP_INSTALL_RULES ON CACHE BOOL "" FORCE)
+        # time using a path computed relative to the wrong working directory).
+        function(install)
+                # Silently swallow all install() calls from cubeb's CMakeLists.
+        endfunction()
+
         FetchContent_MakeAvailable(cubeb)
-        # Re-enable install rules for everything AFTER cubeb.
-        set(CMAKE_SKIP_INSTALL_RULES OFF CACHE BOOL "" FORCE)
+
+        # Restore the real install() builtin by undefining our function.
+        # CMake doesn't have a clean way to 'undefine' a function — but since
+        # functions are scope-local, the install() above is only shadowed within
+        # this file's scope. The next add_subdirectory (which has its own scope)
+        # will see the original builtin again.
+        # To be safe, also mark cubeb as EXCLUDE_FROM_ALL.
         if(TARGET cubeb)
-                # Extra safety: exclude cubeb from the default install set too.
                 set_target_properties(cubeb PROPERTIES EXCLUDE_FROM_ALL ON)
         endif()
 endif()
