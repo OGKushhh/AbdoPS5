@@ -17,6 +17,7 @@
 #include <QCheckBox>
 #include <QDir>
 #include <QFile>
+#include <QFileDialog>
 #include <QFileInfo>
 #include <QHBoxLayout>
 #include <QInputDialog>
@@ -31,7 +32,9 @@
 #include <QRegularExpression>
 #include <QSettings>
 #include <QShortcut>
+#include <QSize>
 #include <QStackedWidget>
+#include <QStandardPaths>
 #include <QStatusBar>
 #include <QStringList>
 #include <QTextStream>
