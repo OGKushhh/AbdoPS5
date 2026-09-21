@@ -197,7 +197,15 @@ jobs:
             clang cmake ninja-build \
             libsdl2-dev libvulkan-dev libfreetype-dev \
             nlohmann-json3-dev libfmt-dev libxxhash-dev \
-            libmagic-dev libglslang-tools libspirv-dev \
+            libmagic-dev glslang-tools spirv-tools \
+            qt6-base-dev qt6-base-dev-tools \
+            libavcodec-dev libavformat-dev libavutil-dev libswscale-dev \
+            libswresample-dev libbz2-dev liblzma-dev 2>&1 || \
+          sudo apt-get install -y \
+            clang cmake ninja-build \
+            libsdl2-dev libvulkan-dev libfreetype-dev \
+            nlohmann-json3-dev libfmt-dev libxxhash-dev \
+            libmagic-dev libglslang-dev libspirv-dev \
             qt6-base-dev qt6-base-dev-tools \
             libavcodec-dev libavformat-dev libavutil-dev libswscale-dev \
             libswresample-dev libbz2-dev liblzma-dev
