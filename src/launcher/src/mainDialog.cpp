@@ -740,7 +740,7 @@ void MainDialogPrivate::OnOpenCheatsPatches() {
 	dialog->setWindowTitle("Cheats & Patches — " + title_id);
 	dialog->setAttribute(Qt::WA_DeleteOnClose);
 	dialog->resize(600, 500);
-	dialog->exec();
+	dialog->show();
 }
 
 void MainDialogPrivate::OnToggleBackgroundMusic() {

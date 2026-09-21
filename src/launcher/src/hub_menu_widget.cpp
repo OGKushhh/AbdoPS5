@@ -8,6 +8,7 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QKeyEvent>
+#include <QPainter>
 #include <QPixmap>
 #include <QGraphicsOpacityEffect>
 #include <QPropertyAnimation>
