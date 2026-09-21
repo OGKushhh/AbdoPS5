@@ -13,12 +13,13 @@ if(USE_CUBEB)
         FetchContent_Declare(
                 cubeb
                 GIT_REPOSITORY https://github.com/mozilla/cubeb.git
-                # mozilla/cubeb master as of 2025-08; no tagged releases recently,
-                # but the API used here (cubeb_init / cubeb_stream_init /
-                # cubeb_stream_start / cubeb_stream_destroy) has been stable
-                # since 2022. Update only if mozilla breaks the API.
-                GIT_TAG dc175d8e3e9e9c3377bd8a8316f001f6df4f9fd1
-                GIT_SHALLOW TRUE
+                # mozilla/cubeb master HEAD as of 2026-09. No tagged releases since
+                # cubeb-0.2 (which is ancient). The API used here (cubeb_init /
+                # cubeb_stream_init / cubeb_stream_start / cubeb_stream_destroy)
+                # has been stable since 2022 — pinning to a specific commit so
+                # CI builds are reproducible.
+                GIT_TAG e13d9c8855d42bebcd52e69f296404ff437dcdf5
+                GIT_SHALLOW FALSE
         )
         # Cubeb options: build static, skip examples/tests, skip rust audiounit
         # backend (would require a Rust toolchain in CI).

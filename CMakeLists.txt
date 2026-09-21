@@ -714,7 +714,7 @@ endif()
 # Disabled when launcher is disabled because the post-build copy step
 # references $<TARGET_FILE_DIR:launcher>.
 if(KYTY_BUILD_LAUNCHER)
-        add_subdirectory("${KYTY_SOURCE_DIR}/tools" "${CMAKE_CURRENT_BINARY_DIR}/tools")
+        add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/tools" "${CMAKE_CURRENT_BINARY_DIR}/tools")
 endif()
 if(KYTY_CLANG_CL)
         install(FILES "${KYTY_THIRD_PARTY_DIR}/winpthread/bin/libwinpthread-1.dll" DESTINATION .)
