@@ -435,6 +435,15 @@ target_link_libraries(haptic_tests common SDL2-static)
 target_include_directories(haptic_tests PRIVATE ${inc_headers})
 add_test(NAME haptic_tests COMMAND $<TARGET_FILE:haptic_tests>)
 
+# Kyty-017: TMR controller unit tests.
+add_executable(tmr_tests EXCLUDE_FROM_ALL
+        "${KYTY_TESTS_DIR}/TmrTests.cpp"
+        "${KYTY_SOURCE_DIR}/graphics/host_gpu/tmrController.cpp"
+)
+target_link_libraries(tmr_tests common)
+target_include_directories(tmr_tests PRIVATE ${inc_headers})
+add_test(NAME tmr_tests COMMAND $<TARGET_FILE:tmr_tests>)
+
 add_executable(bit_array_tests EXCLUDE_FROM_ALL
         "${KYTY_TESTS_DIR}/BitArrayTests.cpp"
 )

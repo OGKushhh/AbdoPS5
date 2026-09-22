@@ -12,6 +12,7 @@
 #include "common/systemInfo.h"
 #include "common/threads.h"
 #include "graphics/host_gpu/iommu.h"
+#include "graphics/host_gpu/tmrController.h"
 #include "graphics/presentation/window.h"
 #include "kernel/fileSystem.h"
 #include "kernel/memoryCompression.h"
@@ -159,6 +160,12 @@ static void Init(const Config::ConfigOptions& cfg, const std::filesystem::path& 
         // the MMIO dispatcher (which the Iommu registers with) is ready.
         // The Iommu is a singleton — see src/graphics/host_gpu/iommu.h.
         Libs::Graphics::InitializeIommu();
+
+        // Kyty-017: Initialize the TMR (Trust Memory Range) controller.
+        // All entries default to permissive (0x3F07) — the emulator
+        // never blocks any memory access due to TMR (the host OS already
+        // enforces memory protection).
+        Libs::Graphics::InitializeTmr();
 
         // Kyty-016: Register a store callback so the IOMMU's
         // COMPLETION_WAIT_STORE command can write 8 bytes to any
