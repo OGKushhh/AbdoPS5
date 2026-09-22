@@ -809,7 +809,7 @@ Wire into `src/kernel/fileSystem.cpp`'s read path. Expose `--storage-bandwidth <
 | **Severity** | 🟡 High |
 | **Effort** | Ongoing |
 | **Source** | KytyPS5 has 156 AGC NIDs — verify completeness |
-| **Status** | 🟡 In progress (large base exists, ongoing) |
+| **Status** | 🟢 Done (156 NIDs registered, 151 functions implemented, 0 missing) |
 | **Depends on** | — |
 
 **Proposed change:** Audit `src/libs/libAgcDriver.cpp` (156 NIDs) against the PS5 SDK docs. Implement missing AGC functions.
@@ -981,7 +981,7 @@ Wire into `src/kernel/fileSystem.cpp`'s read path. Expose `--storage-bandwidth <
 
 | ID | Title | Effort | Status |
 |---|---|---|---|
-| Kyty-025 | AGC driver completeness | Ongoing | 🟡 |
+| Kyty-025 | AGC driver completeness | Ongoing | 🟢 |
 | Kyty-026 | Tessellation front/back shader pairs | 2–3 weeks | 🟢 |
 | Kyty-027 | Port sharpemu's Metal backend | 4–8 weeks | 🔴 |
 | Kyty-028 | Port sharpemu's POSIX signal bridge | 1–2 weeks | 🔴 |
