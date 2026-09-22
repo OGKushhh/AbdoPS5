@@ -15,10 +15,10 @@
 
 namespace {
 
-using Libs::Graphics::Iommu;
-using Libs::Graphics::IommuCmd;
-using Libs::Graphics::IommuCompletionWaitStore;
-using Libs::Graphics::IommuMmio;
+using Iommu = Libs::Graphics::Iommu;
+namespace IommuCmd = Libs::Graphics::IommuCmd;
+namespace IommuMmio = Libs::Graphics::IommuMmio;
+using IommuCompletionWaitStore = Libs::Graphics::IommuCompletionWaitStore;
 
 int g_test_failures = 0;
 
