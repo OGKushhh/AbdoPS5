@@ -444,6 +444,17 @@ target_link_libraries(tmr_tests common)
 target_include_directories(tmr_tests PRIVATE ${inc_headers})
 add_test(NAME tmr_tests COMMAND $<TARGET_FILE:tmr_tests>)
 
+# Kyty-022: Screenshot module unit tests.
+add_executable(screenshot_tests EXCLUDE_FROM_ALL
+        "${KYTY_TESTS_DIR}/ScreenshotTests.cpp"
+        "${KYTY_SOURCE_DIR}/graphics/presentation/screenshot.cpp"
+)
+target_link_libraries(screenshot_tests common)
+target_include_directories(screenshot_tests PRIVATE
+        ${inc_headers}
+        "${KYTY_THIRD_PARTY_DIR}/stb")
+add_test(NAME screenshot_tests COMMAND $<TARGET_FILE:screenshot_tests>)
+
 add_executable(bit_array_tests EXCLUDE_FROM_ALL
         "${KYTY_TESTS_DIR}/BitArrayTests.cpp"
 )

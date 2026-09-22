@@ -13,6 +13,7 @@
 #include "common/threads.h"
 #include "graphics/host_gpu/iommu.h"
 #include "graphics/host_gpu/tmrController.h"
+#include "graphics/presentation/screenshot.h"
 #include "graphics/presentation/window.h"
 #include "kernel/fileSystem.h"
 #include "kernel/memoryCompression.h"
@@ -166,6 +167,9 @@ static void Init(const Config::ConfigOptions& cfg, const std::filesystem::path& 
         // never blocks any memory access due to TMR (the host OS already
         // enforces memory protection).
         Libs::Graphics::InitializeTmr();
+
+        // Kyty-022: Initialize the screenshot module.
+        Libs::Graphics::InitializeScreenshot();
 
         // Kyty-016: Register a store callback so the IOMMU's
         // COMPLETION_WAIT_STORE command can write 8 bytes to any
