@@ -25,6 +25,7 @@ void Iommu::Reset() {
     m_cb_head.store(0);
     m_cb_tail.store(0);
     m_device_table_base = 0;
+    m_device_table_configured = false;
     std::fill(m_command_buffer.begin(), m_command_buffer.end(), 0);
 }
 
@@ -222,7 +223,7 @@ uint64_t Iommu::Translate(uint64_t iova) const {
 
     // IOMMU is enabled. If no device table base is configured, we can't
     // translate — fall back to pass-through (with a warning).
-    if (m_device_table_base == 0) {
+    if (!m_device_table_configured) {
         LOGF("IOMMU: enabled but no device table base configured — "
              "pass-through (IOVA=0x%llx)\n",
              static_cast<unsigned long long>(iova));
@@ -294,7 +295,7 @@ uint64_t Iommu::Translate(uint64_t iova) const {
 IommuDeviceTableEntry Iommu::ReadDeviceTableEntry(uint16_t device_id) const {
     IommuDeviceTableEntry entry{};
 
-    if (m_device_table_base == 0 || m_read_callback == nullptr) {
+    if (!m_device_table_configured || m_read_callback == nullptr) {
         return entry; // not configured — entry is invalid (V=0)
     }
 

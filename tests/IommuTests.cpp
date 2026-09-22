@@ -240,20 +240,6 @@ void TestPageWalk() {
 
     // Translate the IOVA and verify it maps to the expected PA.
     const uint64_t result = iommu.Translate(target_iova);
-    if (result != target_pa) {
-        std::printf("DEBUG: target_iova=0x%llx target_pa=0x%llx result=0x%llx\n",
-                    static_cast<unsigned long long>(target_iova),
-                    static_cast<unsigned long long>(target_pa),
-                    static_cast<unsigned long long>(result));
-        std::printf("DEBUG: DTE raw[0]=0x%llx valid=%d tv=%d pt_root=0x%llx\n",
-                    static_cast<unsigned long long>(dte[0]),
-                    (dte[0] & 1) != 0,
-                    (dte[0] & (1ULL << 9)) != 0,
-                    static_cast<unsigned long long>(dte[0] & 0x000FFFFFFFFFF000ULL));
-        std::printf("DEBUG: PTE[1]=0x%llx pte_pa=0x%llx\n",
-                    static_cast<unsigned long long>(pte_array[1]),
-                    static_cast<unsigned long long>(PAGE_TABLE_PA + pte_index * 8));
-    }
     Check(result == target_pa, "Translate() walks device table + page table correctly");
 
     // Verify an unmapped IOVA falls through to pass-through.

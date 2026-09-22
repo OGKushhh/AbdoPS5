@@ -196,8 +196,9 @@ public:
     // The kernel writes this to the IOMMU's Device Table Base Address
     // register (AMD IOMMU spec: DTE_BASE at MMIO offset 0x0000 + 0x08).
     // When set, Translate() will walk the device table + page tables.
-    void SetDeviceTableBase(uint64_t pa) { m_device_table_base = pa; }
+    void SetDeviceTableBase(uint64_t pa) { m_device_table_base = pa; m_device_table_configured = true; }
     [[nodiscard]] uint64_t GetDeviceTableBase() const { return m_device_table_base; }
+    [[nodiscard]] bool IsDeviceTableConfigured() const { return m_device_table_configured; }
 
     // Kyty-016 enhancement: Read a DTE for a given device ID.
     // The device table is an array of 32-byte DTEs, indexed by device ID.
@@ -258,8 +259,11 @@ private:
     void*        m_read_callback_user_data = nullptr;
 
     // Device table base address (set by the kernel via SetDeviceTableBase).
-    // 0 = not configured → Translate() returns IOVA unchanged.
+    // m_device_table_configured tracks whether SetDeviceTableBase was called
+    // (because PA 0 is a valid physical address on PS5 — we can't use 0 as
+    // "not configured" sentinel).
     uint64_t m_device_table_base = 0;
+    bool     m_device_table_configured = false;
 };
 
 } // namespace Libs::Graphics
