@@ -34,9 +34,10 @@
 #include <vector>
 
 // Forward-declare SDL type to avoid pulling the SDL2 header into every
-// file that includes this header. The implementation file includes
-// the real SDL2/SDL_gamecontroller.h.
-struct SDL_GameController;
+// file that includes this header. SDL_GameController is actually a
+// typedef, not a plain struct, so we use void* in the interface and
+// cast in the implementation file.
+// (Callers typically already have the SDL header included.)
 
 namespace Libs::Controller {
 
@@ -71,8 +72,11 @@ public:
         // Send the next chunk of haptic data to the controller.
         // Call this every ~10ms from the main loop. If no samples are
         // queued, sends silence (which stops the actuators).
+        // 'pad' is an SDL_GameController* passed as void* to avoid
+        // pulling the SDL2 header into this file. The implementation
+        // file casts it back.
         // Returns the number of samples sent (0-30).
-        size_t Pump(SDL_GameController* pad);
+        size_t Pump(void* pad);
 
         // Stop all haptic playback and clear the buffer.
         void Stop();

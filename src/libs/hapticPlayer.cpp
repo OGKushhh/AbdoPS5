@@ -67,7 +67,8 @@ void HapticPlayer::QueueSamples(const uint8_t* samples, size_t count) {
         }
 }
 
-size_t HapticPlayer::Pump(SDL_GameController* pad) {
+size_t HapticPlayer::Pump(void* pad_ptr) {
+        auto* pad = static_cast<SDL_GameController*>(pad_ptr);
         if (pad == nullptr) {
                 return 0;
         }
