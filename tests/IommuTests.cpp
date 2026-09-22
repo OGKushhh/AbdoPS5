@@ -12,6 +12,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <memory>
 #include <unordered_map>
 
 namespace {
@@ -201,7 +202,7 @@ void TestPageWalk() {
     // Mock physical memory: 64 KB array.
     // Device table at offset 0x0000, page table at offset 0x1000.
     constexpr uint64_t MOCK_MEM_SIZE = 0x10000;
-    static std::vector<uint8_t> mock_mem(MOCK_MEM_SIZE, 0);
+    auto mock_mem = std::make_shared<std::vector<uint8_t>>(MOCK_MEM_SIZE, 0);
 
     constexpr uint64_t DEVICE_TABLE_PA = 0x0000;
     constexpr uint64_t PAGE_TABLE_PA   = 0x1000;
@@ -212,27 +213,29 @@ void TestPageWalk() {
     //   bit 0 (V) = 1 (valid)
     //   bit 9 (TV) = 1 (translation valid)
     //   bits 51:12 = PAGE_TABLE_PA (page-table root)
-    auto* dte = reinterpret_cast<uint64_t*>(mock_mem.data() + DEVICE_TABLE_PA + DEVICE_ID * 32);
+    auto* dte = reinterpret_cast<uint64_t*>(mock_mem->data() + DEVICE_TABLE_PA + DEVICE_ID * 32);
     dte[0] = 1ULL | (1ULL << 9) | (PAGE_TABLE_PA & 0x000FFFFFFFFFF000ULL);
 
     // Set up the page table: map IOVA 0x1000 → PA 0x5000.
     // PTE at index (0x1000 >> 12) = 1.
     // PTE has: bit 0 (P) = 1, bits 51:12 = 0x5000.
-    auto* pte_array = reinterpret_cast<uint64_t*>(mock_mem.data() + PAGE_TABLE_PA);
+    auto* pte_array = reinterpret_cast<uint64_t*>(mock_mem->data() + PAGE_TABLE_PA);
     const uint64_t target_iova = 0x1000;
     const uint64_t target_pa   = 0x5000;
     const uint64_t pte_index   = (target_iova >> 12) & 0x7FFFFFFF;
     pte_array[pte_index] = 1ULL | (target_pa & 0x000FFFFFFFFFF000ULL);
 
-    // Register a read callback that reads from mock_mem.
-    auto read_callback = +[](uint64_t pa, void* dst, size_t size, void* /*user_data*/) -> bool {
-        if (pa + size > MOCK_MEM_SIZE) {
+    // Register a read callback that reads from mock_mem (via shared_ptr
+    // passed as user_data, since the callback is a raw function pointer).
+    auto read_callback = +[](uint64_t pa, void* dst, size_t size, void* user_data) -> bool {
+        auto* mem = static_cast<std::vector<uint8_t>*>(user_data);
+        if (pa + size > mem->size()) {
             return false;
         }
-        std::memcpy(dst, mock_mem.data() + pa, size);
+        std::memcpy(dst, mem->data() + pa, size);
         return true;
     };
-    iommu.RegisterReadCallback(read_callback, nullptr);
+    iommu.RegisterReadCallback(read_callback, mock_mem.get());
     iommu.SetDeviceTableBase(DEVICE_TABLE_PA);
 
     // Translate the IOVA and verify it maps to the expected PA.
@@ -243,9 +246,6 @@ void TestPageWalk() {
     const uint64_t unmapped_iova = 0x2000; // PTE at index 2 is 0 (not present)
     const uint64_t unmapped_result = iommu.Translate(unmapped_iova);
     Check(unmapped_result == unmapped_iova, "Translate() pass-through for unmapped IOVA");
-
-    // Clean up.
-    mock_mem.assign(MOCK_MEM_SIZE, 0);
 }
 
 // Test: Reset() clears all state.
