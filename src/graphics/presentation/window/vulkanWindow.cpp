@@ -397,6 +397,18 @@ static void VulkanFindPhysicalDevice(vk::Instance instance, vk::SurfaceKHR surfa
 
                         for (const char* ext: device_extensions) {
                                 if (!HasExtension(available_extensions, ext)) {
+                                        // Kyty-vulkan-relax: when --vulkan-relax-requirements
+                                        // is set, missing relax-able extensions (barycentric,
+                                        // color_write_enable, depth_clip_enable) are NOT fatal.
+                                        // We'll skip requesting them in VulkanCreateDevice.
+                                        if (Config::VulkanRelaxRequirements() &&
+                                            (strcmp(ext, VK_KHR_FRAGMENT_SHADER_BARYCENTRIC_EXTENSION_NAME) == 0 ||
+                                             strcmp(ext, VK_EXT_COLOR_WRITE_ENABLE_EXTENSION_NAME) == 0 ||
+                                             strcmp(ext, VK_EXT_DEPTH_CLIP_ENABLE_EXTENSION_NAME) == 0)) {
+                                                LOGF("Extension %s is not supported (relaxed)\n", ext);
+                                                continue;
+                                        }
+                                        LOGF("Required extension %s is not supported\n", ext);
                                         skip_device = true;
                                         break;
                                 }
@@ -721,6 +733,29 @@ static vk::Device VulkanCreateDevice(GraphicContext& graphics,
         }
         create_info.pQueueCreateInfos       = &queue_create_info;
         create_info.queueCreateInfoCount    = 1;
+
+        // Kyty-vulkan-relax: filter out relax-able extensions the device
+        // doesn't actually support, so vkCreateDevice doesn't fail with
+        // VK_ERROR_EXTENSION_NOT_PRESENT. The feature structs above are
+        // already gated on the corresponding *_enabled flags.
+        if (Config::VulkanRelaxRequirements()) {
+                device_extensions.erase(
+                    std::remove_if(device_extensions.begin(), device_extensions.end(),
+                                   [](const char* ext) {
+                                           if (strcmp(ext, VK_KHR_FRAGMENT_SHADER_BARYCENTRIC_EXTENSION_NAME) == 0) {
+                                                   return !graphics.fragment_shader_barycentric_enabled;
+                                           }
+                                           if (strcmp(ext, VK_EXT_COLOR_WRITE_ENABLE_EXTENSION_NAME) == 0) {
+                                                   return !graphics.color_write_enable_enabled;
+                                           }
+                                           if (strcmp(ext, VK_EXT_DEPTH_CLIP_ENABLE_EXTENSION_NAME) == 0) {
+                                                   return !graphics.depth_clip_enable_enabled;
+                                           }
+                                           return false;
+                                   }),
+                    device_extensions.end());
+        }
+
         create_info.enabledExtensionCount   = static_cast<uint32_t>(device_extensions.size());
         create_info.ppEnabledExtensionNames = device_extensions.data();
         create_info.pEnabledFeatures        = &device_features;
