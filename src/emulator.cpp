@@ -29,6 +29,7 @@
 #include "loader/timer.h"
 
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <thread>
 
@@ -184,6 +185,23 @@ static void Init(const Config::ConfigOptions& cfg, const std::filesystem::path& 
                         return true;
                 };
                 iommu->RegisterStoreCallback(store_callback, nullptr);
+
+                // Kyty-016: Register a read callback so Translate() can
+                // walk the device table + page tables. Same PA→host VA
+                // translation as the store callback, but reads instead.
+                auto read_callback = +[](uint64_t pa, void* dst, size_t size, void* /*user_data*/) -> bool {
+                        const uint64_t base = Libs::LibKernel::Memory::GetPhysicalMemoryBase();
+                        const uint64_t mem_size = Libs::LibKernel::Memory::GetPhysicalMemorySize();
+                        if (base == 0 || mem_size == 0) {
+                                return false;
+                        }
+                        if (pa + size > mem_size) {
+                                return false;
+                        }
+                        std::memcpy(dst, reinterpret_cast<const void*>(base + pa), size);
+                        return true;
+                };
+                iommu->RegisterReadCallback(read_callback, nullptr);
         }
 
         // Kyty-009: Configure the storage I/O scheduler.
