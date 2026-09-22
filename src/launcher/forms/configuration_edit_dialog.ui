@@ -173,6 +173,12 @@
           <property name="text"><string>Enable tessellation support (experimental)</string></property>
          </widget>
         </item>
+        <item row="8" column="1">
+         <widget class="QCheckBox" name="checkBox_vulkan_relax">
+          <property name="toolTip"><string>Skip rejection of older GPUs that lack fragmentShaderBarycentric, colorWriteEnable, or depthClipEnable. For Pascal GTX 10-series and similar. May cause visual glitches.</string></property>
+          <property name="text"><string>Vulkan relax requirements (older GPUs, may glitch)</string></property>
+         </widget>
+        </item>
        </layout>
       </widget>
      </item>
