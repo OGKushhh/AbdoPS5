@@ -33,6 +33,11 @@
 #include <string>
 #include <vector>
 
+// Forward-declare SDL type to avoid pulling the SDL2 header into every
+// file that includes this header. The implementation file includes
+// the real SDL2/SDL_gamecontroller.h.
+struct SDL_GameController;
+
 namespace Libs::Controller {
 
 // DualSense haptic audio format:
