@@ -54,15 +54,23 @@ void HapticPlayer::QueueSamples(const uint8_t* samples, size_t count) {
         }
 
         // Limit the buffer to ~1 second of haptic data (3000 samples).
-        // If the buffer is full, drop old samples (haptic data is
+        // If the buffer would overflow, drop old samples (haptic data is
         // time-sensitive — late samples are useless and would cause
         // latency buildup).
         constexpr size_t MAX_BUFFER = HAPTIC_SAMPLE_RATE;
-        while (m_buffer.size() > MAX_BUFFER - count && !m_buffer.empty()) {
+
+        // If adding count would exceed MAX_BUFFER, drop old samples.
+        while (m_buffer.size() + count > MAX_BUFFER && !m_buffer.empty()) {
                 m_buffer.pop();
         }
 
-        for (size_t i = 0; i < count; ++i) {
+        // If count itself exceeds MAX_BUFFER, only queue the last
+        // MAX_BUFFER samples (the rest are too old to matter).
+        const size_t start = (count > MAX_BUFFER) ? (count - MAX_BUFFER) : 0;
+        for (size_t i = start; i < count; ++i) {
+                if (m_buffer.size() >= MAX_BUFFER) {
+                        break; // safety: never exceed MAX_BUFFER
+                }
                 m_buffer.push(samples[i]);
         }
 }
