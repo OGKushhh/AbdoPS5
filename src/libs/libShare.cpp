@@ -15,6 +15,7 @@ LIB_VERSION("Share", 1, "Share", 1, 1);
 
 namespace Share {
 
+constexpr int SHARE_ERROR_OK = 0;
 constexpr int SHARE_ERROR_INVALID_PARAM = -2120876030; /* 0x81960002 */
 constexpr int SHARE_ERROR_NOT_SUPPORTED = -2120876025; /* 0x81960007 */
 constexpr int SHARE_REQUEST_ID_INVALID  = -1;
