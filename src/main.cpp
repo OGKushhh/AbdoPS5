@@ -19,6 +19,10 @@
 #include <fmt/format.h>
 #include <magic_enum.hpp>
 
+#if KYTY_PLATFORM == KYTY_PLATFORM_WINDOWS
+#include <intrin.h>
+#endif
+
 using namespace Common;
 using namespace Emulator;
 
@@ -435,6 +439,62 @@ static bool ParseArgs(int argc, char* argv[], RunOptions& options, bool& show_he
 static int Main(int argc, char* argv[]) {
         VirtualMemory::Init();
         InitializeThreads();
+
+        // Check for AVX support BEFORE doing anything else. PS5 games use
+        // AVX/AVX2 instructions (e.g. vpxor, vmovdqa) and KytyPS5 executes
+        // guest x86 code natively — there is no instruction translation.
+        // If the host CPU lacks AVX, the guest code will crash with
+        // STATUS_ILLEGAL_INSTRUCTION (0xC000001D) the moment it executes
+        // any AVX instruction, which is confusing to debug.
+        //
+        // CPUs without AVX: anything before Intel Sandy Bridge (2011) or
+        // AMD Bulldozer (2011). E.g. Intel Xeon X5650 (Westmere, 2010)
+        // does NOT have AVX and will fail here.
+        {
+                bool has_avx = false;
+                bool has_avx2 = false;
+#if KYTY_PLATFORM == KYTY_PLATFORM_WINDOWS
+                int cpu_info[4] = {};
+                __cpuid(cpu_info, 0);
+                const int max_leaf = cpu_info[0];
+                if (max_leaf >= 1) {
+                        __cpuidex(cpu_info, 1, 0);
+                        const bool os_xsave = (cpu_info[2] & (1 << 27)) != 0;
+                        const bool cpu_avx  = (cpu_info[2] & (1 << 28)) != 0;
+                        if (os_xsave && cpu_avx) {
+                                // Check that the OS has enabled XSAVE for AVX state
+                                unsigned long long xcr0 = 0;
+                                xcr0 = _xgetbv(0);
+                                has_avx = (xcr0 & 0x6) == 0x6; // bits 1+2 = XMM + YMM
+                        }
+                        if (has_avx && max_leaf >= 7) {
+                                __cpuidex(cpu_info, 7, 0);
+                                has_avx2 = (cpu_info[1] & (1 << 5)) != 0;
+                        }
+                }
+#endif
+                if (!has_avx) {
+                        ::printf("\n");
+                        ::printf("========================================\n");
+                        ::printf("  CPU does not support AVX\n");
+                        ::printf("========================================\n");
+                        ::printf("\n");
+                        ::printf("KytyPS5 executes PS5 x86 code natively on the host CPU.\n");
+                        ::printf("PS5 games use AVX instructions (vpxor, vmovdqa, etc.) which\n");
+                        ::printf("require Intel Sandy Bridge (2011) or AMD Bulldozer (2011) or\n");
+                        ::printf("newer. Your CPU does not support AVX, so the emulator cannot\n");
+                        ::printf("run any PS5 game.\n");
+                        ::printf("\n");
+                        ::printf("There is no software workaround — the host CPU must support\n");
+                        ::printf("AVX at the hardware level. AVX2 (Haswell 2013+) is preferred.\n");
+                        ::printf("\n");
+                        return 1;
+                }
+                if (!has_avx2) {
+                        ::printf("WARNING: CPU supports AVX but not AVX2. Some games may crash.\n");
+                        ::printf("AVX2 (Intel Haswell 2013+ / AMD Excavator 2015+) recommended.\n\n");
+                }
+        }
 
         RunOptions options;
         bool       show_help = false;
