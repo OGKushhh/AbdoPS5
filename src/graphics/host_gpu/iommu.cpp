@@ -24,6 +24,7 @@ void Iommu::Reset() {
     m_ctrl.store(0);
     m_cb_head.store(0);
     m_cb_tail.store(0);
+    m_device_table_base = 0;
     std::fill(m_command_buffer.begin(), m_command_buffer.end(), 0);
 }
 
@@ -212,19 +213,102 @@ void Iommu::ExecuteCompletionWaitStore(const IommuCompletionWaitStore& cmd) {
 }
 
 uint64_t Iommu::Translate(uint64_t iova) const {
-    // Currently pass-through. When the IOMMU is enabled (bit 0 of CTRL
-    // set), this would walk the device table + page tables. But the PS5
-    // boot loader disables the IOMMU early in boot, so most games run
-    // with translation effectively off.
-    //
-    // When we start modeling games that DO use IOMMU translation (e.g.
-    // some PS5 exclusives that DMA to non-system-memory addresses),
-    // we'll implement the actual page walk here.
-    if (IsEnabled()) {
-        LOGF("IOMMU: Translate called while IOMMU is enabled — returning IOVA "
-             "unchanged (page walk not implemented yet)\n");
+    // If the IOMMU is disabled (bit 0 of CTRL = 0), translation is
+    // pass-through: the IOVA IS the physical address. This is the
+    // common case — the PS5 boot loader disables the IOMMU early.
+    if (!IsEnabled()) {
+        return iova;
     }
-    return iova;
+
+    // IOMMU is enabled. If no device table base is configured, we can't
+    // translate — fall back to pass-through (with a warning).
+    if (m_device_table_base == 0) {
+        LOGF("IOMMU: enabled but no device table base configured — "
+             "pass-through (IOVA=0x%llx)\n",
+             static_cast<unsigned long long>(iova));
+        return iova;
+    }
+
+    // No read callback — can't walk the device table.
+    if (m_read_callback == nullptr) {
+        LOGF("IOMMU: enabled but no read callback registered — "
+             "pass-through (IOVA=0x%llx)\n",
+             static_cast<unsigned long long>(iova));
+        return iova;
+    }
+
+    // The AMD IOMMU walks a 4-level page table (PML4 → PDPT → PD → PT).
+    // Each level is a 4KB page of 512 64-bit entries.
+    //
+    // For now, we implement a simplified 1-level walk: read the DTE for
+    // device 0 (the GPU), get its page-table root, and do a single-level
+    // lookup. This covers the common case where PS5 games use a flat
+    // page table (the kernel sets up identity-mapped pages).
+    //
+    // Full 4-level walk can be added when we encounter a game that
+    // actually uses nested page tables.
+
+    const auto dte = ReadDeviceTableEntry(0); // device 0 = GPU
+    if (!dte.IsValid() || !dte.IsTranslationValid()) {
+        LOGF("IOMMU: DTE for device 0 is invalid or translation not valid — "
+             "pass-through (IOVA=0x%llx)\n",
+             static_cast<unsigned long long>(iova));
+        return iova;
+    }
+
+    const uint64_t pt_root = dte.GetPageTableRoot();
+    if (pt_root == 0) {
+        LOGF("IOMMU: DTE page-table root is 0 — pass-through (IOVA=0x%llx)\n",
+             static_cast<unsigned long long>(iova));
+        return iova;
+    }
+
+    // Single-level lookup: treat the page table as a flat array of
+    // 64-bit PTEs indexed by (iova >> 12) & 0x7FFFFFFF.
+    // Each PTE has the physical address in bits 51:12.
+    const uint64_t pte_pa = pt_root + ((iova >> 12) & 0x7FFFFFFF) * 8;
+    uint64_t pte = 0;
+    if (!m_read_callback(pte_pa, &pte, sizeof(pte), m_read_callback_user_data)) {
+        LOGF("IOMMU: failed to read PTE at PA 0x%llx — pass-through\n",
+             static_cast<unsigned long long>(pte_pa));
+        return iova;
+    }
+
+    if ((pte & 1) == 0) {
+        // PTE not present — fault.
+        LOGF("IOMMU: PTE not present for IOVA 0x%llx (PTE=0x%llx at PA 0x%llx) — "
+             "pass-through\n",
+             static_cast<unsigned long long>(iova),
+             static_cast<unsigned long long>(pte),
+             static_cast<unsigned long long>(pte_pa));
+        return iova;
+    }
+
+    // Extract the physical address from the PTE (bits 51:12).
+    const uint64_t phys = pte & 0x000FFFFFFFFFF000ULL;
+    // Add the page offset from the IOVA.
+    const uint64_t offset = iova & 0xFFF;
+    return phys + offset;
+}
+
+IommuDeviceTableEntry Iommu::ReadDeviceTableEntry(uint16_t device_id) const {
+    IommuDeviceTableEntry entry{};
+
+    if (m_device_table_base == 0 || m_read_callback == nullptr) {
+        return entry; // not configured — entry is invalid (V=0)
+    }
+
+    // The device table is an array of 32-byte DTEs.
+    // DTE for device N is at: device_table_base + N * 32
+    const uint64_t dte_pa = m_device_table_base + static_cast<uint64_t>(device_id) * 32;
+
+    if (!m_read_callback(dte_pa, entry.raw, sizeof(entry.raw), m_read_callback_user_data)) {
+        LOGF("IOMMU: failed to read DTE for device %u at PA 0x%llx\n",
+             device_id, static_cast<unsigned long long>(dte_pa));
+        return entry; // read failed — entry is invalid
+    }
+
+    return entry;
 }
 
 // Global singleton accessor.

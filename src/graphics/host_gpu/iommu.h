@@ -110,6 +110,34 @@ struct IommuCompletionWaitStore {
     }
 };
 
+// Decoded Device Table Entry (DTE).
+// Source: AMD IOMMU Architecture spec §2.2 (Device Table Entry format).
+//
+// The DTE is a 256-bit (32-byte) structure that describes how the IOMMU
+// translates addresses for a specific device (identified by Device ID).
+// On PS5, the kernel programs the DTE during boot to point at a per-
+// process page table. The boot loader then disables the IOMMU, so most
+// games run with translation effectively off.
+//
+// Bit layout (simplified — only the fields we care about):
+//   bits 0:    V (Valid)
+//   bits 1-3:  translation mode
+//   bits 6-7:  I (Interrupts remapped) + H (Host translation)
+//   bits 9:    TV (Translation Valid)
+//   bits 51-12: DTE base address (page-table root, 4KB-aligned)
+struct IommuDeviceTableEntry {
+    uint64_t raw[4] = {};  // 256 bits = 4 × 64 bits
+
+    bool IsValid() const { return (raw[0] & 1) != 0; }
+    bool IsTranslationValid() const { return (raw[0] & (1ULL << 9)) != 0; }
+
+    // Get the page-table root address (DTE bits 51:12).
+    // The page table is 4KB-aligned.
+    uint64_t GetPageTableRoot() const {
+        return raw[0] & 0x000FFFFFFFFFF000ULL;
+    }
+};
+
 class Iommu : public MmioHandler {
 public:
     // Callback type for performing a physical-address store.
@@ -164,6 +192,28 @@ public:
     [[nodiscard]] uint64_t GetCommandBufferHead() const { return m_cb_head.load(); }
     [[nodiscard]] uint64_t GetCommandBufferTail() const { return m_cb_tail.load(); }
 
+    // Kyty-016 enhancement: Set the device table base address.
+    // The kernel writes this to the IOMMU's Device Table Base Address
+    // register (AMD IOMMU spec: DTE_BASE at MMIO offset 0x0000 + 0x08).
+    // When set, Translate() will walk the device table + page tables.
+    void SetDeviceTableBase(uint64_t pa) { m_device_table_base = pa; }
+    [[nodiscard]] uint64_t GetDeviceTableBase() const { return m_device_table_base; }
+
+    // Kyty-016 enhancement: Read a DTE for a given device ID.
+    // The device table is an array of 32-byte DTEs, indexed by device ID.
+    // Returns the raw 256-bit DTE. If the DTE is invalid (V=0), the
+    // returned entry's IsValid() will be false.
+    //
+    // Reads from the kernel's physical memory backing store via the
+    // store callback's read counterpart (not yet implemented — uses
+    // a separate registered read callback for testing).
+    using ReadCallback = bool (*)(uint64_t pa, void* dst, size_t size, void* user_data);
+    void RegisterReadCallback(ReadCallback cb, void* user_data) {
+        m_read_callback = cb;
+        m_read_callback_user_data = user_data;
+    }
+    [[nodiscard]] IommuDeviceTableEntry ReadDeviceTableEntry(uint16_t device_id) const;
+
     // Reset to power-on state. Useful for tests.
     void Reset();
 
@@ -201,6 +251,15 @@ private:
     // Set by the kernel during init via RegisterStoreCallback().
     StoreCallback m_store_callback = nullptr;
     void*         m_store_callback_user_data = nullptr;
+
+    // Read callback for the device table + page table walk.
+    // Set by the kernel during init via RegisterReadCallback().
+    ReadCallback m_read_callback = nullptr;
+    void*        m_read_callback_user_data = nullptr;
+
+    // Device table base address (set by the kernel via SetDeviceTableBase).
+    // 0 = not configured → Translate() returns IOVA unchanged.
+    uint64_t m_device_table_base = 0;
 };
 
 } // namespace Libs::Graphics
