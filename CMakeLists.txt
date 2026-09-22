@@ -415,6 +415,17 @@ add_executable(page_manager_tests EXCLUDE_FROM_ALL
 target_link_libraries(page_manager_tests common)
 target_include_directories(page_manager_tests PRIVATE ${inc_headers})
 
+# Kyty-016: IOMMU unit tests.
+# Tests MMIO register handling, command queue processing, and the
+# completion-wait-store command. Lightweight — links only what we need.
+add_executable(iommu_tests EXCLUDE_FROM_ALL
+        "${KYTY_TESTS_DIR}/IommuTests.cpp"
+        "${KYTY_SOURCE_DIR}/graphics/host_gpu/iommu.cpp"
+)
+target_link_libraries(iommu_tests common)
+target_include_directories(iommu_tests PRIVATE ${inc_headers})
+add_test(NAME iommu_tests COMMAND $<TARGET_FILE:iommu_tests>)
+
 add_executable(bit_array_tests EXCLUDE_FROM_ALL
         "${KYTY_TESTS_DIR}/BitArrayTests.cpp"
 )
