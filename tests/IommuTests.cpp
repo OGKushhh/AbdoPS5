@@ -6,6 +6,7 @@
 // and the completion-wait-store command.
 
 #include "graphics/host_gpu/iommu.h"
+#include "graphics/host_gpu/mmioDispatcher.h"
 
 #include <cstdint>
 #include <cstdio>
@@ -19,6 +20,7 @@ using Iommu = Libs::Graphics::Iommu;
 namespace IommuCmd = Libs::Graphics::IommuCmd;
 namespace IommuMmio = Libs::Graphics::IommuMmio;
 using IommuCompletionWaitStore = Libs::Graphics::IommuCompletionWaitStore;
+namespace MmioDispatcher = Libs::Graphics::MmioDispatcher;
 
 int g_test_failures = 0;
 
@@ -204,6 +206,38 @@ void TestReset() {
     Check(iommu.GetCommandBufferTail() == 0, "Reset clears CB_TAIL");
 }
 
+// Test: RegisterWithDispatcher routes MMIO accesses through the central dispatcher.
+// Verifies that the IOMMU is reachable via MmioDispatcher::DispatchRead/Write.
+void TestDispatcherRouting() {
+    // Clear any handlers from previous tests.
+    MmioDispatcher::Instance().Clear();
+
+    Iommu iommu;
+    iommu.RegisterWithDispatcher();
+
+    // Verify the dispatcher routes an IOMMU access to the right handler.
+    const uint64_t enable_value = 1;
+    Check(MmioDispatcher::Instance().DispatchWrite(
+              IommuMmio::BASE + IommuMmio::CTRL, &enable_value, sizeof(enable_value)),
+          "Dispatcher routes write to IOMMU CTRL register");
+    Check(iommu.IsEnabled(), "IOMMU enabled after dispatched write");
+
+    // Verify out-of-range address is NOT routed.
+    uint64_t read_value = 0;
+    Check(!MmioDispatcher::Instance().DispatchRead(0x1000, &read_value, sizeof(read_value)),
+          "Dispatcher returns false for out-of-range address");
+
+    // Verify in-range read goes through.
+    read_value = 0;
+    Check(MmioDispatcher::Instance().DispatchRead(
+              IommuMmio::BASE + IommuMmio::CTRL, &read_value, sizeof(read_value)),
+          "Dispatcher routes read from IOMMU CTRL register");
+    Check(read_value == 1, "Dispatcher-read CTRL returns the value we wrote");
+
+    // Clean up so subsequent test runs don't see this handler.
+    MmioDispatcher::Instance().Clear();
+}
+
 } // namespace
 
 int main() {
@@ -216,6 +250,7 @@ int main() {
     TestTranslateDisabled();
     TestTranslateEnabledPassThrough();
     TestReset();
+    TestDispatcherRouting();
 
     if (g_test_failures == 0) {
         std::printf("\nIommuTests: ALL PASSED\n");

@@ -8,6 +8,8 @@
 #include "common/assert.h"
 #include "common/logging/log.h"
 
+#include <memory>
+
 namespace Libs::Graphics {
 
 Iommu::Iommu() {
@@ -223,6 +225,31 @@ uint64_t Iommu::Translate(uint64_t iova) const {
              "unchanged (page walk not implemented yet)\n");
     }
     return iova;
+}
+
+// Global singleton accessor.
+namespace {
+std::unique_ptr<Iommu> g_iommu;
+}
+
+Iommu* GetIommu() {
+    return g_iommu.get();
+}
+
+// Initialize the IOMMU singleton and register it with the MMIO dispatcher.
+// Called from Emulator::Run() during graphics subsystem startup.
+// Declared here (not in iommu.h) to keep the header clean — this is
+// an internal lifecycle function, not a public API.
+//
+// Note: defined in this file so it has access to the Iommu constructor.
+void InitializeIommu() {
+    if (g_iommu != nullptr) {
+        return;  // already initialized
+    }
+    g_iommu = std::make_unique<Iommu>();
+    g_iommu->RegisterWithDispatcher();
+    LOGF("IOMMU: initialized and registered with MMIO dispatcher at 0x%llx\n",
+         static_cast<unsigned long long>(IommuMmio::BASE));
 }
 
 } // namespace Libs::Graphics

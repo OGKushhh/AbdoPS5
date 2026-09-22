@@ -44,6 +44,7 @@
 #define KYTY_GRAPHICS_HOST_GPU_IOMMU_H_
 
 #include "common/common.h"
+#include "graphics/host_gpu/mmioDispatcher.h"
 
 #include <atomic>
 #include <cstdint>
@@ -109,7 +110,7 @@ struct IommuCompletionWaitStore {
     }
 };
 
-class Iommu {
+class Iommu : public MmioHandler {
 public:
     // Callback type for performing a physical-address store.
     // The kernel registers this so the IOMMU can write to physical RAM
@@ -118,7 +119,7 @@ public:
     using StoreCallback = bool (*)(uint64_t pa, uint64_t value, void* user_data);
 
     Iommu();
-    ~Iommu();
+    ~Iommu() override;
 
     // Register the store callback (called by the kernel during init).
     // Without a registered callback, COMPLETION_WAIT_STORE commands are
@@ -129,14 +130,17 @@ public:
         m_store_callback_user_data = user_data;
     }
 
-    // MMIO read/write — called when the guest CPU accesses the IOMMU's
-    // MMIO range (0xFDD80000 .. 0xFDD90000).
-    //
-    // Returns true if the access was handled (the address is in the
-    // IOMMU's MMIO range). Returns false if the address is outside the
-    // range — caller should try the next MMIO handler or fault.
-    [[nodiscard]] bool MmioRead(uint64_t pa, void* dst, size_t size) const;
-    [[nodiscard]] bool MmioWrite(uint64_t pa, const void* src, size_t size);
+    // Register this Iommu with the central MmioDispatcher for its
+    // MMIO range (0xFDD80000 .. 0xFDD90000). Call once at startup
+    // (the kernel does this during graphics init).
+    void RegisterWithDispatcher() {
+        MmioDispatcher::Instance().Register(IommuMmio::BASE, IommuMmio::MMIO_RANGE, this);
+    }
+
+    // MmioHandler interface — overrides for the central dispatcher.
+    // Just delegate to the existing MmioRead/MmioWrite.
+    [[nodiscard]] bool MmioRead(uint64_t pa, void* dst, size_t size) const override;
+    [[nodiscard]] bool MmioWrite(uint64_t pa, const void* src, size_t size) override;
 
     // Translate a GPU device address (IOVA) to a host physical address.
     //
@@ -199,6 +203,18 @@ private:
     void*         m_store_callback_user_data = nullptr;
 };
 
+} // namespace Libs::Graphics
+
+// Global accessors for the IOMMU singleton.
+//
+// InitializeIommu() is called from Emulator::Run() during graphics
+// subsystem startup. It creates the singleton and registers it with
+// the central MMIO dispatcher.
+//
+// GetIommu() returns nullptr before InitializeIommu() runs.
+namespace Libs::Graphics {
+void InitializeIommu();
+[[nodiscard]] Iommu* GetIommu();
 } // namespace Libs::Graphics
 
 #endif // KYTY_GRAPHICS_HOST_GPU_IOMMU_H_
