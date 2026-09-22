@@ -536,7 +536,7 @@ static void VulkanFindPhysicalDevice(vk::Instance instance, vk::SurfaceKHR surfa
 }
 
 static vk::Device VulkanCreateDevice(GraphicContext& graphics,
-                                         const std::vector<const char*>& device_extensions) {
+                                         std::vector<const char*>& device_extensions) {
         const auto physical_device = graphics.physical_device;
         const auto queue_family    = graphics.queue_family;
         EXIT_IF(physical_device == nullptr);
@@ -741,7 +741,7 @@ static vk::Device VulkanCreateDevice(GraphicContext& graphics,
         if (Config::VulkanRelaxRequirements()) {
                 device_extensions.erase(
                     std::remove_if(device_extensions.begin(), device_extensions.end(),
-                                   [](const char* ext) {
+                                   [&graphics](const char* ext) {
                                            if (strcmp(ext, VK_KHR_FRAGMENT_SHADER_BARYCENTRIC_EXTENSION_NAME) == 0) {
                                                    return !graphics.fragment_shader_barycentric_enabled;
                                            }
