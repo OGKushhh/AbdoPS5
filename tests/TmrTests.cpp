@@ -117,8 +117,8 @@ void TestDispatcherRouting() {
     TmrController tmr;
     tmr.RegisterWithDispatcher();
 
-    // Write to the index register via the dispatcher.
-    const uint32_t index_value = 0;
+    // Write to the index register — select TMR_CONFIG(0) = 0 * 0x10 + 0x08 = 0x08
+    const uint32_t index_value = 0 * TmrEntry::ENTRY_SIZE + TmrEntry::FIELD_CONFIG;
     Check(MmioDispatcher::Instance().DispatchWrite(
               TmrMmio::ECAM_BASE + TmrMmio::INDEX_OFF, &index_value, sizeof(index_value)),
           "Dispatcher routes write to TMR INDEX register");
