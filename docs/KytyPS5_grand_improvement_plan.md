@@ -61,7 +61,7 @@ Both fixes are direct ports of the shadPS4 SHAD-001 and SHAD-002 patches.
 | **Severity** | 🔴 Critical |
 | **Effort** | 1–2 days |
 | **Source** | shadPS4 SHAD-001 (proven fix); KytyPS5 shader opcode audit |
-| **Status** | 🔴 TODO |
+| **Status** | 🟢 Done |
 | **Depends on** | — |
 | **Unblocks** | Sifu (#739), Returnal (#742), Spider-Man Remastered (#701), Demon's Souls (#697), and every PS5 game using 64-bit integer compares in compute shaders |
 
@@ -123,7 +123,7 @@ Both fixes are direct ports of the shadPS4 SHAD-001 and SHAD-002 patches.
 | **Severity** | 🔴 Critical (cross-cutting) |
 | **Effort** | 1 day |
 | **Source** | shadPS4 SHAD-002 (proven fix); KytyPS5 stub audit |
-| **Status** | 🔴 TODO |
+| **Status** | 🟢 Done |
 | **Depends on** | — |
 
 **Root cause:** KytyPS5 has the exact same "stub returns 0 silently" bug as shadPS4. `KERNEL_ERROR_ENOSYS = -2147352498` (0x8002004E) is defined at `src/libs/errno.h:267` but **never used** anywhere in the codebase. The audit found ~570 occurrences of `return OK;` (= `return 0;`) in `src/libs/*.cpp`, plus a JIT-emitted thunk at `src/loader/runtimeLinker.cpp:341` that returns `0` for unresolved imports.
@@ -176,7 +176,7 @@ Both fixes are direct ports of the shadPS4 SHAD-001 and SHAD-002 patches.
 | **Severity** | 🟡 High |
 | **Effort** | 2–3 days |
 | **Source** | shadPS4 SHAD-004 (proven pattern); fpPS4's `-h` hack flags |
-| **Status** | 🔴 TODO |
+| **Status** | 🟢 Done |
 | **Depends on** | — |
 
 **Root cause:** KytyPS5 has `src/loader/gamePatch.cpp` (307 LOC) which reads an ETAHen-style cheat JSON, but it's limited to byte patches. It lacks the systematic "skip the broken thing" hack flags that fpPS4 has (`DEPTH_DISABLE_HACK`, `COMPUTE_DISABLE_HACK`, `IMAGE_LOAD_HACK`, `DISABLE_FMV_HACK`, `SKIP_UNKNOW_TILING`, etc.).
@@ -242,7 +242,7 @@ Initialize after `param.sfo` parse (before `eboot.bin` execution). Make the list
 | **Severity** | 🟡 High (contributor UX) |
 | **Effort** | 3–5 days |
 | **Source** | shadPS4 SHAD-006 (proven pattern); SharpProspero's `ps5_names.txt` (10 MB) |
-| **Status** | 🔴 TODO |
+| **Status** | 🟢 Done |
 | **Depends on** | — |
 
 **Root cause:** KytyPS5 has ~1,674 NID bindings hardcoded as string literals in `src/libs/*.cpp`. SharpProspero has a 10 MB `ps5_names.txt` with the full PS5 NID catalog. KytyPS5 should use it as a runtime-loadable database so contributors can query NIDs without recompiling.
@@ -277,7 +277,7 @@ Initialize after `param.sfo` parse (before `eboot.bin` execution). Make the list
 | **Severity** | 🟡 High (UX) |
 | **Effort** | 1–2 weeks |
 | **Source** | shadPS4 SHAD-007 (proven pattern); Shadlix fork's `src/core/crypto/` |
-| **Status** | 🔴 TODO |
+| **Status** | 🟢 Done (FPKG extraction; retail PKG decryption out of scope) |
 | **Depends on** | — |
 
 **Root cause:** Users must extract `.pkg` files manually. PS5 PKG format is similar to PS4's but uses different crypto keys.
@@ -310,7 +310,7 @@ PS5-specific work: PS5 PKG uses different RSA keys than PS4. Need to extract PS5
 | **Severity** | 🔴 Critical (5 reverts in 10 days — directly blocking AAA games) |
 | **Effort** | 2–3 weeks |
 | **Source** | KytyPS5 revert hunt (5 reverts: `27f015e`, `dd9ecd5`, `81b0c13`, `7adade0`, `ad93531`) |
-| **Status** | 🔴 TODO |
+| **Status** | 🟢 Done (workaround) |
 | **Depends on** | Kyty-003 (per-game hack flags — for `DisableAsyncCompute` workaround) |
 
 **Root cause:** The KytyPS5 revert hunt found **5 reverts in 10 days** (Aug 25 – Sep 7) all targeting the same subsystem: depth-texture creation for comparison textures + unrestricted viewport depth ranges. nmzik tried 5 different formulations and reverted all of them. The reverted PRs:
@@ -365,7 +365,7 @@ PS5-specific work: PS5 PKG uses different RSA keys than PS4. Need to extract PS5
 | **Severity** | 🔴 Critical ("wedges GPU work" per the revert message) |
 | **Effort** | 1 week |
 | **Source** | KytyPS5 revert hunt (commit `e591a66` reverting `6758d67` PR #418) |
-| **Status** | 🔴 TODO |
+| **Status** | 🟢 Done (investigation) |
 | **Depends on** | — |
 
 **Root cause:** PR #418 (`nomolao2-cell`) "shader: preserve raw VCC bits in S_MOV_B64" was merged, then reverted with the message: *"An EXEC pair loses its mask provenance and falls into the raw high-word path. The saved all-ones high word then keeps waterfall branches true and wedges GPU work."*
@@ -401,7 +401,7 @@ This is the only revert with an explicit failure analysis. It's direct evidence 
 | **Severity** | 🟡 High (prevents future Kyty-001-style regressions) |
 | **Effort** | 1 week |
 | **Source** | shadPS4 SHAD-017 (proven pattern) |
-| **Status** | 🔴 TODO |
+| **Status** | 🟢 Done |
 | **Depends on** | Kyty-001 |
 
 **Root cause:** KytyPS5's existing `CheckOpcodeCoverage` test (`tests/ShaderRecompilerComputeTests.cpp:16122-16177`) only iterates over the existing enum entries — it cannot detect that 25 canonical V_CMP_*_U64/I64 opcodes are entirely absent. This is the same blind spot that let shadPS4 ship with 25 missing dispatch entries for 18 months.
@@ -432,7 +432,7 @@ This is the only revert with an explicit failure analysis. It's direct evidence 
 | **Severity** | 🟡 High (game bug fixes) |
 | **Effort** | 2–3 weeks |
 | **Source** | shadPS4 SHAD-010 (proven pattern); Shadlix fork's `storage_scheduler.cpp` (882 LOC) |
-| **Status** | 🔴 TODO |
+| **Status** | 🟢 Done |
 | **Depends on** | — |
 
 **Root cause:** PS5's stock SSD has specific bandwidth characteristics (5.5 GB/s raw, ~8-9 GB/s compressed). Some PS5 games time their asset streaming to the SSD's specific latency. On a fast NVMe host, the streaming logic may break.
@@ -458,7 +458,7 @@ Wire into `src/kernel/fileSystem.cpp`'s read path. Expose `--storage-bandwidth <
 | **Severity** | 🟡 High |
 | **Effort** | 2–3 weeks |
 | **Source** | shadPS4 SHAD-011 (proven pattern); Shadlix fork's `memory_compression.cpp` (309 LOC) |
-| **Status** | 🔴 TODO |
+| **Status** | 🟢 Done |
 | **Depends on** | — |
 
 **Root cause:** PS5 has 16 GB RAM; DevKits have 32 GB. On 16 GB host systems, large PS5 games can OOM.
@@ -479,7 +479,7 @@ Wire into `src/kernel/fileSystem.cpp`'s read path. Expose `--storage-bandwidth <
 | **Severity** | 🟡 High (audio quality) |
 | **Effort** | 1 week |
 | **Source** | shadPS4 SHAD-012 (proven pattern); Shadlix fork's `cubeb_audio.cpp` |
-| **Status** | 🔴 TODO |
+| **Status** | 🟠 Partial (code ready, opt-in via system libcubeb) |
 | **Depends on** | — |
 
 **Proposed change:** Port `cubeb_audio.cpp` from the shadPS4 Shadlix fork. Add `externals/cubeb`. Extend the audio backend selector in `src/libs/audio.cpp`.
@@ -498,7 +498,7 @@ Wire into `src/kernel/fileSystem.cpp`'s read path. Expose `--storage-bandwidth <
 | **Severity** | 🟡 High (contributor UX) |
 | **Effort** | 1–2 weeks |
 | **Source** | shadPS4 SHAD-014 (proven pattern); fpPS4's `tools/` |
-| **Status** | 🔴 TODO |
+| **Status** | 🟢 Done |
 | **Depends on** | Kyty-004 (NID database), Kyty-005 (PKG) |
 
 **Proposed change:** New `tools/` top-level CMake subdirectory.
@@ -525,7 +525,7 @@ Wire into `src/kernel/fileSystem.cpp`'s read path. Expose `--storage-bandwidth <
 | **Severity** | 🟡 High |
 | **Effort** | Ongoing |
 | **Source** | KytyPS5 issue #281 "Missing shader opcodes" (pinned, 51 comments) |
-| **Status** | 🔴 TODO |
+| **Status** | 🟢 Done |
 | **Depends on** | Kyty-001, Kyty-008 |
 
 **Root cause:** KytyPS5 has a pinned GitHub issue (#281) tracking missing shader opcodes, with 51 comments. This is the canonical tracking thread for the same class of bug as Kyty-001.
@@ -551,7 +551,7 @@ Wire into `src/kernel/fileSystem.cpp`'s read path. Expose `--storage-bandwidth <
 | **Severity** | 🟡 High (input fidelity) |
 | **Effort** | 2–3 weeks |
 | **Source** | KytyPS5's existing `src/libs/controller.cpp` (940 LOC) — verify completeness |
-| **Status** | 🔴 TODO |
+| **Status** | 🟢 Done |
 | **Depends on** | — |
 
 **Root cause:** PS5's DualSense has 56-byte trigger-effect commands (L2/R2 resistance modes 1-7), 32-byte haptic effect slots, full IMU gyro+accel integration, 2-point touchpad. KytyPS5 has `controller.cpp` (940 LOC) but it may not be complete.
@@ -577,7 +577,7 @@ Wire into `src/kernel/fileSystem.cpp`'s read path. Expose `--storage-bandwidth <
 | **Severity** | 🟡 High (UX) |
 | **Effort** | 1–2 weeks |
 | **Source** | shadPS4 SHAD-020 (proven pattern); Shadlix fork's `getShaderSkipsEnabled()` |
-| **Status** | 🔴 TODO |
+| **Status** | 🟢 Done |
 | **Depends on** | — |
 
 **Proposed change:**
@@ -602,7 +602,7 @@ Wire into `src/kernel/fileSystem.cpp`'s read path. Expose `--storage-bandwidth <
 | **Severity** | 🟢 Medium |
 | **Effort** | 3–4 weeks |
 | **Source** | `PS5_hardware_reference.md` §4 (AMD IOMMU programming) |
-| **Status** | 🔴 TODO |
+| **Status** | 🟢 Done |
 | **Depends on** | — |
 
 **Root cause:** PS5 has an AMD IOMMU at MMIO `0xFDD80000`. Games that use DMA (some PS5 exclusives do) need it modeled. KytyPS5 currently doesn't model the IOMMU.
@@ -627,7 +627,7 @@ Wire into `src/kernel/fileSystem.cpp`'s read path. Expose `--storage-bandwidth <
 | **Severity** | 🟢 Medium |
 | **Effort** | 1–2 weeks |
 | **Source** | `PS5_hardware_reference.md` §5 (TMR controller) |
-| **Status** | 🔴 TODO |
+| **Status** | 🟢 Done |
 | **Depends on** | — |
 
 **Root cause:** PS5 has a Sony-custom TMR controller (PCI B0:D18:F2) that protects kernel/HV/firmware memory regions. Games that touch Sony-protected memory need it modeled (or at least pretended).
@@ -677,7 +677,7 @@ Wire into `src/kernel/fileSystem.cpp`'s read path. Expose `--storage-bandwidth <
 | **Severity** | 🟢 Medium |
 | **Effort** | 1–2 weeks |
 | **Source** | KytyPS5 already has `shader/rectListShader.cpp` — verify completeness |
-| **Status** | 🔴 TODO |
+| **Status** | 🟢 Done |
 | **Depends on** | — |
 
 **Root cause:** PS5's `kRectList` / `kRectListLegacy` primitive types have no Vulkan equivalent. KytyPS5 lowers them via mesh shaders, but the implementation may have gaps.
@@ -702,7 +702,7 @@ Wire into `src/kernel/fileSystem.cpp`'s read path. Expose `--storage-bandwidth <
 | **Severity** | 🟢 Low (initially skip) |
 | **Effort** | 4+ weeks |
 | **Source** | `PS5_hardware_reference.md` §3 (HV architecture) |
-| **Status** | 🔴 TODO |
+| **Status** | ⚪ Skip (deferred per plan) |
 | **Depends on** | — |
 
 **Root cause:** PS5 has an AMD-SVM-based hypervisor (HyperCore) with 16 vCPUs and 16 VMCBs. Games run in VMPL0 and don't need to know about HV, so an emulator can initially skip it. But some test-kit behaviors may require HV awareness.
@@ -809,7 +809,7 @@ Wire into `src/kernel/fileSystem.cpp`'s read path. Expose `--storage-bandwidth <
 | **Severity** | 🟡 High |
 | **Effort** | Ongoing |
 | **Source** | KytyPS5 has 156 AGC NIDs — verify completeness |
-| **Status** | 🔴 TODO |
+| **Status** | 🟡 In progress (large base exists, ongoing) |
 | **Depends on** | — |
 
 **Proposed change:** Audit `src/libs/libAgcDriver.cpp` (156 NIDs) against the PS5 SDK docs. Implement missing AGC functions.
@@ -827,7 +827,7 @@ Wire into `src/kernel/fileSystem.cpp`'s read path. Expose `--storage-bandwidth <
 | **Severity** | 🟡 High |
 | **Effort** | 2–3 weeks |
 | **Source** | PS5-specific — KytyPS5 has `shader/Tessellation.cpp` |
-| **Status** | 🔴 TODO |
+| **Status** | 🟢 Done |
 | **Depends on** | — |
 
 **Root cause:** PS5 splits hull/domain shaders into front/back variants (`GsFront`, `GsBack`, `HsFront`, `HsBack`, `FS`). KytyPS5 has `shader/Tessellation.cpp` but it may have gaps.
@@ -908,7 +908,7 @@ Wire into `src/kernel/fileSystem.cpp`'s read path. Expose `--storage-bandwidth <
 | **Severity** | 🟡 High |
 | **Effort** | 1 day |
 | **Source** | shadPS4 SHAD-031/032/033 (proven pattern) |
-| **Status** | 🔴 TODO |
+| **Status** | 🟠 Partial (11 docs exist, missing stub_policy/triage/game_hacks) |
 | **Depends on** | Kyty-002, Kyty-003 |
 
 **Proposed change:** Add three docs:
@@ -928,13 +928,13 @@ Wire into `src/kernel/fileSystem.cpp`'s read path. Expose `--storage-bandwidth <
 
 | ID | Title | Effort | Status |
 |---|---|---|---|
-| Kyty-001 | Complete V_CMP_*_U64/I64 opcode matrix | 1–2 days | 🔴 |
-| Kyty-002 | CommonStub → ENOSYS | 1 day | 🔴 |
-| Kyty-003 | Per-game hack flags framework | 2–3 days | 🔴 |
-| Kyty-004 | Externalized NID database | 3–5 days | 🔴 |
-| Kyty-005 | PKG file format + Crypto++ | 1–2 weeks | 🔴 |
-| Kyty-006 | Investigate depth/comparison-texture reverts | 2–3 weeks | 🔴 |
-| Kyty-007 | Investigate VCC/EXEC mask provenance revert | 1 week | 🔴 |
+| Kyty-001 | Complete V_CMP_*_U64/I64 opcode matrix | 1–2 days | 🟢 |
+| Kyty-002 | CommonStub → ENOSYS | 1 day | 🟢 |
+| Kyty-003 | Per-game hack flags framework | 2–3 days | 🟢 |
+| Kyty-004 | Externalized NID database | 3–5 days | 🟢 |
+| Kyty-005 | PKG file format + Crypto++ | 1–2 weeks | 🟢 |
+| Kyty-006 | Investigate depth/comparison-texture reverts | 2–3 weeks | 🟢 |
+| Kyty-007 | Investigate VCC/EXEC mask provenance revert | 1 week | 🟢 |
 
 **Phase 1 deliverables:**
 - ✅ Sifu, Returnal, Spider-Man, Demon's Souls boot past shader ASSERT (Kyty-001)
@@ -949,24 +949,24 @@ Wire into `src/kernel/fileSystem.cpp`'s read path. Expose `--storage-bandwidth <
 
 | ID | Title | Effort | Status |
 |---|---|---|---|
-| Kyty-008 | Shader opcode coverage CI gate | 1 week | 🔴 |
-| Kyty-009 | Storage I/O Scheduler | 2–3 weeks | 🔴 |
-| Kyty-010 | Memory compression | 2–3 weeks | 🔴 |
-| Kyty-011 | Cubeb audio backend | 1 week | 🔴 |
-| Kyty-012 | Standalone RE tools | 1–2 weeks | 🔴 |
-| Kyty-013 | Aggregate shader opcode tracking (issue #281) | Ongoing | 🔴 |
-| Kyty-014 | Enhanced DualSense haptics | 2–3 weeks | 🔴 |
-| Kyty-015 | Per-game shader cache + skip list | 1–2 weeks | 🔴 |
+| Kyty-008 | Shader opcode coverage CI gate | 1 week | 🟢 |
+| Kyty-009 | Storage I/O Scheduler | 2–3 weeks | 🟢 |
+| Kyty-010 | Memory compression | 2–3 weeks | 🟢 |
+| Kyty-011 | Cubeb audio backend | 1 week | 🟠 |
+| Kyty-012 | Standalone RE tools | 1–2 weeks | 🟢 |
+| Kyty-013 | Aggregate shader opcode tracking (issue #281) | Ongoing | 🟢 |
+| Kyty-014 | Enhanced DualSense haptics | 2–3 weeks | 🟢 |
+| Kyty-015 | Per-game shader cache + skip list | 1–2 weeks | 🟢 |
 
 ### Phase 3 — PS5-Specific Hardware Fidelity (Week 6–10)
 
 | ID | Title | Effort | Status |
 |---|---|---|---|
-| Kyty-016 | Model the AMD IOMMU | 3–4 weeks | 🔴 |
-| Kyty-017 | Model the TMR controller | 1–2 weeks | 🔴 |
+| Kyty-016 | Model the AMD IOMMU | 3–4 weeks | 🟢 |
+| Kyty-017 | Model the TMR controller | 1–2 weeks | 🟢 |
 | Kyty-018 | GPU page-fault emulation audit | 2–3 weeks | 🔴 |
-| Kyty-019 | RectList primitive lowering audit | 1–2 weeks | 🔴 |
-| Kyty-020 | Hypervisor awareness (initially skip) | 4+ weeks | 🔴 |
+| Kyty-019 | RectList primitive lowering audit | 1–2 weeks | 🟢 |
+| Kyty-020 | Hypervisor awareness (initially skip) | 4+ weeks | ⚪ |
 
 ### Phase 4 — Distribution & UX (Week 11–14)
 
@@ -981,12 +981,12 @@ Wire into `src/kernel/fileSystem.cpp`'s read path. Expose `--storage-bandwidth <
 
 | ID | Title | Effort | Status |
 |---|---|---|---|
-| Kyty-025 | AGC driver completeness | Ongoing | 🔴 |
-| Kyty-026 | Tessellation front/back shader pairs | 2–3 weeks | 🔴 |
+| Kyty-025 | AGC driver completeness | Ongoing | 🟡 |
+| Kyty-026 | Tessellation front/back shader pairs | 2–3 weeks | 🟢 |
 | Kyty-027 | Port sharpemu's Metal backend | 4–8 weeks | 🔴 |
 | Kyty-028 | Port sharpemu's POSIX signal bridge | 1–2 weeks | 🔴 |
 | Kyty-029 | Weekly compatibility regression test | 1 week + ongoing | 🔴 |
-| Kyty-030 | Documentation (stub policy + triage + game hacks) | 1 day | 🔴 |
+| Kyty-030 | Documentation (stub policy + triage + game hacks) | 1 day | 🟠 |
 
 ---
 
