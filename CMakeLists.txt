@@ -426,6 +426,15 @@ target_link_libraries(iommu_tests common)
 target_include_directories(iommu_tests PRIVATE ${inc_headers})
 add_test(NAME iommu_tests COMMAND $<TARGET_FILE:iommu_tests>)
 
+# Kyty-014: HapticPlayer unit tests.
+add_executable(haptic_tests EXCLUDE_FROM_ALL
+        "${KYTY_TESTS_DIR}/HapticTests.cpp"
+        "${KYTY_SOURCE_DIR}/libs/hapticPlayer.cpp"
+)
+target_link_libraries(haptic_tests common SDL2-static)
+target_include_directories(haptic_tests PRIVATE ${inc_headers})
+add_test(NAME haptic_tests COMMAND $<TARGET_FILE:haptic_tests>)
+
 add_executable(bit_array_tests EXCLUDE_FROM_ALL
         "${KYTY_TESTS_DIR}/BitArrayTests.cpp"
 )
