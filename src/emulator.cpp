@@ -159,6 +159,33 @@ static void Init(const Config::ConfigOptions& cfg, const std::filesystem::path& 
         // The Iommu is a singleton — see src/graphics/host_gpu/iommu.h.
         Libs::Graphics::InitializeIommu();
 
+        // Kyty-016: Register a store callback so the IOMMU's
+        // COMPLETION_WAIT_STORE command can write 8 bytes to any
+        // physical address in RAM. The PS5 kernel uses this as a
+        // privileged-write primitive (e.g. to clear NESTED_CTRL bits
+        // in VMCBs after HV escape).
+        //
+        // The callback translates physical address → host virtual address
+        // using the kernel's backing store: host_va = base + pa.
+        // If the PA is outside RAM, the write fails (returns false).
+        if (auto* iommu = Libs::Graphics::GetIommu()) {
+                auto store_callback = +[](uint64_t pa, uint64_t value, void* /*user_data*/) -> bool {
+                        const uint64_t base = Libs::LibKernel::Memory::GetPhysicalMemoryBase();
+                        const uint64_t size = Libs::LibKernel::Memory::GetPhysicalMemorySize();
+                        if (base == 0 || size == 0) {
+                                return false; // backing store not initialized
+                        }
+                        if (pa + sizeof(uint64_t) > size) {
+                                return false; // PA outside RAM
+                        }
+                        // Compute host VA and write 8 bytes.
+                        auto* host_ptr = reinterpret_cast<uint64_t*>(base + pa);
+                        *host_ptr = value;
+                        return true;
+                };
+                iommu->RegisterStoreCallback(store_callback, nullptr);
+        }
+
         // Kyty-009: Configure the storage I/O scheduler.
         const auto storage_bw = Config::GetStorageBandwidthMbps();
         if (storage_bw != 0) {

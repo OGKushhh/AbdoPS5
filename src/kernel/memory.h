@@ -16,9 +16,9 @@ void Initialize();
 void Shutdown();
 
 struct Lifecycle {
-	static constexpr const char* name       = "Memory";
-	static constexpr auto        initialize = Libs::LibKernel::Memory::Initialize;
-	static constexpr auto        shutdown   = Libs::LibKernel::Memory::Shutdown;
+        static constexpr const char* name       = "Memory";
+        static constexpr auto        initialize = Libs::LibKernel::Memory::Initialize;
+        static constexpr auto        shutdown   = Libs::LibKernel::Memory::Shutdown;
 };
 
 using callback_func_t = void (*)(uintptr_t addr, size_t size);
@@ -26,80 +26,80 @@ using callback_func_t = void (*)(uintptr_t addr, size_t size);
 constexpr uint32_t KERNEL_MAXIMUM_NAME_LENGTH = 32;
 
 struct VirtualQueryInfo {
-	uintptr_t start;
-	uintptr_t end;
-	uint64_t  offset;
-	int32_t   protection;
-	int32_t   memory_type;
-	uint32_t  is_flexible  : 1;
-	uint32_t  is_direct    : 1;
-	uint32_t  is_stack     : 1;
-	uint32_t  is_pooled    : 1;
-	uint32_t  is_committed : 1;
-	uint32_t  is_gpu_prt   : 1;
-	uint32_t  amm_usage    : 1;
-	uint32_t  reserved     : 1;
-	char      name[KERNEL_MAXIMUM_NAME_LENGTH];
-	uint8_t   gpu_mask_id;
-	uint8_t   reserved2;
+        uintptr_t start;
+        uintptr_t end;
+        uint64_t  offset;
+        int32_t   protection;
+        int32_t   memory_type;
+        uint32_t  is_flexible  : 1;
+        uint32_t  is_direct    : 1;
+        uint32_t  is_stack     : 1;
+        uint32_t  is_pooled    : 1;
+        uint32_t  is_committed : 1;
+        uint32_t  is_gpu_prt   : 1;
+        uint32_t  amm_usage    : 1;
+        uint32_t  reserved     : 1;
+        char      name[KERNEL_MAXIMUM_NAME_LENGTH];
+        uint8_t   gpu_mask_id;
+        uint8_t   reserved2;
 };
 
 static_assert(sizeof(VirtualQueryInfo) == 72, "VirtualQueryInfo struct size is incorrect");
 
 struct KernelBatchMapEntry {
-	void*         start;
-	uint64_t      offset;
-	uint64_t      length;
-	unsigned char protection;
-	unsigned char type;
-	int16_t       reserved;
-	int32_t       operation;
+        void*         start;
+        uint64_t      offset;
+        uint64_t      length;
+        unsigned char protection;
+        unsigned char type;
+        int16_t       reserved;
+        int32_t       operation;
 };
 
 static_assert(sizeof(KernelBatchMapEntry) == 32, "KernelBatchMapEntry struct size is incorrect");
 
 struct KernelMemoryPoolBatchEntry {
-	uint32_t op;
-	uint32_t flags;
-	union {
-		struct {
-			void*    addr;
-			uint64_t len;
-			uint8_t  prot;
-			uint8_t  type;
-		} commit;
-		struct {
-			void*    addr;
-			uint64_t len;
-		} decommit;
-		struct {
-			void*    addr;
-			uint64_t len;
-			uint8_t  prot;
-		} protect;
-		struct {
-			void*    addr;
-			uint64_t len;
-			uint8_t  prot;
-			uint8_t  type;
-		} type_protect;
-		struct {
-			void*    dst;
-			void*    src;
-			uint64_t len;
-		} move;
-		uintptr_t padding[3];
-	};
+        uint32_t op;
+        uint32_t flags;
+        union {
+                struct {
+                        void*    addr;
+                        uint64_t len;
+                        uint8_t  prot;
+                        uint8_t  type;
+                } commit;
+                struct {
+                        void*    addr;
+                        uint64_t len;
+                } decommit;
+                struct {
+                        void*    addr;
+                        uint64_t len;
+                        uint8_t  prot;
+                } protect;
+                struct {
+                        void*    addr;
+                        uint64_t len;
+                        uint8_t  prot;
+                        uint8_t  type;
+                } type_protect;
+                struct {
+                        void*    dst;
+                        void*    src;
+                        uint64_t len;
+                } move;
+                uintptr_t padding[3];
+        };
 };
 
 static_assert(sizeof(KernelMemoryPoolBatchEntry) == 32,
               "KernelMemoryPoolBatchEntry struct size is incorrect");
 
 struct KernelMemoryPoolBlockStats {
-	int32_t available_flushed_blocks;
-	int32_t available_cached_blocks;
-	int32_t allocated_flushed_blocks;
-	int32_t allocated_cached_blocks;
+        int32_t available_flushed_blocks;
+        int32_t available_cached_blocks;
+        int32_t allocated_flushed_blocks;
+        int32_t allocated_cached_blocks;
 };
 
 static_assert(sizeof(KernelMemoryPoolBlockStats) == 16,
@@ -116,6 +116,14 @@ void                   WriteBacking(uint64_t vaddr, const void* data, uint64_t s
 void                   InvalidateMemory(uint64_t vaddr, uint64_t size);
 void                   InstallGpuResources(Graphics::RenderContext* renderer) noexcept;
 [[nodiscard]] bool HandleGpuFault(Graphics::PageFaultAccess access, uint64_t fault_vaddr) noexcept;
+
+// Kyty-016: Returns the host virtual address of the physical RAM backing
+// store. Used by the IOMMU store callback to translate physical addresses
+// (PA) to host VAs: host_va = GetPhysicalMemoryBase() + pa.
+// Returns 0 if the backing store isn't initialized yet.
+[[nodiscard]] uint64_t GetPhysicalMemoryBase() noexcept;
+// Kyty-016: Returns the total size of the physical RAM backing store.
+[[nodiscard]] uint64_t GetPhysicalMemorySize() noexcept;
 
 int KYTY_SYSV_ABI KernelMapNamedFlexibleMemory(void** addr_in_out, size_t len, int prot, int flags,
                                                const char* name);
