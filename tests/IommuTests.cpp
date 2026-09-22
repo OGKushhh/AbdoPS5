@@ -20,7 +20,7 @@ using Iommu = Libs::Graphics::Iommu;
 namespace IommuCmd = Libs::Graphics::IommuCmd;
 namespace IommuMmio = Libs::Graphics::IommuMmio;
 using IommuCompletionWaitStore = Libs::Graphics::IommuCompletionWaitStore;
-namespace MmioDispatcher = Libs::Graphics::MmioDispatcher;
+using MmioDispatcher = Libs::Graphics::MmioDispatcher;
 
 int g_test_failures = 0;
 
