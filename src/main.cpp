@@ -90,6 +90,9 @@ static void PrintUsage() {
         ::printf(
             "  --readback-linear-images <true|false> Read back writable linear images on submit.\n");
         ::printf("  --playgo-hack                       Use the supplied PlayGo stub fallback.\n");
+        ::printf("  --vulkan-relax-requirements         Don't reject GPU for missing extensions\n");
+        ::printf("                                       (fragmentShaderBarycentric, colorWriteEnable,\n");
+        ::printf("                                       depthClipEnable). May cause visual glitches.\n");
 #if KYTY_PLATFORM == KYTY_PLATFORM_WINDOWS
         ::printf("  --redzone                            Protect the guest SysV red zone.\n");
 #endif
@@ -191,6 +194,11 @@ static bool ParseArgs(int argc, char* argv[], RunOptions& options, bool& show_he
 
                 if (arg == "--playgo-hack") {
                         options.config.playgo_hack_enabled = true;
+                        continue;
+                }
+
+                if (arg == "--vulkan-relax-requirements") {
+                        options.config.vulkan_relax_requirements = true;
                         continue;
                 }
 

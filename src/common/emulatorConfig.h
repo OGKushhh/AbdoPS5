@@ -14,9 +14,9 @@ void Initialize();
 void Shutdown();
 
 struct Lifecycle {
-	static constexpr const char* name       = "Config";
-	static constexpr auto        initialize = Config::Initialize;
-	static constexpr auto        shutdown   = Config::Shutdown;
+        static constexpr const char* name       = "Config";
+        static constexpr auto        initialize = Config::Initialize;
+        static constexpr auto        shutdown   = Config::Shutdown;
 };
 
 enum class ShaderOptimizationType { None, Size, Performance };
@@ -33,48 +33,54 @@ constexpr std::size_t MAX_USER_NAME_LENGTH = 16;
 constexpr int32_t DEFAULT_USER_ID           = 1000;
 
 constexpr bool IsConfiguredUserIdValid(int32_t user_id) {
-	constexpr int32_t USER_ID_EVERYONE = 0xfe;
-	constexpr int32_t USER_ID_SYSTEM   = 0xff;
-	return user_id >= 0 && user_id != USER_ID_EVERYONE && user_id != USER_ID_SYSTEM;
+        constexpr int32_t USER_ID_EVERYONE = 0xfe;
+        constexpr int32_t USER_ID_SYSTEM   = 0xff;
+        return user_id >= 0 && user_id != USER_ID_EVERYONE && user_id != USER_ID_SYSTEM;
 }
 
 struct ConfigOptions {
-	uint32_t               screen_width                = 1280;
-	uint32_t               screen_height               = 720;
-	std::string            user_name                   = "Kyty";
-	int32_t                user_id                     = DEFAULT_USER_ID;
-	std::string            audio_input_device;
-	std::string            audio_backend              = "sdl"; // Kyty-011: "sdl" or "cubeb"
-	uint32_t               storage_bandwidth_mbps     = 0;      // Kyty-009: 0=native, 5500=PS5 SSD
-	int32_t                memory_compression_level   = 0;      // Kyty-010: 0=off, 1=fast, 2=balanced, 3=max
-	PresentMode            present_mode                = PresentMode::Mailbox;
-	int32_t                gpu_index                   = -1;
-	bool                   fullscreen_enabled          = false;
-	bool                   vr_enabled                  = false;
-	bool                   amd_cpu_enabled             = false;
-	uint32_t               vblank_frequency            = 60;
-	uint32_t               console_language            = DEFAULT_CONSOLE_LANGUAGE;
-	bool                   vulkan_validation_enabled   = false;
-	bool                   shader_validation_enabled   = false;
-	ShaderOptimizationType shader_optimization_type    = ShaderOptimizationType::None;
-	LogDirection           shader_log_direction        = LogDirection::Silent;
-	std::filesystem::path  shader_log_folder           = "_Shaders";
-	bool                   command_buffer_dump_enabled = false;
-	std::filesystem::path  command_buffer_dump_folder  = "_Buffers";
-	bool                   graphics_debug_dump_enabled = false;
-	LogDirection           printf_direction            = LogDirection::Silent;
-	std::filesystem::path  printf_output_file          = "_kyty.txt";
-	bool                   profiler_enabled            = false;
-	bool                   spirv_debug_printf_enabled  = false;
-	bool                   gpu_assisted_validation_enabled = false;
-	bool                   renderdoc_enabled           = false;
-	bool                   readback_linear_images      = false;
-	bool                   tessellation_enabled        = false;
-	bool                   playgo_hack_enabled         = false;
+        uint32_t               screen_width                = 1280;
+        uint32_t               screen_height               = 720;
+        std::string            user_name                   = "Kyty";
+        int32_t                user_id                     = DEFAULT_USER_ID;
+        std::string            audio_input_device;
+        std::string            audio_backend              = "sdl"; // Kyty-011: "sdl" or "cubeb"
+        uint32_t               storage_bandwidth_mbps     = 0;      // Kyty-009: 0=native, 5500=PS5 SSD
+        int32_t                memory_compression_level   = 0;      // Kyty-010: 0=off, 1=fast, 2=balanced, 3=max
+        PresentMode            present_mode                = PresentMode::Mailbox;
+        int32_t                gpu_index                   = -1;
+        bool                   fullscreen_enabled          = false;
+        bool                   vr_enabled                  = false;
+        bool                   amd_cpu_enabled             = false;
+        uint32_t               vblank_frequency            = 60;
+        uint32_t               console_language            = DEFAULT_CONSOLE_LANGUAGE;
+        bool                   vulkan_validation_enabled   = false;
+        bool                   shader_validation_enabled   = false;
+        ShaderOptimizationType shader_optimization_type    = ShaderOptimizationType::None;
+        LogDirection           shader_log_direction        = LogDirection::Silent;
+        std::filesystem::path  shader_log_folder           = "_Shaders";
+        bool                   command_buffer_dump_enabled = false;
+        std::filesystem::path  command_buffer_dump_folder  = "_Buffers";
+        bool                   graphics_debug_dump_enabled = false;
+        LogDirection           printf_direction            = LogDirection::Silent;
+        std::filesystem::path  printf_output_file          = "_kyty.txt";
+        bool                   profiler_enabled            = false;
+        bool                   spirv_debug_printf_enabled  = false;
+        bool                   gpu_assisted_validation_enabled = false;
+        bool                   renderdoc_enabled           = false;
+        bool                   readback_linear_images      = false;
+        bool                   tessellation_enabled        = false;
+        bool                   playgo_hack_enabled         = false;
+        // Vulkan-relax: makes VK_KHR_fragment_shader_barycentric,
+        // VK_EXT_color_write_enable, and VK_EXT_depth_clip_enable
+        // optional (instead of hard requirements). For GPUs that
+        // predate these extensions (e.g. Pascal GTX 10-series lacks
+        // fragmentShaderBarycentric). May cause visual glitches.
+        bool                   vulkan_relax_requirements   = false;
 #if KYTY_PLATFORM == KYTY_PLATFORM_WINDOWS
-	bool red_zone_protection_enabled = false;
+        bool red_zone_protection_enabled = false;
 #endif
-	Keymap keymap;
+        Keymap keymap;
 };
 
 void Load(const ConfigOptions& cfg);
@@ -95,6 +101,11 @@ bool     AmdCpuEnabled();
 uint32_t GetVblankFrequency();
 uint32_t GetConsoleLanguage();
 bool     VulkanValidationEnabled();
+// Vulkan-relax: returns true if missing Vulkan extensions should NOT
+// reject the device. Lets the emulator boot on GPUs that lack
+// fragmentShaderBarycentric (Pascal), color_write_enable, or
+// depth_clip_enable. May cause visual glitches.
+bool     VulkanRelaxRequirements();
 
 bool                   ShaderValidationEnabled();
 ShaderOptimizationType GetShaderOptimizationType();
