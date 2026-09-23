@@ -1362,8 +1362,24 @@ ImageId TextureCache::FindImage(ImageDesc& desc, bool exact_format) {
                         const bool native_current =
                             (image.usage.render_target || image.IsGpuModified()) && !guest_dirty;
                         if (!native_current) {
-                                EXIT("TextureCache: compressed video-out read requires clean native GPU "
-                                     "contents\n");
+                                // Kyty-041: DCC-compressed video-out surfaces may be
+                                // initialized by compute shaders or DMA before any
+                                // render pass writes to them. On real PS5 hardware,
+                                // the DCC metadata tracks whether the surface has
+                                // valid compressed contents. The MaterializeDccClear()
+                                // call below reads the DCC clear code from guest
+                                // memory and applies the appropriate clear.
+                                //
+                                // Previously this was an EXIT, which crashed games
+                                // like RE2 Remake that initialize DCC surfaces via
+                                // compute shaders before displaying them.
+                                //
+                                // Fix: commit any GPU-written buffer data (clears
+                                // buffer-modified + CPU-dirty flags) and mark the
+                                // image as GPU-modified so the surface is treated
+                                // as having valid native contents. MaterializeDccClear()
+                                // will then fill in the actual clear color.
+                                CommitGpuWrite(image);
                         }
                 }
                 if (view_mip >= 0) {
