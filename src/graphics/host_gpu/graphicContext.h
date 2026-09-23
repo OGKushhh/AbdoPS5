@@ -118,10 +118,27 @@ private:
             m_image_format_properties;
 };
 
+// Per-subresource layout state. For color images, only the primary fields
+// (pl_stage / access_mask / layout) are used. For depth+stencil images, the
+// stencil_* fields track the stencil aspect independently, enabling future
+// per-aspect transitions when the host device supports
+// VK_KHR_separate_depth_stencil_layouts.
+//
+// Kyty-033: previously the whole image (and every subresource) carried a
+// single layout, and barriers always transitioned both aspects together
+// using FullAspectMask(format). The stencil_* fields here let us retain
+// the previous stencil layout when only the depth aspect is being
+// transitioned, and vice versa.
 struct VulkanImageState {
-        vk::PipelineStageFlags2 pl_stage    = vk::PipelineStageFlagBits2::eAllCommands;
-        vk::AccessFlags2        access_mask = vk::AccessFlagBits2::eNone;
-        vk::ImageLayout         layout      = vk::ImageLayout::eUndefined;
+        vk::PipelineStageFlags2 pl_stage        = vk::PipelineStageFlagBits2::eAllCommands;
+        vk::AccessFlags2        access_mask      = vk::AccessFlagBits2::eNone;
+        vk::ImageLayout         layout           = vk::ImageLayout::eUndefined;
+        // For depth+stencil formats, stencil aspect state (independent of depth).
+        // For color / depth-only / stencil-only formats, these mirror the
+        // primary fields and are never read by callers that do not opt in.
+        vk::ImageLayout         stencil_layout   = vk::ImageLayout::eUndefined;
+        vk::AccessFlags2        stencil_access   = vk::AccessFlagBits2::eNone;
+        vk::PipelineStageFlags2 stencil_pl_stage = vk::PipelineStageFlagBits2::eAllCommands;
 };
 
 struct VulkanImage {

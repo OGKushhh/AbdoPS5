@@ -97,6 +97,214 @@ vk::ImageAspectFlags Image::FullAspectMask(vk::Format format) noexcept {
 	}
 }
 
+// Kyty-033: aspect-aware accessors. For combined depth+stencil formats the
+// stencil aspect reads from the dedicated stencil_* fields; every other format
+// uses the primary fields for all aspects.
+vk::ImageLayout Image::AspectLayout(const VulkanImageState& state,
+                                    vk::ImageAspectFlagBits aspect) noexcept {
+	if (aspect == vk::ImageAspectFlagBits::eStencil) {
+		return state.stencil_layout;
+	}
+	return state.layout;
+}
+
+vk::AccessFlags2 Image::AspectAccess(const VulkanImageState& state,
+                                     vk::ImageAspectFlagBits aspect) noexcept {
+	if (aspect == vk::ImageAspectFlagBits::eStencil) {
+		return state.stencil_access;
+	}
+	return state.access_mask;
+}
+
+vk::PipelineStageFlags2 Image::AspectStage(const VulkanImageState& state,
+                                            vk::ImageAspectFlagBits aspect) noexcept {
+	if (aspect == vk::ImageAspectFlagBits::eStencil) {
+		return state.stencil_pl_stage;
+	}
+	return state.pl_stage;
+}
+
+void Image::SetAspectState(VulkanImageState& state, vk::ImageAspectFlagBits aspect,
+                           vk::PipelineStageFlags2 stage, vk::AccessFlags2 access,
+                           vk::ImageLayout layout) noexcept {
+	if (aspect == vk::ImageAspectFlagBits::eStencil) {
+		state.stencil_pl_stage = stage;
+		state.stencil_access   = access;
+		state.stencil_layout   = layout;
+		return;
+	}
+	state.pl_stage    = stage;
+	state.access_mask = access;
+	state.layout      = layout;
+}
+
+// Kyty-033: validate that the destination layout is compatible with the image's
+// usage flags. Returns the aspect mask that the layout can be used with
+// (which may be a subset of FullAspectMask for D+S images), or exits if the
+// layout is unsupported by the image's usage flags.
+vk::ImageAspectFlags Image::ValidateDestinationLayout(vk::ImageLayout layout,
+                                                      vk::ImageUsageFlags usage,
+                                                      vk::Format format) noexcept {
+	const auto full_aspects = FullAspectMask(format);
+	switch (layout) {
+		case vk::ImageLayout::eUndefined:
+		case vk::ImageLayout::eGeneral:
+		case vk::ImageLayout::ePreinitialized:
+			return full_aspects;
+		case vk::ImageLayout::eColorAttachmentOptimal:
+			if (!static_cast<bool>(usage & vk::ImageUsageFlagBits::eColorAttachment)) {
+				EXIT("Image::GetBarriers: eColorAttachmentOptimal requires eColorAttachment "
+				     "usage (usage=0x%x format=%d)\n",
+				     static_cast<vk::ImageUsageFlags::MaskType>(usage),
+				     static_cast<int>(format));
+			}
+			return vk::ImageAspectFlagBits::eColor;
+		case vk::ImageLayout::eDepthStencilAttachmentOptimal:
+		case vk::ImageLayout::eDepthStencilReadOnlyOptimal:
+			if (!static_cast<bool>(usage & vk::ImageUsageFlagBits::eDepthStencilAttachment)) {
+				EXIT("Image::GetBarriers: depth-stencil layout requires eDepthStencilAttachment "
+				     "usage (usage=0x%x format=%d)\n",
+				     static_cast<vk::ImageUsageFlags::MaskType>(usage),
+				     static_cast<int>(format));
+			}
+			return full_aspects & (vk::ImageAspectFlagBits::eDepth |
+				                       vk::ImageAspectFlagBits::eStencil);
+		case vk::ImageLayout::eDepthAttachmentOptimal:
+		case vk::ImageLayout::eDepthReadOnlyOptimal:
+			if (!static_cast<bool>(usage & vk::ImageUsageFlagBits::eDepthStencilAttachment)) {
+				EXIT("Image::GetBarriers: depth-only layout requires eDepthStencilAttachment "
+				     "usage (usage=0x%x format=%d)\n",
+				     static_cast<vk::ImageUsageFlags::MaskType>(usage),
+				     static_cast<int>(format));
+			}
+			return vk::ImageAspectFlagBits::eDepth;
+		case vk::ImageLayout::eStencilAttachmentOptimal:
+		case vk::ImageLayout::eStencilReadOnlyOptimal:
+			if (!static_cast<bool>(usage & vk::ImageUsageFlagBits::eDepthStencilAttachment)) {
+				EXIT("Image::GetBarriers: stencil-only layout requires eDepthStencilAttachment "
+				     "usage (usage=0x%x format=%d)\n",
+				     static_cast<vk::ImageUsageFlags::MaskType>(usage),
+				     static_cast<int>(format));
+			}
+			return vk::ImageAspectFlagBits::eStencil;
+		case vk::ImageLayout::eShaderReadOnlyOptimal:
+			if (!static_cast<bool>(usage & vk::ImageUsageFlagBits::eSampled)) {
+				EXIT("Image::GetBarriers: eShaderReadOnlyOptimal requires eSampled "
+				     "usage (usage=0x%x format=%d)\n",
+				     static_cast<vk::ImageUsageFlags::MaskType>(usage),
+				     static_cast<int>(format));
+			}
+			return full_aspects;
+		case vk::ImageLayout::eTransferSrcOptimal:
+			if (!static_cast<bool>(usage & vk::ImageUsageFlagBits::eTransferSrc)) {
+				EXIT("Image::GetBarriers: eTransferSrcOptimal requires eTransferSrc "
+				     "usage (usage=0x%x format=%d)\n",
+				     static_cast<vk::ImageUsageFlags::MaskType>(usage),
+				     static_cast<int>(format));
+			}
+			return full_aspects;
+		case vk::ImageLayout::eTransferDstOptimal:
+			if (!static_cast<bool>(usage & vk::ImageUsageFlagBits::eTransferDst)) {
+				EXIT("Image::GetBarriers: eTransferDstOptimal requires eTransferDst "
+				     "usage (usage=0x%x format=%d)\n",
+				     static_cast<vk::ImageUsageFlags::MaskType>(usage),
+				     static_cast<int>(format));
+			}
+			return full_aspects;
+		case vk::ImageLayout::eAttachmentFeedbackLoopOptimalEXT:
+			return full_aspects;
+		default:
+			return full_aspects;
+	}
+}
+
+namespace {
+
+// Kyty-033: state bundle used by the coalescing pass. Two pending transitions
+// with the same old/new (stage, access, layout) tuple can be merged into a
+// single VkImageMemoryBarrier2 with a wider subresourceRange.
+struct PendingTransition {
+	uint32_t                  level     = 0;
+	uint32_t                  layer     = 0;
+	vk::PipelineStageFlags2   src_stage;
+	vk::AccessFlags2          src_access;
+	vk::ImageLayout           src_layout = vk::ImageLayout::eUndefined;
+	vk::PipelineStageFlags2   dst_stage;
+	vk::AccessFlags2          dst_access;
+	vk::ImageLayout           dst_layout = vk::ImageLayout::eUndefined;
+};
+
+// Returns true if two pending transitions can be merged into a single barrier
+// (i.e. they have identical src/dst stage/access/layout).
+[[nodiscard]] bool Mergeable(const PendingTransition& a,
+                             const PendingTransition& b) noexcept {
+	return a.src_stage == b.src_stage && a.src_access == b.src_access &&
+		       a.src_layout == b.src_layout && a.dst_stage == b.dst_stage &&
+		       a.dst_access == b.dst_access && a.dst_layout == b.dst_layout;
+}
+
+void EmitBarrier(std::vector<vk::ImageMemoryBarrier2>& barriers,
+                const PendingTransition& t, uint32_t level_count, uint32_t layer_count,
+                vk::Image image, vk::ImageAspectFlags aspect_mask) {
+	vk::ImageMemoryBarrier2 barrier {};
+	barrier.srcStageMask                    = t.src_stage;
+	barrier.srcAccessMask                   = t.src_access;
+	barrier.dstStageMask                    = t.dst_stage;
+	barrier.dstAccessMask                   = t.dst_access;
+	barrier.oldLayout                       = t.src_layout;
+	barrier.newLayout                       = t.dst_layout;
+	barrier.srcQueueFamilyIndex             = VK_QUEUE_FAMILY_IGNORED;
+	barrier.dstQueueFamilyIndex             = VK_QUEUE_FAMILY_IGNORED;
+	barrier.image                           = image;
+	barrier.subresourceRange.aspectMask     = aspect_mask;
+	barrier.subresourceRange.baseMipLevel   = t.level;
+	barrier.subresourceRange.levelCount     = level_count;
+	barrier.subresourceRange.baseArrayLayer = t.layer;
+	barrier.subresourceRange.layerCount     = layer_count;
+	barriers.push_back(barrier);
+}
+
+// Kyty-033: coalesce a list of per-subresource pending transitions into the
+// minimum number of VkImageMemoryBarrier2 entries. Adjacent subresources
+// along the layer axis (within the same mip level) are merged into a single
+// barrier with layerCount > 1. Cross-level coalescing is not attempted
+// because the straightforward layer-axis coalescing already collapses the
+// common case (one barrier per mip level instead of one barrier per
+// (level, layer)).
+void CoalesceAndEmit(std::vector<vk::ImageMemoryBarrier2>& barriers,
+                    std::vector<PendingTransition>& pending, vk::Image image,
+                    vk::ImageAspectFlags aspect_mask) {
+	if (pending.empty()) {
+		return;
+	}
+	// Sort by (level, layer) so adjacent subresources are contiguous.
+	std::sort(pending.begin(), pending.end(),
+		          [](const PendingTransition& a, const PendingTransition& b) {
+			          if (a.level != b.level) return a.level < b.level;
+			          return a.layer < b.layer;
+		          });
+
+	auto run_start = pending.begin();
+	auto it        = run_start;
+	while (it != pending.end()) {
+		auto next = std::next(it);
+		// Try to extend the current run along the layer axis.
+		if (next != pending.end() && next->level == it->level &&
+			    next->layer == it->layer + 1 && Mergeable(*run_start, *next)) {
+			it = next;
+			continue;
+		}
+		// Run ends here. Emit one barrier spanning [run_start, it].
+		const auto base        = *run_start;
+		const auto run_layers  = it->layer - run_start->layer + 1;
+		EmitBarrier(barriers, base, 1u, run_layers, image, aspect_mask);
+		run_start = next;
+		it        = next;
+	}
+}
+
+} // namespace
+
 Image::Barriers Image::GetBarriers(vk::ImageLayout                      destination_layout,
                                    vk::AccessFlags2                     destination_access,
                                    vk::PipelineStageFlags2              destination_stage,
@@ -108,10 +316,27 @@ Image::Barriers Image::GetBarriers(vk::ImageLayout                      destinat
 		range->layer_count = 1;
 	}
 
+	// Kyty-033: validate the destination layout up-front. This catches
+	// programming errors (e.g. transitioning a sampled-only image to
+	// eColorAttachmentOptimal) that would otherwise surface as a Vulkan
+	// validation error at draw time, far from the root cause.
+	(void)ValidateDestinationLayout(destination_layout, backing.usage, backing.format);
+
 	const bool partial =
 	    range && (range->base_level != 0 || range->level_count != info.resources.levels ||
 	              range->base_layer != 0 || range->layer_count != info.resources.layers);
 	const bool has_subresource_states = !subresource_states.empty();
+
+	// Kyty-033: a write-access barrier must be re-emitted even when the
+	// layout doesn't change, because the previous access may not yet be
+	// visible to the new pipeline stage. We extend the write mask with
+	// eColorAttachmentWrite and eDepthStencilAttachmentWrite so render
+	// passes with consecutive writes to the same target also sync correctly.
+	constexpr auto write_access = vk::AccessFlagBits2::eTransferWrite |
+		                              vk::AccessFlagBits2::eShaderWrite |
+		                              vk::AccessFlagBits2::eMemoryWrite |
+		                              vk::AccessFlagBits2::eColorAttachmentWrite |
+		                              vk::AccessFlagBits2::eDepthStencilAttachmentWrite;
 
 	Barriers barriers;
 	if (partial || has_subresource_states) {
@@ -123,48 +348,68 @@ Image::Barriers Image::GetBarriers(vk::ImageLayout                      destinat
 		const uint32_t level_count = partial ? range->level_count : info.resources.levels;
 		const uint32_t base_layer  = partial ? range->base_layer : 0;
 		const uint32_t layer_count = partial ? range->layer_count : info.resources.layers;
+		std::vector<PendingTransition> pending;
+		pending.reserve(level_count * layer_count);
 		for (uint32_t level = base_level; level < base_level + level_count; level++) {
 			for (uint32_t layer = base_layer; layer < base_layer + layer_count; layer++) {
 				const auto index = level * info.resources.layers + layer;
 				EXIT_IF(index >= subresource_states.size());
 				auto& subresource_state = subresource_states[index];
 
-				constexpr auto write_access = vk::AccessFlagBits2::eTransferWrite |
-				                              vk::AccessFlagBits2::eShaderWrite |
-				                              vk::AccessFlagBits2::eMemoryWrite;
-				const bool     repeated_write =
-				    static_cast<bool>(subresource_state.access_mask & write_access);
+				const bool repeated_write =
+					    static_cast<bool>(subresource_state.access_mask & write_access);
 				if (subresource_state.layout != destination_layout ||
-				    subresource_state.access_mask != destination_access || repeated_write) {
-					vk::ImageMemoryBarrier2 barrier {};
-					barrier.srcStageMask                    = subresource_state.pl_stage;
-					barrier.srcAccessMask                   = subresource_state.access_mask;
-					barrier.dstStageMask                    = destination_stage;
-					barrier.dstAccessMask                   = destination_access;
-					barrier.oldLayout                       = subresource_state.layout;
-					barrier.newLayout                       = destination_layout;
-					barrier.srcQueueFamilyIndex             = VK_QUEUE_FAMILY_IGNORED;
-					barrier.dstQueueFamilyIndex             = VK_QUEUE_FAMILY_IGNORED;
-					barrier.image                           = backing.image;
-					barrier.subresourceRange.aspectMask     = FullAspectMask(backing.format);
-					barrier.subresourceRange.baseMipLevel   = level;
-					barrier.subresourceRange.levelCount     = 1;
-					barrier.subresourceRange.baseArrayLayer = layer;
-					barrier.subresourceRange.layerCount     = 1;
-					barriers.push_back(barrier);
-					subresource_state = {destination_stage, destination_access, destination_layout};
+					    subresource_state.access_mask != destination_access || repeated_write) {
+					PendingTransition t;
+					t.level      = level;
+					t.layer      = layer;
+					t.src_stage  = subresource_state.pl_stage;
+					t.src_access = subresource_state.access_mask;
+					t.src_layout = subresource_state.layout;
+					t.dst_stage  = destination_stage;
+					t.dst_access = destination_access;
+					t.dst_layout = destination_layout;
+					pending.push_back(t);
+					// Kyty-033: update only the aspect(s) the destination layout
+					// applies to. For depth-only layouts the stencil aspect
+					// retains its previous state; for stencil-only layouts the
+					// depth (primary) aspect retains its previous state. For all
+					// other layouts both aspects are updated together, matching
+					// the pre-Kyty-033 behavior.
+					const bool depth_only =
+						    destination_layout == vk::ImageLayout::eDepthAttachmentOptimal ||
+						    destination_layout == vk::ImageLayout::eDepthReadOnlyOptimal;
+					const bool stencil_only =
+						    destination_layout == vk::ImageLayout::eStencilAttachmentOptimal ||
+						    destination_layout == vk::ImageLayout::eStencilReadOnlyOptimal;
+					if (!stencil_only) {
+						SetAspectState(subresource_state,
+							               vk::ImageAspectFlagBits::eColor,
+							               destination_stage, destination_access,
+							               destination_layout);
+					}
+					if (!depth_only) {
+						SetAspectState(subresource_state,
+							               vk::ImageAspectFlagBits::eStencil,
+							               destination_stage, destination_access,
+							               destination_layout);
+					}
 				}
 			}
 		}
+
+		// Kyty-033: coalesce adjacent subresources with the same transition
+		// into a single barrier with layerCount > 1. This significantly
+		// reduces the number of vkCmdPipelineBarrier2 entries for textures
+		// with many array layers (e.g. cubemaps, cascade shadow maps).
+		CoalesceAndEmit(barriers, pending, backing.image,
+			                FullAspectMask(backing.format));
 
 		if (!partial) {
 			subresource_states.clear();
 		}
 	} else {
-		constexpr auto write_access   = vk::AccessFlagBits2::eTransferWrite |
-		                                vk::AccessFlagBits2::eShaderWrite |
-		                                vk::AccessFlagBits2::eMemoryWrite;
-		const bool     repeated_write = static_cast<bool>(state.access_mask & write_access);
+		const bool repeated_write = static_cast<bool>(state.access_mask & write_access);
 		if (state.layout == destination_layout && state.access_mask == destination_access &&
 		    !repeated_write) {
 			return {};
@@ -188,7 +433,28 @@ Image::Barriers Image::GetBarriers(vk::ImageLayout                      destinat
 		barriers.push_back(barrier);
 	}
 
-	state = {destination_stage, destination_access, destination_layout};
+	// Kyty-033: update the whole-image state for the appropriate aspect(s).
+	// For depth-only layouts, only the depth (primary) aspect is updated and
+	// the stencil aspect retains its previous state. For stencil-only layouts,
+	// only the stencil aspect is updated and the depth (primary) aspect
+	// retains its previous state. For all other layouts, both aspects are
+	// kept in sync (matching the previous behavior).
+	const bool whole_depth_only =
+		    destination_layout == vk::ImageLayout::eDepthAttachmentOptimal ||
+		    destination_layout == vk::ImageLayout::eDepthReadOnlyOptimal;
+	const bool whole_stencil_only =
+		    destination_layout == vk::ImageLayout::eStencilAttachmentOptimal ||
+		    destination_layout == vk::ImageLayout::eStencilReadOnlyOptimal;
+	if (!whole_stencil_only) {
+		state.pl_stage    = destination_stage;
+		state.access_mask = destination_access;
+		state.layout      = destination_layout;
+	}
+	if (!whole_depth_only) {
+		state.stencil_pl_stage = destination_stage;
+		state.stencil_access   = destination_access;
+		state.stencil_layout   = destination_layout;
+	}
 	return barriers;
 }
 
