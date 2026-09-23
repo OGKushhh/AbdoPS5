@@ -153,7 +153,11 @@ bool GraphicContext::CreateImage(const vk::ImageCreateInfo& image_info, VulkanIm
 	image.samples    = static_cast<uint32_t>(image_info.samples);
 	image.usage      = image_info.usage;
 	image.flags      = image_info.flags;
-	image.state      = {.layout = image_info.initialLayout};
+	// Kyty-033: initialize both depth and stencil aspect layouts to the
+	// image's initial layout. For color images the stencil_* fields are
+	// unused; for D+S images they begin in sync with the depth aspect.
+	image.state.layout         = image_info.initialLayout;
+	image.state.stencil_layout = image_info.initialLayout;
 	image.subresource_states.clear();
 
 	return true;

@@ -59,6 +59,29 @@ public:
 	                                   std::optional<ImageSubresourceRange> range);
 	void Transit(vk::ImageLayout destination_layout, vk::AccessFlags2 destination_access,
 	             std::optional<ImageSubresourceRange> range, vk::CommandBuffer command_buffer);
+
+	// Kyty-033: aspect-aware accessors. For color / depth-only / stencil-only
+	// images, the AspectState(state, aspect) helper always returns the primary
+	// fields. For combined depth+stencil formats, callers may request the
+	// stencil aspect specifically. The per-aspect state stored in
+	// VulkanImageState lets future code emit separate-aspect barriers when
+	// VK_KHR_separate_depth_stencil_layouts is available.
+	[[nodiscard]] static vk::ImageLayout AspectLayout(const VulkanImageState& state,
+	                                                  vk::ImageAspectFlagBits aspect) noexcept;
+	[[nodiscard]] static vk::AccessFlags2 AspectAccess(const VulkanImageState& state,
+	                                                    vk::ImageAspectFlagBits aspect) noexcept;
+	[[nodiscard]] static vk::PipelineStageFlags2 AspectStage(const VulkanImageState& state,
+	                                                          vk::ImageAspectFlagBits aspect) noexcept;
+	static void SetAspectState(VulkanImageState& state, vk::ImageAspectFlagBits aspect,
+	                           vk::PipelineStageFlags2 stage, vk::AccessFlags2 access,
+	                           vk::ImageLayout layout) noexcept;
+
+	// Kyty-033: validate that the destination layout is compatible with the
+	// image's usage flags (e.g. eColorAttachmentOptimal requires
+	// eColorAttachment usage). Returns the aspect mask that the layout is
+	// valid for; exits with an error message if the layout is unsupported.
+	[[nodiscard]] static vk::ImageAspectFlags ValidateDestinationLayout(
+	    vk::ImageLayout layout, vk::ImageUsageFlags usage, vk::Format format) noexcept;
 	void Upload(std::span<const vk::BufferImageCopy> copies, vk::Buffer buffer, uint64_t offset,
 	            uint64_t size);
 	void Download(std::span<const vk::BufferImageCopy> copies, vk::Buffer buffer, uint64_t offset,

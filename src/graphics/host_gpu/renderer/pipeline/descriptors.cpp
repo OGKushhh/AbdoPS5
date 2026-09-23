@@ -1025,7 +1025,12 @@ void RenderExecutor::CommitBindings(CommandBuffer&                     buffer,
 				                                   : vk::ImageLayout::eShaderReadOnlyOptimal,
 				              vk::AccessFlagBits2::eShaderRead, range, vk_buffer);
 			}
-			binding.layout = image.backing.state.layout;
+			// Kyty-033: read the depth/color aspect's layout via the
+			// aspect-aware accessor so future per-aspect transitions
+			// (e.g. eDepthReadOnlyOptimal) report the correct layout
+			// to the descriptor binding.
+			binding.layout =
+			    Image::AspectLayout(image.backing.state, vk::ImageAspectFlagBits::eColor);
 		}
 
 		m_image_occurrences.assign(descriptors.images.size(), 0);

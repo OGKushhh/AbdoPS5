@@ -239,7 +239,15 @@ void Presenter::Frame::Transit(vk::CommandBuffer command, vk::ImageLayout layout
 	dependency.imageMemoryBarrierCount = 1;
 	dependency.pImageMemoryBarriers    = &barrier;
 	command.pipelineBarrier2(dependency);
-	image.state = {stage, access, layout};
+	// Kyty-033: swapchain images are color-only, so the stencil aspect
+	// fields are unused, but we set them to the same layout for consistency
+	// with the new aspect-aware VulkanImageState.
+	image.state.pl_stage    = stage;
+	image.state.access_mask = access;
+	image.state.layout      = layout;
+	image.state.stencil_pl_stage = stage;
+	image.state.stencil_access   = access;
+	image.state.stencil_layout   = layout;
 	image.subresource_states.clear();
 }
 
