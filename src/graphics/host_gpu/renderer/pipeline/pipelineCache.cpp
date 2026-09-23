@@ -871,7 +871,7 @@ PipelineCache::Pipeline& PipelineCache::GetGraphicsPipeline(
 	pending->key = key;
 	pending->pipeline = std::make_unique<Pipeline>();
 	auto* pending_raw = pending.get();
-	auto& graphics = m_graphics;
+	auto* graphics = &m_graphics;
 	auto driver_cache = m_driver_cache;
 	auto rendering_copy = rendering;
 	auto vertex_input_copy = key.vertex_input;
@@ -886,7 +886,7 @@ PipelineCache::Pipeline& PipelineCache::GetGraphicsPipeline(
 	          vertex_info_copy, programs_copy, static_params_copy, ps_input_copy,
 	          pending_raw, vs_id, ps_id]() mutable {
 		LogPipelineTrace("AsyncCreatePipeline begin", vs_id, ps_id);
-		CreatePipelineInternal(graphics, *pending_raw->pipeline, rendering_copy,
+		CreatePipelineInternal(*graphics, *pending_raw->pipeline, rendering_copy,
 		                       vertex_input_copy, vertex_info_copy,
 		                       ps_input_copy.has_value() ? &*ps_input_copy : nullptr,
 		                       programs_copy, static_params_copy, driver_cache);
@@ -943,13 +943,13 @@ PipelineCache::GetComputePipeline(const ShaderComputeInputInfo& input_info,
 	pending->key = compute_program.id;
 	pending->pipeline = std::make_unique<Pipeline>();
 	auto* pending_raw = pending.get();
-	auto& graphics = m_graphics;
+	auto* graphics = &m_graphics;
 	auto driver_cache = m_driver_cache;
 	auto compute_module = compute_program.module;
 	auto input_info_copy = input_info;
 	std::thread([graphics, driver_cache, compute_module, input_info_copy,
 	          pending_raw]() mutable {
-		CreatePipelineInternal(graphics, *pending_raw->pipeline, input_info_copy,
+		CreatePipelineInternal(*graphics, *pending_raw->pipeline, input_info_copy,
 		                       compute_module, driver_cache);
 		pending_raw->failed.store(pending_raw->pipeline->pipeline == nullptr,
 		                          std::memory_order_relaxed);
