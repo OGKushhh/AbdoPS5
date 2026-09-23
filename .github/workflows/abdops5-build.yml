@@ -168,12 +168,9 @@ jobs:
 
       - name: Create Windows installer (Inno Setup)
         shell: pwsh
+        continue-on-error: true
         run: |
-          # Download and install Inno Setup
-          $innoUrl = "https://files.jrsoftware.org/is/6/innosetup-6.2.2.exe"
-          $innoInstaller = "$env:TEMP\innosetup.exe"
-          Invoke-WebRequest -Uri $innoUrl -OutFile $innoInstaller
-          Start-Process -FilePath $innoInstaller -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART" -Wait
+          choco install innosetup -y --no-progress 2>$null
           $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
           if (Test-Path $iscc) {
             & $iscc packaging/windows/AbdoPS5.iss
