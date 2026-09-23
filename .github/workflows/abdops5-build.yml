@@ -158,14 +158,6 @@ jobs:
             Copy-Item -Path "scripts/*.py" -Destination "$installDir/scripts/" -Force
           }
 
-      - name: Create final ZIP
-        shell: pwsh
-        run: |
-          $zipPath = "AbdoPS5-Windows-x64.zip"
-          Compress-Archive -Path "_Build/windows/install/*" -DestinationPath $zipPath -CompressionLevel Optimal
-          $zipSize = [math]::Round((Get-Item $zipPath).Length / 1MB, 1)
-          Write-Host "Created $zipPath ($zipSize MB)"
-
       - name: Create Windows installer (Inno Setup)
         shell: pwsh
         continue-on-error: true
@@ -177,18 +169,17 @@ jobs:
             if (Test-Path "AbdoPS5-Setup-0.1.0-x64.exe") {
               $installerSize = [math]::Round((Get-Item "AbdoPS5-Setup-0.1.0-x64.exe").Length / 1MB, 1)
               Write-Host "Created AbdoPS5-Setup-0.1.0-x64.exe ($installerSize MB)"
+              Move-Item "AbdoPS5-Setup-0.1.0-x64.exe" "_Build/windows/install/" -Force
             }
           } else {
             Write-Host "Inno Setup not found — skipping installer creation"
           }
 
-      - name: Upload final ZIP artifact
+      - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
         with:
           name: AbdoPS5-Windows-x64
-          path: |
-            AbdoPS5-Windows-x64.zip
-            AbdoPS5-Setup-*.exe
+          path: _Build/windows/install/*
           if-no-files-found: error
           retention-days: 30
 
@@ -292,23 +283,21 @@ jobs:
           mkdir -p _Build/linux/install/tools
           find _Build/linux -maxdepth 2 \( -name "kytyps5-elf-info" -o -name "kytyps5-nids" -o -name "kytyps5-param-sfo" -o -name "kytyps5-pkg-inspect" \) | xargs -I{} cp {} _Build/linux/install/tools/ 2>/dev/null || true
           cd $GITHUB_WORKSPACE/_Build/linux/install
-          zip -r $GITHUB_WORKSPACE/AbdoPS5-Linux-x64.zip .
           cd $GITHUB_WORKSPACE
-          ls -lh AbdoPS5-Linux-x64.zip
+          ls -lh _Build/linux/install/
 
       - name: Create Linux AppImage
         shell: bash
+        continue-on-error: true
         run: |
           chmod +x packaging/linux/create-appimage.sh
-          bash packaging/linux/create-appimage.sh _Build/linux/install AbdoPS5-Linux-x64.AppImage || true
+          bash packaging/linux/create-appimage.sh _Build/linux/install _Build/linux/install/AbdoPS5-Linux-x64.AppImage || true
 
-      - name: Upload Linux ZIP artifact
+      - name: Upload Linux artifact
         uses: actions/upload-artifact@v4
         with:
           name: AbdoPS5-Linux-x64
-          path: |
-            AbdoPS5-Linux-x64.zip
-            AbdoPS5-Linux-x64.AppImage
+          path: _Build/linux/install/*
           if-no-files-found: error
           retention-days: 30
 
