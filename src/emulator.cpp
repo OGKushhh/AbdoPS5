@@ -64,7 +64,7 @@ static void PrintSystemInfo() {
 
 static void KytyClose() {
         // Kyty-039: flush + close the PM4 dump file.
-        Pm4Dump::Shutdown();
+        Libs::Graphics::Pm4Dump::Shutdown();
 
         auto* rt = Common::Singleton<Loader::RuntimeLinker>::Instance();
 
@@ -305,7 +305,7 @@ void Run(const RunOptions& options) {
         Libs::InitAll(rt->Symbols());
         // Kyty-039: initialize the PM4 dump tool if enabled in config.
         if (Config::Pm4DumpEnabled()) {
-                if (!Pm4Dump::Initialize(Config::GetPm4DumpPath())) {
+                if (!Libs::Graphics::Pm4Dump::Initialize(Config::GetPm4DumpPath())) {
                         LOGF_COLOR(Log::Color::BrightYellow, "Kyty-039: failed to open PM4 dump file: %s\n",
                                    Common::PathToString(Config::GetPm4DumpPath()).c_str());
                 } else {
