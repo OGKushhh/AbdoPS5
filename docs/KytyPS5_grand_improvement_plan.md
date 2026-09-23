@@ -1225,7 +1225,7 @@ perf.
 | Kyty-036 | Windows installer | 1 day | 🟢 |
 | Kyty-037 | GPU page generation tracking | 1 week | 🟢 |
 | Kyty-038 | Structured control flow lowering (OpSelectionMerge/OpLoopMerge) | 2–3 weeks | 🔴 |
-| Kyty-039 | PM4 command stream dump tool | 2–3 days | 🔴 |
+| Kyty-039 | PM4 command stream dump tool | 2–3 days | 🟢 |
 | Kyty-040 | Constant folding + DCE in shader recompiler | 1 week | 🔴 |
 
 
