@@ -1212,8 +1212,13 @@ void TextureCache::MaterializeDccClear(ImageId id, const ImageDesc& desc,
 }
 
 void TextureCache::RefreshImage(ImageId id) {
-	TrackImage(id);
 	auto& image = m_slot_images[id];
+	if (image.depth_id &&
+	    (m_slot_images[image.depth_id].info.metadata.stencil_compressed ||
+	     m_slot_images[image.depth_id].info.samples != 1)) {
+		return;
+	}
+	TrackImage(id);
 	if (image.IsMaybeCpuDirty()) {
 		const auto hash = image.HashGuestEdges();
 		if (image.NeedsMaybeCpuHash()) {
@@ -1235,7 +1240,7 @@ void TextureCache::RefreshImage(ImageId id) {
 	InitializeImage(id);
 }
 
-void TextureCache::AssociateStencil(ImageId depth_id, GuestRange stencil) {
+ImageId TextureCache::AssociateStencil(ImageId depth_id, GuestRange stencil) {
 	if (!stencil.Valid()) {
 		EXIT("TextureCache: invalid stencil association range\n");
 	}
@@ -1261,6 +1266,7 @@ void TextureCache::AssociateStencil(ImageId depth_id, GuestRange stencil) {
 	auto& record = m_slot_images[association];
 	TouchImage(record);
 	record.depth_id = depth_id;
+	return association;
 }
 
 ImageId TextureCache::FindImage(ImageDesc& desc, bool exact_format) {
@@ -1406,6 +1412,19 @@ vk::ImageView TextureCache::FindTexture(ImageId id, const ImageDesc& desc) {
 	}
 	if (!image.info.data.Empty()) {
 		RefreshImage(id);
+		if (image.info.HasStencil() &&
+		    desc.info.data.address >= image.info.stencil.address &&
+		    desc.info.data.End() <= image.info.stencil.End()) {
+			for (const auto stencil_id:
+			     FindImagesInRegion(image.info.stencil.address, image.info.stencil.size, false)) {
+				const auto* stencil = m_slot_images.try_get(stencil_id);
+				if (stencil != nullptr && stencil->depth_id == id &&
+				    stencil->info.data == image.info.stencil) {
+					RefreshImage(stencil_id);
+					break;
+				}
+			}
+		}
 	}
 	switch (desc.type) {
 		case BindingType::Texture: break;
@@ -1463,7 +1482,7 @@ vk::ImageView TextureCache::FindDepthTarget(ImageId id, const ImageDesc& desc) {
 	}
 	CommitGpuWrite(image);
 	if (desc.info.HasStencil()) {
-		AssociateStencil(id, desc.info.stencil);
+		RefreshImage(AssociateStencil(id, desc.info.stencil));
 	}
 	const auto view = image.FindView(desc.view_info);
 	NameImageBinding(m_graphics, image, view, desc.type, desc.view_info);
