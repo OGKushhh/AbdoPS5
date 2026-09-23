@@ -116,7 +116,25 @@ std::filesystem::path GetCommandBufferDumpFolder() {
 }
 
 bool GraphicsDebugDumpEnabled() {
-        return g_config->graphics_debug_dump_enabled;
+	return g_config->graphics_debug_dump_enabled;
+}
+
+// Kyty-039: PM4 command stream dump tool.
+bool Pm4DumpEnabled() {
+	return g_config->pm4_dump_enabled;
+}
+
+std::filesystem::path GetPm4DumpPath() {
+	return g_config->pm4_dump_path;
+}
+
+// Kyty-039: PM4 command stream dump tool.
+bool Pm4DumpEnabled() {
+	return g_config->pm4_dump_enabled;
+}
+
+std::filesystem::path GetPm4DumpPath() {
+	return g_config->pm4_dump_path;
 }
 
 LogDirection GetPrintfDirection() {

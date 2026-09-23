@@ -62,6 +62,14 @@ struct ConfigOptions {
         bool                   command_buffer_dump_enabled = false;
         std::filesystem::path  command_buffer_dump_folder  = "_Buffers";
         bool                   graphics_debug_dump_enabled = false;
+        // Kyty-039: PM4 command stream dump tool. When enabled, every
+        // PM4 packet is written to pm4_dump_path for offline analysis.
+        bool                   pm4_dump_enabled             = false;
+        std::filesystem::path  pm4_dump_path                = "_Pm4Dump.txt";
+        // Kyty-039: PM4 command stream dump tool. When enabled, every
+        // PM4 packet is written to pm4_dump_path for offline analysis.
+        bool                   pm4_dump_enabled             = false;
+        std::filesystem::path  pm4_dump_path                = "_Pm4Dump.txt";
         LogDirection           printf_direction            = LogDirection::Silent;
         std::filesystem::path  printf_output_file          = "_kyty.txt";
         bool                   profiler_enabled            = false;
@@ -118,6 +126,14 @@ bool                  CommandBufferDumpEnabled();
 std::filesystem::path GetCommandBufferDumpFolder();
 
 bool GraphicsDebugDumpEnabled();
+
+// Kyty-039: PM4 command stream dump tool.
+bool                  Pm4DumpEnabled();
+std::filesystem::path GetPm4DumpPath();
+
+// Kyty-039: PM4 command stream dump tool.
+bool                  Pm4DumpEnabled();
+std::filesystem::path GetPm4DumpPath();
 
 LogDirection          GetPrintfDirection();
 std::filesystem::path GetPrintfOutputFile();
