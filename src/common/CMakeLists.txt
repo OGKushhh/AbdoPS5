@@ -24,6 +24,7 @@ target_link_libraries(common
                 fmt::fmt
                 Tracy::TracyClient
                 Zydis::Zydis
+                nlohmann_json::nlohmann_json
         PRIVATE
                 cpuinfo
                 kyty_git_version
