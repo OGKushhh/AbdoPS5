@@ -157,7 +157,7 @@ void FaultManager::ProcessFaultBuffer() {
                 fault_ranges.ForEach([this, &mapped_count, &unmapped_count](uint64_t start, uint64_t end) {
                         EXIT_IF(end - start > std::numeric_limits<uint32_t>::max());
                         const auto buffer_id = m_buffer_cache.FindBuffer(start, static_cast<uint32_t>(end - start));
-                        if (buffer_id != BufferCache::NULL_BUFFER_ID) {
+                        if (buffer_id != NULL_BUFFER_ID) {
                                 ++mapped_count;
                         } else {
                                 ++unmapped_count;
