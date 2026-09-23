@@ -463,6 +463,22 @@ struct Context {
                         default: return nullptr;
                 }
         }
+
+        void LoadGprs(uint64_t (&gpr)[16]) const {
+                const auto& ss = native->uc_mcontext->__ss;
+                const uint64_t registers[] = {ss.__rax, ss.__rcx, ss.__rdx, ss.__rbx,
+                                              ss.__rsp, ss.__rbp, ss.__rsi, ss.__rdi,
+                                              ss.__r8,  ss.__r9,  ss.__r10, ss.__r11,
+                                              ss.__r12, ss.__r13, ss.__r14, ss.__r15};
+                std::memcpy(gpr, registers, sizeof(gpr));
+        }
+
+        void ClearUpperYmm(uint8_t index) const {
+                // macOS doesn't expose AVX state through the signal context
+                // in the same way Linux does. The upper YMM bits are
+                // architecturally zeroed on any XMM use, so this is a no-op.
+                (void)index;
+        }
 #else
         ucontext_t* native;
 
