@@ -29,6 +29,7 @@
 #include <span>
 #include <spirv-tools/libspirv.hpp>
 #include <string_view>
+#include <thread>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -418,6 +419,49 @@ PipelineCache::~PipelineCache() {
 	}
 }
 
+// Kyty-032: Poll for finished async pipeline compilations and merge
+// them into the main cache. Called at the start of
+// GetGraphicsPipeline / GetComputePipeline.
+void PipelineCache::PollAsyncResults() {
+	Common::LockGuard lock(m_async_mutex);
+	for (auto it = m_async_gfx_pending.begin(); it != m_async_gfx_pending.end();) {
+		auto& pending = **it;
+		if (!pending.done.load(std::memory_order_acquire)) {
+			++it;
+			continue;
+		}
+		if (!pending.failed.load(std::memory_order_relaxed) && pending.pipeline &&
+		    pending.pipeline->pipeline != nullptr) {
+			auto [iter, inserted] = m_graphics_pipelines.emplace(std::move(pending.key),
+			                                                     std::move(pending.pipeline));
+			if (!inserted) {
+				m_graphics.device.destroyPipeline(iter->second->pipeline, nullptr);
+				m_graphics.device.destroyPipelineLayout(iter->second->pipeline_layout, nullptr);
+				m_graphics.device.destroyDescriptorSetLayout(iter->second->descriptor_set_layout, nullptr);
+			}
+		}
+		it = m_async_gfx_pending.erase(it);
+	}
+	for (auto it = m_async_compute_pending.begin(); it != m_async_compute_pending.end();) {
+		auto& pending = **it;
+		if (!pending.done.load(std::memory_order_acquire)) {
+			++it;
+			continue;
+		}
+		if (!pending.failed.load(std::memory_order_relaxed) && pending.pipeline &&
+		    pending.pipeline->pipeline != nullptr) {
+			auto [iter, inserted] = m_compute_pipelines.emplace(pending.key,
+			                                                 std::move(pending.pipeline));
+			if (!inserted) {
+				m_graphics.device.destroyPipeline(iter->second->pipeline, nullptr);
+				m_graphics.device.destroyPipelineLayout(iter->second->pipeline_layout, nullptr);
+				m_graphics.device.destroyDescriptorSetLayout(iter->second->descriptor_set_layout, nullptr);
+			}
+		}
+		it = m_async_compute_pending.erase(it);
+	}
+}
+
 void PipelineCache::InitializeDriverCache() {
 	const auto title_id = PipelineCacheTitleId();
 	if (title_id.empty()) {
@@ -794,8 +838,21 @@ PipelineCache::Pipeline& PipelineCache::GetGraphicsPipeline(
 		EXIT_IF(attributes_num != static_cast<uint32_t>(vs_input_info.resources_num));
 	}
 
+	PollAsyncResults();
+
 	if (auto iter = m_graphics_pipelines.find(key); iter != m_graphics_pipelines.end()) {
 		return *iter->second;
+	}
+
+	// Kyty-032: Check if async compilation is in flight
+	{
+		Common::LockGuard async_lock(m_async_mutex);
+		for (const auto& pending : m_async_gfx_pending) {
+			if (pending->key == key) {
+				static Pipeline null_pipeline;
+				return null_pipeline;
+			}
+		}
 	}
 
 	if (graphics_debug_dump_enabled()) {
@@ -808,19 +865,46 @@ PipelineCache::Pipeline& PipelineCache::GetGraphicsPipeline(
 		     static_cast<void*>(pixel_program.module));
 	}
 
-	auto cached = std::make_unique<Pipeline>();
-	LogPipelineTrace("CreatePipelineInternal begin", vs_id, ps_id);
-	CreatePipelineInternal(m_graphics, *cached, rendering, key.vertex_input, vertex_info,
-	                       ps_input_info, programs, static_params, m_driver_cache);
-	LogPipelineTrace("CreatePipelineInternal done", vs_id, ps_id);
+	// Kyty-032: Launch async pipeline compilation on a background thread.
+	// All data needed by CreatePipelineInternal is copied into the closure.
+	auto pending = std::make_unique<AsyncPendingGfx>();
+	pending->key = key;
+	pending->pipeline = std::make_unique<Pipeline>();
+	auto* pending_raw = pending.get();
+	auto& graphics = m_graphics;
+	auto driver_cache = m_driver_cache;
+	auto rendering_copy = rendering;
+	auto vertex_input_copy = key.vertex_input;
+	std::vector<ShaderVertexInputInfo> vertex_info_copy(vertex_info.begin(), vertex_info.end());
+	auto programs_copy = programs;
+	auto static_params_copy = static_params;
+	std::optional<ShaderPixelInputInfo> ps_input_copy;
+	if (ps_input_info != nullptr) {
+		ps_input_copy = *ps_input_info;
+	}
+	std::thread([graphics, driver_cache, rendering_copy, vertex_input_copy,
+	          vertex_info_copy, programs_copy, static_params_copy, ps_input_copy,
+	          pending_raw, vs_id, ps_id]() mutable {
+		LogPipelineTrace("AsyncCreatePipeline begin", vs_id, ps_id);
+		CreatePipelineInternal(graphics, *pending_raw->pipeline, rendering_copy,
+		                       vertex_input_copy, vertex_info_copy,
+		                       ps_input_copy.has_value() ? &*ps_input_copy : nullptr,
+		                       programs_copy, static_params_copy, driver_cache);
+		LogPipelineTrace("AsyncCreatePipeline done", vs_id, ps_id);
+		pending_raw->failed.store(pending_raw->pipeline->pipeline == nullptr,
+		                          std::memory_order_relaxed);
+		pending_raw->done.store(true, std::memory_order_release);
+	}).detach();
 
-	EXIT_NOT_IMPLEMENTED(cached->pipeline == nullptr);
-	EXIT_NOT_IMPLEMENTED(cached->pipeline_layout == nullptr);
+	{
+		Common::LockGuard async_lock(m_async_mutex);
+		m_async_gfx_pending.push_back(std::move(pending));
+	}
 
-	auto [iter, inserted] = m_graphics_pipelines.emplace(std::move(key), std::move(cached));
-	EXIT_IF(!inserted);
-
-	return *iter->second;
+	// Return null placeholder — the draw will be skipped this frame.
+	// Next frame, PollAsyncResults() will merge the compiled pipeline.
+	static Pipeline null_pipeline;
+	return null_pipeline;
 }
 
 PipelineCache::Pipeline&
@@ -832,24 +916,52 @@ PipelineCache::GetComputePipeline(const ShaderComputeInputInfo& input_info,
 
 	Common::LockGuard lock(m_mutex);
 
+	PollAsyncResults();
+
 	if (auto iter = m_compute_pipelines.find(compute_program.id);
 	    iter != m_compute_pipelines.end()) {
 		return *iter->second;
+	}
+
+	// Kyty-032: Check if async compilation is in flight
+	{
+		Common::LockGuard async_lock(m_async_mutex);
+		for (const auto& pending : m_async_compute_pending) {
+			if (pending->key == compute_program.id) {
+				static Pipeline null_pipeline;
+				return null_pipeline;
+			}
+		}
 	}
 
 	if (graphics_debug_dump_enabled()) {
 		ShaderDbgDumpInputInfo(input_info);
 	}
 
-	auto cached = std::make_unique<Pipeline>();
-	CreatePipelineInternal(m_graphics, *cached, input_info, compute_program.module, m_driver_cache);
+	// Kyty-032: Launch async compute pipeline compilation.
+	auto pending = std::make_unique<AsyncPendingCompute>();
+	pending->key = compute_program.id;
+	pending->pipeline = std::make_unique<Pipeline>();
+	auto* pending_raw = pending.get();
+	auto& graphics = m_graphics;
+	auto driver_cache = m_driver_cache;
+	auto compute_module = compute_program.module;
+	auto input_info_copy = input_info;
+	std::thread([graphics, driver_cache, compute_module, input_info_copy,
+	          pending_raw]() mutable {
+		CreatePipelineInternal(graphics, *pending_raw->pipeline, input_info_copy,
+		                       compute_module, driver_cache);
+		pending_raw->failed.store(pending_raw->pipeline->pipeline == nullptr,
+		                          std::memory_order_relaxed);
+		pending_raw->done.store(true, std::memory_order_release);
+	}).detach();
 
-	EXIT_NOT_IMPLEMENTED(cached->pipeline == nullptr);
-	EXIT_NOT_IMPLEMENTED(cached->pipeline_layout == nullptr);
+	{
+		Common::LockGuard async_lock(m_async_mutex);
+		m_async_compute_pending.push_back(std::move(pending));
+	}
 
-	auto [iter, inserted] = m_compute_pipelines.emplace(compute_program.id, std::move(cached));
-	EXIT_IF(!inserted);
-
-	return *iter->second;
+	static Pipeline null_pipeline;
+	return null_pipeline;
 }
 } // namespace Libs::Graphics
