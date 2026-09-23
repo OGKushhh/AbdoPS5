@@ -110,7 +110,7 @@ bool UsedAnyFallback() {
 }
 
 uint32_t GetFallbackCount() {
-    std::lock_guard lock(gMutex);
+    std::lock_guard lock(g_mutex);
     return static_cast<uint32_t>(g_fallbacks_used.size());
 }
 
