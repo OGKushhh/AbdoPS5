@@ -1,7 +1,13 @@
 {
-  "_comment": "Kyty-003: Per-game hack flags. Override or add to the hardcoded map in src/loader/hack_features.cpp. Format: \"PPSA_ID\": [\"HackName1\", \"HackName2\"]. Available hacks: DepthDisable, ComputeDisable, DisableAsyncCompute, DisableSRGB, DisableFMV, SkipUnknownTiling, ForceDepthRangeRestricted, UseColorImageForComparison, SkipShaderAssert, ImageLoadNoReload, MemoryBound, ForcePs4ProMode, ForceDevKitMode",
+  "_comment": "Kyty-003: Per-game hack flags. Override or add to the hardcoded map in src/loader/hack_features.cpp. Format: \"CUSA_ID\": [\"HackName1\", \"HackName2\"]. Available hacks: DepthDisable, ComputeDisable, DisableAsyncCompute, DisableSRGB, DisableFMV, SkipUnknownTiling, ForceDepthRangeRestricted, UseColorImageForComparison, SkipShaderAssert, ImageLoadNoReload, MemoryBound, ForcePs4ProMode, ForceDevKitMode, BloodborneAudioFix, Pm4Type0Fix",
   
   "_example_Sifu": "PPSA01491 is hardcoded to DisableAsyncCompute+ForceDepthRangeRestricted. To ADD SkipShaderAssert without removing the hardcoded hacks, add the entry below — overrides are OR'd with the hardcoded map.",
 
-  "PPSA01491": ["DisableAsyncCompute", "ForceDepthRangeRestricted", "SkipShaderAssert"]
+  "PPSA01491": ["DisableAsyncCompute", "ForceDepthRangeRestricted", "SkipShaderAssert"],
+
+  "_bloodborne": "Bloodborne (CUSA00900/CUSA00231/CUSA03173) is hardcoded with BloodborneAudioFix+Pm4Type0Fix+MemoryBound. Add overrides below to enable additional hacks without removing the hardcoded ones.",
+  
+  "CUSA00900": ["ForcePs4ProMode"],
+  "CUSA00231": ["ForcePs4ProMode"],
+  "CUSA03173": ["ForcePs4ProMode"]
 }

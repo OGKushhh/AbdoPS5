@@ -49,6 +49,17 @@ const std::unordered_map<std::string, std::string> kHardcodedGameHacks = {
 
 	// Additional known-broken games from the DoesntBoot list
 	{"PPSA01341", "SkipShaderAssert"}, // 2 reports, multi-region
+
+	// Bloodborne (CUSA00900 US, CUSA00231 EU, CUSA03173 GOTY)
+	// FromSoftware engine: uses older GCN features, 32-bit integer
+	// compares, standard tiling. Should work with minimal hacks.
+	// Known issues from shadPS4 Shadlix fork:
+	// - Audio loss (needs BloodborneAudioFix)
+	// - PM4 Type 0 packets (needs Pm4Type0Fix)
+	// - High memory (recommend MemoryBound on 8GB hosts)
+	{"CUSA00900", "BloodborneAudioFix,Pm4Type0Fix,MemoryBound"}, // Bloodborne US
+	{"CUSA00231", "BloodborneAudioFix,Pm4Type0Fix,MemoryBound"}, // Bloodborne EU
+	{"CUSA03173", "BloodborneAudioFix,Pm4Type0Fix,MemoryBound"}, // Bloodborne GOTY (Old Hunters)
 };
 
 // Map hack name strings to GameHack enum values.
@@ -66,6 +77,8 @@ const std::unordered_map<std::string, GameHack> kHackNameMap = {
 	{"MemoryBound",               GameHack::MemoryBound},
 	{"ForcePs4ProMode",           GameHack::ForcePs4ProMode},
 	{"ForceDevKitMode",           GameHack::ForceDevKitMode},
+	{"BloodborneAudioFix",        GameHack::BloodborneAudioFix},
+	{"Pm4Type0Fix",              GameHack::Pm4Type0Fix},
 };
 
 // Load data/game_hacks.json if it exists. Format:
