@@ -128,14 +128,6 @@ std::filesystem::path GetPm4DumpPath() {
 	return g_config->pm4_dump_path;
 }
 
-// Kyty-039: PM4 command stream dump tool.
-bool Pm4DumpEnabled() {
-	return g_config->pm4_dump_enabled;
-}
-
-std::filesystem::path GetPm4DumpPath() {
-	return g_config->pm4_dump_path;
-}
 
 LogDirection GetPrintfDirection() {
         return g_config->printf_direction;
