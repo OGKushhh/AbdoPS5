@@ -1,8 +1,10 @@
 #include "libs/libs.h"
 
 #include "common/logging/log.h"
+#include <fmt/format.h>
 #include "libs/errno.h"
 #include "loader/symbolDatabase.h"
+#include "loader/nid.h"
 
 namespace Libs {
 
@@ -99,6 +101,17 @@ LIB_DEFINE(InitUserService_1);
 LIB_DEFINE(InitWebBrowserDialog_1);
 
 void InitAll(Loader::SymbolDatabase* s) {
+#ifdef KYTY_VERIFY_NIDS
+// Kyty-035: verify the NID computation algorithm against known
+// name/NID pairs before any library is registered. If any pair
+// fails, log a warning so the developer knows the algorithm is
+// out of sync with the firmware.
+	if (const int failures = Loader::Nid::SelfTest(); failures > 0) {
+		Log::Write(Log::Color::BrightYellow,
+			fmt::format("[Kyty-035] Nid::SelfTest failed: {} of 4 pairs mismatch\n",
+			            failures));
+	}
+#endif
 	InitAudio_1(s);
 	InitConvertKeycode_1(s);
 	LibAmpr::InitAmpr_1(s);

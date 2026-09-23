@@ -191,6 +191,13 @@ endif()
 
 option(KYTY_BUILD_LAUNCHER "Build Qt launcher" ON)
 
+# Kyty-035: opt-in NID verification. When ON, every LIB_FUNC_VERIFY()
+# registration checks that the hardcoded NID matches the NID computed
+# from the symbol name. Useful for catching transcription bugs during
+# development; off by default because the verification adds a SHA-1
+# computation per verified function at startup.
+option(KYTY_VERIFY_NIDS "Verify hardcoded NIDs against computed NIDs at startup" OFF)
+
 config_compiler_and_linker()
 
 add_subdirectory("${KYTY_THIRD_PARTY_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/3rdparty")
@@ -700,6 +707,14 @@ target_link_libraries(kyty_emulator ${kyty_emulator_link_libraries})
 # you can't modify a target before it exists.
 if(USE_CUBEB AND TARGET cubeb)
         target_compile_definitions(kyty_emulator PRIVATE KYTY_USE_CUBEB=1)
+endif()
+
+# Kyty-035: opt-in NID verification at startup. When ON, LIB_FUNC_VERIFY()
+# registrations compute the expected NID from the symbol name and warn if
+# it doesn't match the hardcoded NID. Off by default to avoid the per-call
+# SHA-1 overhead in release builds.
+if(KYTY_VERIFY_NIDS)
+        target_compile_definitions(kyty_emulator PRIVATE KYTY_VERIFY_NIDS=1)
 endif()
 if (WIN32)
         target_link_libraries(kyty_emulator opengl32)

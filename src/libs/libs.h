@@ -4,8 +4,10 @@
 #include "common/abi.h"
 #include "common/logging/log.h"
 #include "common/stringUtils.h"
+#include <fmt/format.h>
 #include "common/threads.h"
 #include "loader/timer.h" // IWYU pragma: keep
+#include "loader/nid.h"
 
 // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
 #define PRINT_NAME_ENABLED g_print_name
@@ -45,6 +47,38 @@
 #define LIB_OBJECT(n, f) LIB_ADD(n, f, Loader::SymbolType::Object)
 // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
 #define LIB_FUNC(n, f) LIB_ADD(n, f, Loader::SymbolType::Func)
+
+// Kyty-035: register a function by its plain-text C symbol name,
+// computing the NID at registration time. Equivalent to:
+//   LIB_FUNC(Loader::Nid::ComputeFromName(name).c_str(), f)
+// Use this when only the symbol name is known and you want the NID
+// derived deterministically instead of hardcoded.
+// NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
+#define LIB_FUNC_NAME(name, f) \
+	LIB_FUNC(Loader::Nid::ComputeFromName(name).c_str(), f)
+
+// Kyty-035: opt-in NID verification. When KYTY_VERIFY_NIDS is defined
+// at build time, LIB_FUNC_VERIFY() checks that the hardcoded NID
+// matches the NID computed from the symbol name, printing a warning
+// if they differ. This catches transcription bugs at startup.
+// Use LIB_FUNC_VERIFY(n, name, f) instead of LIB_FUNC(n, f) for
+// high-value registrations where you want the verification.
+#ifdef KYTY_VERIFY_NIDS
+// NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
+#define LIB_FUNC_VERIFY(n, name, f) \
+	do { \
+		if (!Loader::Nid::Verify(name, n)) { \
+			Log::Write(Log::Color::BrightYellow, \
+				fmt::format("[Kyty-035] NID mismatch: name={} " \
+				            "hardcoded={} computed={}\n", \
+				            name, n, Loader::Nid::ComputeFromName(name))); \
+		} \
+	} while (0); \
+	LIB_FUNC(n, f)
+#else
+// NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
+#define LIB_FUNC_VERIFY(n, name, f) LIB_FUNC(n, f)
+#endif
 
 // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
 #define PRINT_NAME()                                                                               \
