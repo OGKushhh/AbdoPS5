@@ -988,7 +988,7 @@ Wire into `src/kernel/fileSystem.cpp`'s read path. Expose `--storage-bandwidth <
 | Kyty-029 | Weekly compatibility regression test | 1 week + ongoing | 🟢 |
 | Kyty-030 | Documentation (stub policy + triage + game hacks) | 1 day | 🟠 |
 | Kyty-031 | Pipeline cache persistence | 1–2 days | 🟢 |
-| Kyty-032 | Async pipeline compiler | 3–5 days | 🔴 |
+| Kyty-032 | Async pipeline compiler | 3–5 days | 🟢 |
 | Kyty-033 | Per-subresource Vulkan layout tracking | 1 week | 🔴 |
 | Kyty-034 | Image alias registry | 1–2 weeks | 🔴 |
 | Kyty-035 | NID computation from names | 2–3 days | 🔴 |
