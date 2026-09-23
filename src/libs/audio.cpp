@@ -1,6 +1,6 @@
 #include "libs/audio.h"
 
-#include "SDL.h"
+#include <SDL3/SDL.h>
 #include "common/assert.h"
 #include "common/common.h"
 #include "common/emulatorConfig.h"
@@ -115,8 +115,7 @@ private:
 		int      channels_num     = 0;
 		int      volume[12]       = {};
 
-		SDL_AudioDeviceID audio_device = 0;
-		SDL_AudioSpec     audio_spec   = {};
+		SDL_AudioStream* stream = nullptr;
 	};
 
 	struct PortIn {
@@ -127,7 +126,8 @@ private:
 		uint32_t          freq            = 0;
 		uint32_t          bytes_per_frame = 0;
 		uint64_t          last_input_time = 0;
-		SDL_AudioDeviceID audio_device    = 0;
+		SDL_AudioStream*  stream          = nullptr;
+		SDL_AudioDeviceID device          = 0;
 	};
 
 	PortIn* GetAudioInPort(Id handle); // Caller holds m_mutex.
@@ -146,7 +146,7 @@ private:
 	static void            OpenSdlDevice(PortIn* port, Format format);
 	static void            CloseSdlDevice(PortIn* port);
 	static const void*     PrepareOutputBuffer(const PortOut& port, const void* data,
-						   std::vector<uint8_t>* buffer);
+	                                           std::vector<uint8_t>* buffer);
 	static bool            QueueSdlAudio(PortOut* port, const void* data, bool blocking);
 };
 
@@ -192,7 +192,7 @@ uint32_t AudioOutOutputs(const OutputParam* params, uint32_t num, bool blocking)
 	}
 
 	return g_audio->AudioOutOutputs(output_params.data(),
-					static_cast<uint32_t>(output_params.size()), blocking);
+	                                static_cast<uint32_t>(output_params.size()), blocking);
 }
 
 } // namespace AudioInternal
@@ -242,13 +242,13 @@ uint32_t Audio::OutputChannels(const PortOut& port) {
 }
 
 SDL_AudioFormat Audio::SdlFormat(Format format) {
-	return FormatIsFloat(format) ? AUDIO_F32SYS : AUDIO_S16SYS;
+	return FormatIsFloat(format) ? SDL_AUDIO_F32 : SDL_AUDIO_S16;
 }
 
 bool Audio::OpenSdlDevice(PortOut* port) {
 	EXIT_IF(port == nullptr);
 
-	if (SDL_InitSubSystem(SDL_INIT_AUDIO) < 0) {
+	if (!SDL_InitSubSystem(SDL_INIT_AUDIO)) {
 		LOGF("AudioOut: SDL audio init failed: %s\n", SDL_GetError());
 		return false;
 	}
@@ -256,41 +256,38 @@ bool Audio::OpenSdlDevice(PortOut* port) {
 	SDL_AudioSpec desired {};
 	desired.freq     = static_cast<int>(port->freq);
 	desired.format   = SdlFormat(port->format);
-	desired.channels = static_cast<Uint8>(OutputChannels(*port));
-	desired.samples  = static_cast<Uint16>(port->samples_num);
-	desired.callback = nullptr;
+	desired.channels = static_cast<int>(OutputChannels(*port));
 
-	SDL_AudioSpec obtained {};
-
-	port->audio_device =
-	    SDL_OpenAudioDevice(nullptr, 0, &desired, &obtained, SDL_AUDIO_ALLOW_ANY_CHANGE);
-	if (port->audio_device == 0) {
-		LOGF("AudioOut: SDL_OpenAudioDevice failed: %s\n", SDL_GetError());
+	port->stream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &desired, nullptr,
+	                                         nullptr);
+	if (port->stream == nullptr) {
+		LOGF("AudioOut: SDL_OpenAudioDeviceStream failed: %s\n", SDL_GetError());
+		SDL_QuitSubSystem(SDL_INIT_AUDIO);
+		return false;
+	}
+	if (!SDL_ResumeAudioStreamDevice(port->stream)) {
+		LOGF("AudioOut: SDL_ResumeAudioStreamDevice failed: %s\n", SDL_GetError());
+		CloseSdlDevice(port);
 		return false;
 	}
 
-	port->audio_spec = obtained;
-	SDL_PauseAudioDevice(port->audio_device, 0);
-
-	LOGF("AudioOut: opened SDL device (%d Hz, %u ch, format 0x%04x)\n", obtained.freq,
-	     obtained.channels, obtained.format);
+	LOGF("AudioOut: opened SDL stream (%d Hz, %d ch, format 0x%04x)\n", desired.freq,
+	     desired.channels, static_cast<unsigned>(desired.format));
 	return true;
 }
 
 void Audio::CloseSdlDevice(PortOut* port) {
 	EXIT_IF(port == nullptr);
 
-	if (port->audio_device != 0 && SDL_WasInit(SDL_INIT_AUDIO) != 0) {
-		SDL_ClearQueuedAudio(port->audio_device);
-		SDL_CloseAudioDevice(port->audio_device);
+	if (port->stream != nullptr) {
+		SDL_DestroyAudioStream(port->stream);
+		SDL_QuitSubSystem(SDL_INIT_AUDIO);
 	}
-
-	port->audio_device = 0;
-	port->audio_spec   = {};
+	port->stream = nullptr;
 }
 
 const void* Audio::PrepareOutputBuffer(const PortOut& port, const void* data,
-				       std::vector<uint8_t>* buffer) {
+                                       std::vector<uint8_t>* buffer) {
 	EXIT_IF(data == nullptr);
 	EXIT_IF(buffer == nullptr);
 
@@ -312,10 +309,7 @@ const void* Audio::PrepareOutputBuffer(const PortOut& port, const void* data,
 		return data;
 	}
 
-	// Bug #18 fix: validate against integer overflow before resize
-	const auto total_size = static_cast<uint64_t>(frames) * output_channels * bytes_per_sample;
-	EXIT_IF(total_size > 16 * 1024 * 1024); // 16 MB max for audio buffer
-	buffer->resize(total_size);
+	buffer->resize(frames * output_channels * bytes_per_sample);
 
 	// SDL wants back speakers before side speakers; non-STD PCM has them reversed.
 	static constexpr uint32_t SDL_8CH_MAP[8] = {0, 1, 2, 3, 6, 7, 4, 5};
@@ -367,7 +361,7 @@ const void* Audio::PrepareOutputBuffer(const PortOut& port, const void* data,
 bool Audio::QueueSdlAudio(PortOut* port, const void* data, bool blocking) {
 	EXIT_IF(port == nullptr);
 
-	if (port->audio_device == 0 || data == nullptr) {
+	if (port->stream == nullptr || data == nullptr) {
 		return false;
 	}
 
@@ -377,56 +371,25 @@ bool Audio::QueueSdlAudio(PortOut* port, const void* data, bool blocking) {
 	const auto           prepared_size =
 	    BytesPerSample(port->format) * output_channels * port->samples_num;
 
-	std::vector<uint8_t> convert_buffer;
-	const void*          queue_data = prepared_data;
-	uint32_t             queue_size = prepared_size;
-
-	SDL_AudioCVT cvt {};
-	const int    cvt_result =
-	    SDL_BuildAudioCVT(&cvt, SdlFormat(port->format), static_cast<Uint8>(output_channels),
-			      static_cast<int>(port->freq), port->audio_spec.format,
-			      port->audio_spec.channels, port->audio_spec.freq);
-
-	if (cvt_result < 0) {
-		LOGF("AudioOut: SDL_BuildAudioCVT failed: %s\n", SDL_GetError());
-		return false;
-	}
-
-	if (cvt_result > 0) {
-		convert_buffer.resize(prepared_size * cvt.len_mult);
-		std::memcpy(convert_buffer.data(), prepared_data, prepared_size);
-
-		cvt.buf = convert_buffer.data();
-		cvt.len = static_cast<int>(prepared_size);
-
-		if (SDL_ConvertAudio(&cvt) < 0) {
-			LOGF("AudioOut: SDL_ConvertAudio failed: %s\n", SDL_GetError());
-			return false;
-		}
-
-		queue_data = cvt.buf;
-		queue_size = static_cast<uint32_t>(cvt.len_cvt);
-	}
-
 	if (blocking) {
 		constexpr uint64_t target_latency_us = 40000;
 		const auto buffer_us = port->freq != 0 ? (1000000ULL * port->samples_num) / port->freq : 0;
 		const auto buffers =
 		    buffer_us != 0 ? static_cast<uint32_t>((target_latency_us + buffer_us - 1) / buffer_us)
-				   : 2u;
-		const auto min_queued_size = queue_size * std::clamp(buffers, 2u, 16u);
+		                   : 2u;
+		const auto min_queued_size = prepared_size * std::clamp(buffers, 2u, 16u);
 		const auto wait_start      = LibKernel::KernelGetProcessTime();
-		while (SDL_GetQueuedAudioSize(port->audio_device) > min_queued_size) {
+		while (SDL_GetAudioStreamQueued(port->stream) > static_cast<int>(min_queued_size)) {
 			if (LibKernel::KernelGetProcessTime() - wait_start > 200000) {
-				SDL_ClearQueuedAudio(port->audio_device);
+				SDL_ClearAudioStream(port->stream);
 				break;
 			}
 			Common::Thread::SleepMicro(1000);
 		}
 	}
 
-	if (SDL_QueueAudio(port->audio_device, queue_data, queue_size) < 0) {
-		LOGF("AudioOut: SDL_QueueAudio failed: %s\n", SDL_GetError());
+	if (!SDL_PutAudioStreamData(port->stream, prepared_data, static_cast<int>(prepared_size))) {
+		LOGF("AudioOut: SDL_PutAudioStreamData failed: %s\n", SDL_GetError());
 		return false;
 	}
 
@@ -494,14 +457,14 @@ bool Audio::AudioOutValid(Id handle) {
 	Common::LockGuard lock(m_mutex);
 
 	return (handle.GetId() >= 0 && handle.GetId() < OUT_PORTS_MAX &&
-		m_out_ports[handle.GetId()].used);
+	        m_out_ports[handle.GetId()].used);
 }
 
 bool Audio::AudioOutHasDevice(Id handle) {
 	Common::LockGuard lock(m_mutex);
 
 	return (handle.GetId() >= 0 && handle.GetId() < OUT_PORTS_MAX &&
-		m_out_ports[handle.GetId()].used && m_out_ports[handle.GetId()].audio_device != 0);
+	        m_out_ports[handle.GetId()].used && m_out_ports[handle.GetId()].stream != nullptr);
 }
 
 bool Audio::AudioOutGetStatus(Id handle, int* type, int* channels_num) {
@@ -545,15 +508,6 @@ uint32_t Audio::AudioOutOutputs(OutputParam* params, uint32_t num, bool blocking
 	EXIT_NOT_IMPLEMENTED(num == 0);
 	EXIT_NOT_IMPLEMENTED(!AudioOutValid(params[0].handle));
 
-	// Bug #7 fix: validate every handle in the array, not just params[0]
-	for (uint32_t i = 0; i < num; i++) {
-		if (!AudioOutValid(params[i].handle)) {
-			LOGF("AudioOutOutputs: invalid handle at index %u (id=%d)\n",
-			     i, params[i].handle.GetId());
-			return AUDIO_OUT_ERROR_INVALID_PORT;
-		}
-	}
-
 	const auto& first_port = m_out_ports[params[0].handle.GetId()];
 
 	uint64_t block_time   = (1000000 * first_port.samples_num) / first_port.freq;
@@ -569,7 +523,7 @@ uint32_t Audio::AudioOutOutputs(OutputParam* params, uint32_t num, bool blocking
 
 	bool any_port_has_device = false;
 	for (uint32_t i = 0; i < num; i++) {
-		if (m_out_ports[params[i].handle.GetId()].audio_device != 0) {
+		if (m_out_ports[params[i].handle.GetId()].stream != nullptr) {
 			any_port_has_device = true;
 			break;
 		}
@@ -595,35 +549,65 @@ uint32_t Audio::AudioOutOutputs(OutputParam* params, uint32_t num, bool blocking
 	return first_port.samples_num;
 }
 
+static bool RecordingDevicePresent(SDL_AudioDeviceID device) {
+	int                count   = 0;
+	SDL_AudioDeviceID* devices = SDL_GetAudioRecordingDevices(&count);
+	bool               present = false;
+	for (int i = 0; i < count; i++) {
+		if (devices[i] == device) {
+			present = true;
+			break;
+		}
+	}
+	SDL_free(devices);
+	return present;
+}
+
 void Audio::OpenSdlDevice(PortIn* port, Format format) {
 	const auto& name = Config::GetAudioInputDevice();
 	if (name.empty()) {
 		return;
 	}
-	if (SDL_InitSubSystem(SDL_INIT_AUDIO) < 0) {
+	if (!SDL_InitSubSystem(SDL_INIT_AUDIO)) {
 		LOGF("AudioIn: SDL init failed: %s\n", SDL_GetError());
+		return;
+	}
+	int                device_count = 0;
+	SDL_AudioDeviceID* devices      = SDL_GetAudioRecordingDevices(&device_count);
+	SDL_AudioDeviceID  device       = 0;
+	for (int i = 0; i < device_count; i++) {
+		const char* device_name = SDL_GetAudioDeviceName(devices[i]);
+		if (device_name != nullptr && name == device_name) {
+			device = devices[i];
+			break;
+		}
+	}
+	SDL_free(devices);
+	if (device == 0) {
+		LOGF("AudioIn: cannot find '%s'; using silence\n", name.c_str());
+		SDL_QuitSubSystem(SDL_INIT_AUDIO);
 		return;
 	}
 	SDL_AudioSpec desired {};
 	desired.freq     = static_cast<int>(port->freq);
 	desired.format   = SdlFormat(format);
-	desired.channels = static_cast<Uint8>(port->bytes_per_frame / BytesPerSample(format));
-	desired.samples  = static_cast<Uint16>(port->samples_num);
-	// SDL converts capture data to the guest format when allowed_changes is zero.
-	port->audio_device = SDL_OpenAudioDevice(name.c_str(), 1, &desired, nullptr, 0);
-	if (port->audio_device == 0) {
+	desired.channels = static_cast<int>(port->bytes_per_frame / BytesPerSample(format));
+	port->stream     = SDL_OpenAudioDeviceStream(device, &desired, nullptr, nullptr);
+	if (port->stream == nullptr) {
 		LOGF("AudioIn: cannot open '%s': %s; using silence\n", name.c_str(), SDL_GetError());
 		SDL_QuitSubSystem(SDL_INIT_AUDIO);
 		return;
 	}
-	LOGF("AudioIn: opened '%s' (%u Hz, %u ch)\n", name.c_str(), port->freq, desired.channels);
+	port->device = device;
+	LOGF("AudioIn: opened '%s' (%u Hz, %d ch)\n", name.c_str(), port->freq, desired.channels);
 }
 
 void Audio::CloseSdlDevice(PortIn* port) {
-	if (port->audio_device != 0) {
-		SDL_CloseAudioDevice(port->audio_device);
+	if (port->stream != nullptr) {
+		SDL_DestroyAudioStream(port->stream);
 		SDL_QuitSubSystem(SDL_INIT_AUDIO);
-		port->audio_device = 0;
+		port->stream = nullptr;
+		port->device = 0;
 	}
 }
 
@@ -680,8 +664,7 @@ int Audio::AudioInGetSilentState(Id handle) {
 	if (port == nullptr) {
 		return AUDIO_IN_ERROR_INVALID_HANDLE;
 	}
-	if (port->audio_device == 0 ||
-	    SDL_GetAudioDeviceStatus(port->audio_device) == SDL_AUDIO_STOPPED) {
+	if (port->stream == nullptr || !RecordingDevicePresent(port->device)) {
 		return AUDIO_IN_SILENT_STATE_DEVICE_NONE;
 	}
 	return 0;
@@ -701,9 +684,9 @@ int Audio::AudioInInput(Id handle, void* dest) {
 		port->busy = true;
 		snapshot   = *port;
 	}
-	if (snapshot.audio_device != 0 && dest != nullptr) {
-		SDL_PauseAudioDevice(snapshot.audio_device, 0);
-	}
+	bool failed = snapshot.stream != nullptr && dest != nullptr &&
+	              (!RecordingDevicePresent(snapshot.device) ||
+	               !SDL_ResumeAudioStreamDevice(snapshot.stream));
 
 	const uint64_t block_time = (1000000ULL * snapshot.samples_num) / snapshot.freq;
 	uint64_t       wait_time  = 0;
@@ -711,7 +694,7 @@ int Audio::AudioInInput(Id handle, void* dest) {
 		if (dest != nullptr) {
 			wait_time = block_time;
 		}
-	} else if (snapshot.last_input_time != 0 && (snapshot.audio_device == 0 || dest == nullptr)) {
+	} else if (snapshot.last_input_time != 0 && (snapshot.stream == nullptr || dest == nullptr)) {
 		const auto now  = LibKernel::KernelGetProcessTime();
 		const auto next = snapshot.last_input_time + block_time;
 		if (next > now) {
@@ -720,31 +703,41 @@ int Audio::AudioInInput(Id handle, void* dest) {
 	}
 	Common::Thread::SleepMicro(wait_time);
 	uint32_t frames = snapshot.samples_num;
-	bool     failed = false;
+	bool     timed_out = false;
 	if (dest != nullptr) {
-		if (snapshot.audio_device != 0) {
-			while (!snapshot.asynchronous &&
-			       SDL_GetQueuedAudioSize(snapshot.audio_device) <
-				   frames * snapshot.bytes_per_frame &&
-			       SDL_GetAudioDeviceStatus(snapshot.audio_device) == SDL_AUDIO_PLAYING) {
+		if (snapshot.stream != nullptr && !failed) {
+			const int requested = static_cast<int>(frames * snapshot.bytes_per_frame);
+			const auto deadline = LibKernel::KernelGetProcessTime() +
+			                      std::max<uint64_t>(20000, block_time * 4);
+			const auto device = SDL_GetAudioStreamDevice(snapshot.stream);
+			int        available = SDL_GetAudioStreamAvailable(snapshot.stream);
+			while (!snapshot.asynchronous && available >= 0 &&
+			       available < requested &&
+			       device != 0 && !SDL_AudioDevicePaused(device) &&
+			       LibKernel::KernelGetProcessTime() < deadline) {
 				Common::Thread::SleepMicro(1000);
+				available = SDL_GetAudioStreamAvailable(snapshot.stream);
 			}
-			failed = SDL_GetAudioDeviceStatus(snapshot.audio_device) != SDL_AUDIO_PLAYING;
-			if (!failed) {
+			failed = available < 0 || device == 0 || SDL_AudioDevicePaused(device);
+			timed_out = !snapshot.asynchronous && available < requested;
+			if (!failed && !timed_out) {
 				if (snapshot.asynchronous) {
 					frames = AUDIO_IN_GRAIN_MAX_ASYNC;
 				}
-				frames = SDL_DequeueAudio(snapshot.audio_device, dest,
-							  frames * snapshot.bytes_per_frame) /
-					 snapshot.bytes_per_frame;
+				const int bytes = SDL_GetAudioStreamData(
+				    snapshot.stream, dest, static_cast<int>(frames * snapshot.bytes_per_frame));
+				failed = bytes < 0;
+				if (!failed) {
+					frames = static_cast<uint32_t>(bytes) / snapshot.bytes_per_frame;
+				}
 			}
 		}
-		if (snapshot.audio_device == 0 || failed) {
+		if (snapshot.stream == nullptr || failed || timed_out) {
 			std::memset(dest, 0, frames * snapshot.bytes_per_frame);
 		}
-	} else if (snapshot.audio_device != 0) {
-		SDL_PauseAudioDevice(snapshot.audio_device, 1);
-		SDL_ClearQueuedAudio(snapshot.audio_device);
+	} else if (snapshot.stream != nullptr) {
+		SDL_PauseAudioStreamDevice(snapshot.stream);
+		SDL_ClearAudioStream(snapshot.stream);
 	}
 	{
 		Common::LockGuard lock(m_mutex);
@@ -785,7 +778,7 @@ int KYTY_SYSV_ABI AudioOutInit() {
 }
 
 int KYTY_SYSV_ABI AudioOutOpen(int user_id, int type, int index, uint32_t len, uint32_t freq,
-			       uint32_t param) {
+                               uint32_t param) {
 	PRINT_NAME();
 
 	LOGF("\t user_id = %d\n"
@@ -948,7 +941,7 @@ namespace AudioIn {
 LIB_NAME("AudioIn", "AudioIn");
 
 static int OpenPort(int user_id, int type, int index, uint32_t len, uint32_t freq,
-		    uint32_t param, bool asynchronous) {
+                    uint32_t param, bool asynchronous) {
 	LOGF("\t user_id = %d\n"
 	     "\t type    = %d\n"
 	     "\t index   = %d\n"
@@ -994,13 +987,13 @@ static int OpenPort(int user_id, int type, int index, uint32_t len, uint32_t fre
 }
 
 int KYTY_SYSV_ABI AudioInOpen(int user_id, int type, int index, uint32_t len,
-			      uint32_t freq, uint32_t param) {
+                              uint32_t freq, uint32_t param) {
 	PRINT_NAME();
 	return OpenPort(user_id, type, index, len, freq, param, false);
 }
 
 int KYTY_SYSV_ABI AudioInHqOpen(int user_id, int type, int index, uint32_t len,
-				uint32_t freq, uint32_t param) {
+                                uint32_t freq, uint32_t param) {
 	PRINT_NAME();
 	return OpenPort(user_id, type, index, len, freq, param, true);
 }
@@ -1099,8 +1092,8 @@ int KYTY_SYSV_ABI AcmContextDestroy(AcmContextId context) {
 }
 
 int KYTY_SYSV_ABI AcmBatchStartBuffer(AcmContextId context, const void* batch_commands,
-				      size_t batch_size, AcmBatchError* batch_error,
-				      AcmBatchId* batch) {
+                                      size_t batch_size, AcmBatchError* batch_error,
+                                      AcmBatchId* batch) {
 	PRINT_NAME();
 
 	EXIT_NOT_IMPLEMENTED(batch == nullptr);
@@ -1115,8 +1108,8 @@ int KYTY_SYSV_ABI AcmBatchStartBuffer(AcmContextId context, const void* batch_co
 }
 
 int KYTY_SYSV_ABI AcmBatchStartBuffers(AcmContextId context, uint32_t batch_info_count,
-				       const AcmBatchInfo* const batch_info[],
-				       AcmBatchError* batch_error, AcmBatchId* batch) {
+                                       const AcmBatchInfo* const batch_info[],
+                                       AcmBatchError* batch_error, AcmBatchId* batch) {
 	PRINT_NAME();
 
 	EXIT_NOT_IMPLEMENTED(batch_info_count != 0 && batch_info == nullptr);
@@ -1142,8 +1135,8 @@ int KYTY_SYSV_ABI AcmBatchJobNotification(AcmBatchInfo* batch_info) {
 }
 
 int KYTY_SYSV_ABI AcmConvReverbSharedInput(AcmBatchInfo* batch_info, uint32_t block_count, void* in,
-					   uint32_t count, const void* const ir[],
-					   const float* gain, void* const out[]) {
+                                           uint32_t count, const void* const ir[],
+                                           const float* gain, void* const out[]) {
 	PRINT_NAME();
 	(void)block_count;
 	(void)in;
@@ -1156,8 +1149,8 @@ int KYTY_SYSV_ABI AcmConvReverbSharedInput(AcmBatchInfo* batch_info, uint32_t bl
 }
 
 int KYTY_SYSV_ABI AcmConvReverbSharedIr(AcmBatchInfo* batch_info, uint32_t block_count,
-					const void* ir, uint32_t count, void* const in[],
-					const float* gain, void* const out[]) {
+                                        const void* ir, uint32_t count, void* const in[],
+                                        const float* gain, void* const out[]) {
 	PRINT_NAME();
 	(void)block_count;
 	(void)ir;
@@ -1170,8 +1163,8 @@ int KYTY_SYSV_ABI AcmConvReverbSharedIr(AcmBatchInfo* batch_info, uint32_t block
 }
 
 int KYTY_SYSV_ABI AcmFft(AcmBatchInfo* batch_info, int size, int count, int input_format,
-			 const void* const input[], int output_format, void* const output[],
-			 uint32_t flags) {
+                         const void* const input[], int output_format, void* const output[],
+                         uint32_t flags) {
 	PRINT_NAME();
 	(void)size;
 	(void)count;
@@ -1185,8 +1178,8 @@ int KYTY_SYSV_ABI AcmFft(AcmBatchInfo* batch_info, int size, int count, int inpu
 }
 
 int KYTY_SYSV_ABI AcmIfft(AcmBatchInfo* batch_info, int size, int count, int input_format,
-			  const void* const input[], int output_format, void* const output[],
-			  uint32_t flags) {
+                          const void* const input[], int output_format, void* const output[],
+                          uint32_t flags) {
 	PRINT_NAME();
 	(void)size;
 	(void)count;
@@ -1200,9 +1193,9 @@ int KYTY_SYSV_ABI AcmIfft(AcmBatchInfo* batch_info, int size, int count, int inp
 }
 
 int KYTY_SYSV_ABI AcmPanner(AcmBatchInfo* batch_info, uint32_t in_count, const float* const in[],
-			    uint32_t biquad_count, uint32_t biquad_update_count, uint32_t out_count,
-			    const void* const parameter[], void* const state[],
-			    const float* const out_init[], float* const out[]) {
+                            uint32_t biquad_count, uint32_t biquad_update_count, uint32_t out_count,
+                            const void* const parameter[], void* const state[],
+                            const float* const out_init[], float* const out[]) {
 	PRINT_NAME();
 	(void)in_count;
 	(void)in;
@@ -1318,7 +1311,7 @@ void KYTY_SYSV_ABI Audio3dGetDefaultOpenParameters(Audio3dOpenParameters* p) {
 }
 
 int KYTY_SYSV_ABI Audio3dPortOpen(int user_id, const Audio3dOpenParameters* parameters,
-				  uint32_t* id) {
+                                  uint32_t* id) {
 	PRINT_NAME();
 
 	EXIT_NOT_IMPLEMENTED(parameters == nullptr);
@@ -1364,7 +1357,7 @@ int KYTY_SYSV_ABI Audio3dPortOpen(int user_id, const Audio3dOpenParameters* para
 	}
 
 	int result = Semaphore::KernelCreateSema(&g_ports[port].playback_sema, "audio3d_play", 0x01, 0,
-						 static_cast<int>(parameters->queue_depth), nullptr);
+	                                         static_cast<int>(parameters->queue_depth), nullptr);
 	EXIT_NOT_IMPLEMENTED(result != OK);
 
 	g_ports[port].playback_finished = false;
@@ -1377,7 +1370,7 @@ int KYTY_SYSV_ABI Audio3dPortOpen(int user_id, const Audio3dOpenParameters* para
 }
 
 int KYTY_SYSV_ABI Audio3dPortSetAttribute(uint32_t port_id, uint32_t attribute_id,
-					  const void* attribute, size_t attribute_size) {
+                                          const void* attribute, size_t attribute_size) {
 	PRINT_NAME();
 
 	EXIT_NOT_IMPLEMENTED(port_id >= MAX_PORTS);
@@ -1410,7 +1403,7 @@ int KYTY_SYSV_ABI Audio3dPortSetAttribute(uint32_t port_id, uint32_t attribute_i
 }
 
 int KYTY_SYSV_ABI Audio3dPortGetQueueLevel(uint32_t port_id, uint32_t* queue_level,
-					   uint32_t* queue_available) {
+                                           uint32_t* queue_available) {
 	PRINT_NAME();
 
 	EXIT_NOT_IMPLEMENTED(port_id >= MAX_PORTS);
@@ -1933,7 +1926,7 @@ struct Ngs2VoiceInternal {
 
 	void SetupSampler(const Ngs2WaveformFormat& format) {
 		EXIT_NOT_IMPLEMENTED(format.sample_rate != rack->ngs->option.sample_rate ||
-				     format.frame_margin != 0 || format.frame_offset != 0);
+		                     format.frame_margin != 0 || format.frame_offset != 0);
 		channels = format.num_channels;
 		blocks.clear();
 		decoder.reset();
@@ -1941,12 +1934,12 @@ struct Ngs2VoiceInternal {
 		accepts_blocks = true;
 		if (format.waveform_type == NGS2_WAVEFORM_TYPE_ATRAC9) {
 			decoder = std::make_unique<Ajm::AjmAt9Decoder>(channels, format.sample_rate,
-								       Ajm::AjmSampleEncoding::Float, 0);
+			                                               Ajm::AjmSampleEncoding::Float, 0);
 			const auto result =
 			    decoder->Initialize(&format.config_data, sizeof(format.config_data));
 			EXIT_NOT_IMPLEMENTED(result.result != OK);
 			EXIT_NOT_IMPLEMENTED(result.format.channel_num != channels ||
-					     result.format.sampling_frequency != format.sample_rate);
+			                     result.format.sampling_frequency != format.sample_rate);
 			Ajm::AjmSidebandDecAt9CodecInfo info {};
 			decoder->WriteCodecInfo(&info, sizeof(info), result);
 			EXIT_NOT_IMPLEMENTED(info.frame_samples > std::numeric_limits<uint16_t>::max());
@@ -2110,7 +2103,7 @@ int KYTY_SYSV_ABI Ngs2SystemResetOption(Ngs2SystemOption* option) {
 }
 
 static Ngs2Internal* Ngs2CreateSystemInternal(const Ngs2SystemOption*      option,
-					      const Ngs2ContextBufferInfo* buffer_info) {
+                                              const Ngs2ContextBufferInfo* buffer_info) {
 	auto* ngs = new (buffer_info->host_buffer) Ngs2Internal;
 
 	ngs->option      = *option;
@@ -2132,7 +2125,7 @@ static bool Ngs2RackIsCustom(Ngs2RackType type) {
 }
 
 int KYTY_SYSV_ABI Ngs2SystemQueryBufferSize(const Ngs2SystemOption* option,
-					    Ngs2ContextBufferInfo*  buffer_info) {
+                                            Ngs2ContextBufferInfo*  buffer_info) {
 	PRINT_NAME();
 
 	EXIT_NOT_IMPLEMENTED(buffer_info == nullptr);
@@ -2152,7 +2145,7 @@ int KYTY_SYSV_ABI Ngs2SystemQueryBufferSize(const Ngs2SystemOption* option,
 }
 
 int KYTY_SYSV_ABI Ngs2SystemCreate(const Ngs2SystemOption*      option,
-				   const Ngs2ContextBufferInfo* buffer_info, uintptr_t* handle) {
+                                   const Ngs2ContextBufferInfo* buffer_info, uintptr_t* handle) {
 	PRINT_NAME();
 
 	EXIT_NOT_IMPLEMENTED(buffer_info == nullptr);
@@ -2266,7 +2259,7 @@ static void Ngs2FillDefaultRackOption(uint32_t rack_id, Ngs2RackOptionUnion* opt
 }
 
 int KYTY_SYSV_ABI Ngs2RackQueryBufferSize(uint32_t rack_id, const Ngs2RackOption* option,
-					  Ngs2ContextBufferInfo* buffer_info) {
+                                          Ngs2ContextBufferInfo* buffer_info) {
 	PRINT_NAME();
 
 	EXIT_NOT_IMPLEMENTED(buffer_info == nullptr);
@@ -2289,8 +2282,8 @@ int KYTY_SYSV_ABI Ngs2RackQueryBufferSize(uint32_t rack_id, const Ngs2RackOption
 }
 
 int KYTY_SYSV_ABI Ngs2SystemCreateWithAllocator(const Ngs2SystemOption*    option,
-						const Ngs2BufferAllocator* allocator,
-						uintptr_t*                 handle) {
+                                                const Ngs2BufferAllocator* allocator,
+                                                uintptr_t*                 handle) {
 	PRINT_NAME();
 
 	EXIT_NOT_IMPLEMENTED(allocator == nullptr);
@@ -2340,7 +2333,7 @@ int KYTY_SYSV_ABI Ngs2SystemCreateWithAllocator(const Ngs2SystemOption*    optio
 }
 
 int KYTY_SYSV_ABI Ngs2SystemGetInfo(uintptr_t system_handle, Ngs2SystemInfo* info,
-				    size_t info_size) {
+                                    size_t info_size) {
 	constexpr int32_t ERROR_INVALID_OUT_ADDRESS   = static_cast<int32_t>(0x804a8010u);
 	constexpr int32_t ERROR_INVALID_OUT_SIZE      = static_cast<int32_t>(0x804a8011u);
 	constexpr int32_t ERROR_INVALID_SYSTEM_HANDLE = static_cast<int32_t>(0x804a8201u);
@@ -2440,8 +2433,8 @@ static void Ngs2InitModules(Ngs2RackInternal& rack) {
 }
 
 int KYTY_SYSV_ABI Ngs2RackCreate(uintptr_t system_handle, uint32_t rack_id,
-				 const Ngs2RackOption*        option,
-				 const Ngs2ContextBufferInfo* buffer_info, uintptr_t* handle) {
+                                 const Ngs2RackOption*        option,
+                                 const Ngs2ContextBufferInfo* buffer_info, uintptr_t* handle) {
 	PRINT_NAME();
 
 	EXIT_NOT_IMPLEMENTED(buffer_info == nullptr);
@@ -2556,9 +2549,9 @@ int KYTY_SYSV_ABI Ngs2RackCreate(uintptr_t system_handle, uint32_t rack_id,
 }
 
 int KYTY_SYSV_ABI Ngs2RackCreateWithAllocator(uintptr_t system_handle, uint32_t rack_id,
-					      const Ngs2RackOption*      option,
-					      const Ngs2BufferAllocator* allocator,
-					      uintptr_t*                 handle) {
+                                              const Ngs2RackOption*      option,
+                                              const Ngs2BufferAllocator* allocator,
+                                              uintptr_t*                 handle) {
 	PRINT_NAME();
 
 	EXIT_NOT_IMPLEMENTED(allocator == nullptr);
@@ -2658,11 +2651,11 @@ int KYTY_SYSV_ABI Ngs2RackDestroy(uintptr_t rack_handle, Ngs2ContextBufferInfo* 
 				if (fx.cleanup != nullptr) {
 					auto&             module = voices[i].modules[m];
 					Ngs2UserFxContext context {rack->common[m].data(),
-								   module.param.data(),
-								   module.work.data(),
-								   fx.user_data,
-								   rack->option.common.max_voices,
-								   i};
+					                           module.param.data(),
+					                           module.work.data(),
+					                           fx.user_data,
+					                           rack->option.common.max_voices,
+					                           i};
 					EXIT_NOT_IMPLEMENTED(fx.cleanup(&context) != OK);
 				}
 			}
@@ -2752,10 +2745,10 @@ static void Ngs2ConsumeSamples(Ngs2VoiceInternal& voice, uint32_t grain) {
 		if (voice.decoder != nullptr) {
 			const auto skip =
 			    std::min(block.skip_remaining,
-				     static_cast<uint32_t>(voice.decoded_frame.size() / voice.channels));
+			             static_cast<uint32_t>(voice.decoded_frame.size() / voice.channels));
 			Ajm::AjmGaplessState gapless;
 			gapless.Set({block.info.num_samples - block.cursor, static_cast<uint16_t>(skip), 0},
-				    true);
+			            true);
 			const auto result = voice.decoder->Decode(
 			    block.data + block.data_cursor, block.info.data_size - block.data_cursor,
 			    voice.decoded_frame.data(), voice.decoded_frame.size() * sizeof(float), false,
@@ -2793,14 +2786,14 @@ static void Ngs2ConsumeSamples(Ngs2VoiceInternal& voice, uint32_t grain) {
 				size_t      size;
 				uint32_t    repeats, attributes;
 			} info {voice.callback_data,
-				reinterpret_cast<uintptr_t>(&voice),
-				1,
-				0,
-				block.info.user_data,
-				block.data,
-				block.info.data_size,
-				0,
-				0};
+			        reinterpret_cast<uintptr_t>(&voice),
+			        1,
+			        0,
+			        block.info.user_data,
+			        block.data,
+			        block.info.data_size,
+			        0,
+			        0};
 			static_assert(sizeof(CallbackInfo) == 56);
 			voice.blocks.pop_front();
 			if (voice.blocks.empty() && !voice.accepts_blocks) {
@@ -2816,7 +2809,7 @@ static void Ngs2ConsumeSamples(Ngs2VoiceInternal& voice, uint32_t grain) {
 }
 
 static void Ngs2RenderVoice(Ngs2VoiceInternal& voice, const std::vector<Ngs2VoiceInternal*>& voices,
-			    uint32_t grain) {
+                            uint32_t grain) {
 	if (voice.rendered) {
 		return;
 	}
@@ -2843,8 +2836,8 @@ static void Ngs2RenderVoice(Ngs2VoiceInternal& voice, const std::vector<Ngs2Voic
 					for (uint32_t src = 0; src < source->channels; ++src) {
 						const float level =
 						    port.volume * (matrix == nullptr
-								       ? (src == dst ? 1.0f : 0.0f)
-								       : matrix->at(dst * source->channels + src));
+						                       ? (src == dst ? 1.0f : 0.0f)
+						                       : matrix->at(dst * source->channels + src));
 						for (uint32_t i = 0; i < grain; ++i) {
 							voice.samples[dst * grain + i] +=
 							    source->samples[src * grain + i] * level;
@@ -2859,7 +2852,7 @@ static void Ngs2RenderVoice(Ngs2VoiceInternal& voice, const std::vector<Ngs2Voic
 			for (size_t m = 0; m < voice.modules.size(); ++m) {
 				EXIT_NOT_IMPLEMENTED(custom.module[m].module_id != 0x1f);
 				EXIT_NOT_IMPLEMENTED(custom.module[m].source_buffer_id != 0 ||
-						     custom.module[m].dest_buffer_id != 0);
+				                     custom.module[m].dest_buffer_id != 0);
 				auto&               module = voice.modules[m];
 				const auto&         fx     = voice.rack->fx[m];
 				std::vector<float*> channels(voice.channels);
@@ -2867,16 +2860,16 @@ static void Ngs2RenderVoice(Ngs2VoiceInternal& voice, const std::vector<Ngs2Voic
 					channels[c] = voice.samples.data() + c * grain;
 				}
 				Ngs2UserFxProcessContext context {channels.data(),
-								  voice.rack->common[m].data(),
-								  module.param.data(),
-								  module.work.data(),
-								  module.state.data(),
-								  fx.user_data,
-								  module.flags,
-								  voice.channels,
-								  voice.channels,
-								  grain,
-								  voice.rack->ngs->option.sample_rate};
+				                                  voice.rack->common[m].data(),
+				                                  module.param.data(),
+				                                  module.work.data(),
+				                                  module.state.data(),
+				                                  fx.user_data,
+				                                  module.flags,
+				                                  voice.channels,
+				                                  voice.channels,
+				                                  grain,
+				                                  voice.rack->ngs->option.sample_rate};
 				EXIT_NOT_IMPLEMENTED(fx.process(&context) != OK);
 				module.flags = 0;
 			}
@@ -2887,7 +2880,7 @@ static void Ngs2RenderVoice(Ngs2VoiceInternal& voice, const std::vector<Ngs2Voic
 }
 
 int KYTY_SYSV_ABI Ngs2SystemRender(uintptr_t system_handle, const Ngs2RenderBufferInfo* buffer_info,
-				   uint32_t num_buffer_info) {
+                                   uint32_t num_buffer_info) {
 	EXIT_NOT_IMPLEMENTED(buffer_info == nullptr || system_handle == 0 || num_buffer_info == 0);
 	auto* ngs = reinterpret_cast<Ngs2Internal*>(system_handle);
 	Common::LockGuard lock(ngs->mutex);
@@ -2923,14 +2916,14 @@ int KYTY_SYSV_ABI Ngs2SystemRender(uintptr_t system_handle, const Ngs2RenderBuff
 		const auto& output = buffer_info[voice->output_id];
 		EXIT_NOT_IMPLEMENTED(output.buffer == nullptr);
 		EXIT_NOT_IMPLEMENTED(output.waveform_type != 0x18 ||
-				     output.num_channels != voice->channels);
+		                     output.num_channels != voice->channels);
 		EXIT_NOT_IMPLEMENTED(output.buffer_size < grain * output.num_channels * sizeof(float));
 		auto* pcm = static_cast<float*>(output.buffer);
 		for (uint32_t dst = 0; dst < output.num_channels; ++dst) {
 			for (uint32_t src = 0; src < voice->channels; ++src) {
 				const float level = voice->output_matrix.empty()
-							? (src == dst ? 1.0f : 0.0f)
-							: voice->output_matrix.at(src * output.num_channels + dst);
+				                        ? (src == dst ? 1.0f : 0.0f)
+				                        : voice->output_matrix.at(src * output.num_channels + dst);
 				for (uint32_t i = 0; i < grain; ++i) {
 					pcm[i * output.num_channels + dst] += voice->samples[src * grain + i] * level;
 				}
@@ -2956,8 +2949,8 @@ static bool Ngs2FourCcEquals(const uint8_t* data, const char* four_cc) {
 
 static int Ngs2ParseAtrac9Riff(const void* data, size_t data_size, Ngs2WaveformInfo* info) {
 	static constexpr uint8_t ATRAC9_GUID[16] = {0xd2, 0x42, 0xe1, 0x47, 0xba, 0x36,
-						    0x8d, 0x4d, 0x88, 0xfc, 0x61, 0x65,
-						    0x4f, 0x8c, 0x83, 0x6c};
+	                                            0x8d, 0x4d, 0x88, 0xfc, 0x61, 0x65,
+	                                            0x4f, 0x8c, 0x83, 0x6c};
 	const auto* bytes = static_cast<const uint8_t*>(data);
 	if (bytes == nullptr || data_size < 12) {
 		return NGS2_ERROR_INVALID_WAVEFORM_DATA;
@@ -3052,7 +3045,7 @@ static int Ngs2ParseAtrac9Riff(const void* data, size_t data_size, Ngs2WaveformI
 	info->data_size                = waveform_size;
 	info->num_samples              = Ngs2ReadLe32(fact);
 	info->audio_unit_size          = static_cast<uint32_t>(codec.superframeSize /
-							       codec.framesInSuperframe);
+	                                                       codec.framesInSuperframe);
 	info->num_audio_unit_samples   = static_cast<uint32_t>(codec.frameSamples);
 	info->num_audio_unit_per_frame = static_cast<uint32_t>(codec.framesInSuperframe);
 	info->audio_frame_size         = static_cast<uint32_t>(codec.superframeSize);
@@ -3067,7 +3060,7 @@ static int Ngs2ParseAtrac9Riff(const void* data, size_t data_size, Ngs2WaveformI
 }
 
 int KYTY_SYSV_ABI Ngs2ParseWaveformData(const void* data, size_t data_size,
-					Ngs2WaveformInfo* info) {
+                                        Ngs2WaveformInfo* info) {
 	PRINT_NAME();
 	LOGF("\t data = 0x%016" PRIx64 ", data_size = 0x%016" PRIx64 "\n",
 	     reinterpret_cast<uint64_t>(data), static_cast<uint64_t>(data_size));
@@ -3081,7 +3074,7 @@ int KYTY_SYSV_ABI Ngs2ParseWaveformData(const void* data, size_t data_size,
 }
 
 int KYTY_SYSV_ABI Ngs2CalcWaveformBlock(const Ngs2WaveformFormat* format, uint32_t sample_pos,
-					uint32_t num_samples, Ngs2WaveformBlock* block) {
+                                        uint32_t num_samples, Ngs2WaveformBlock* block) {
 	PRINT_NAME();
 	LOGF("\t format = 0x%016" PRIx64 ", sample_pos = %" PRIu32 ", num_samples = %" PRIu32 "\n",
 	     reinterpret_cast<uint64_t>(format), sample_pos, num_samples);
@@ -3094,7 +3087,7 @@ int KYTY_SYSV_ABI Ngs2CalcWaveformBlock(const Ngs2WaveformFormat* format, uint32
 }
 
 int KYTY_SYSV_ABI Ngs2PanInit(Ngs2PanWork* work, const float* speaker_angles, float unit_angle,
-			      uint32_t num_speakers) {
+                              uint32_t num_speakers) {
 	PRINT_NAME();
 	LOGF("\t work = 0x%016" PRIx64 ", num_speakers = %" PRIu32 "\n",
 	     reinterpret_cast<uint64_t>(work), num_speakers);
@@ -3113,8 +3106,8 @@ int KYTY_SYSV_ABI Ngs2PanInit(Ngs2PanWork* work, const float* speaker_angles, fl
 }
 
 int KYTY_SYSV_ABI Ngs2PanGetVolumeMatrix(Ngs2PanWork* work, const Ngs2PanParam* params,
-					 uint32_t num_params, uint32_t matrix_format,
-					 float* out_volume_matrix) {
+                                         uint32_t num_params, uint32_t matrix_format,
+                                         float* out_volume_matrix) {
 	PRINT_NAME();
 	LOGF("\t work = 0x%016" PRIx64 ", params = 0x%016" PRIx64 ", num_params = %" PRIu32
 	     ", matrix_format = %" PRIu32 "\n",
@@ -3173,7 +3166,7 @@ int KYTY_SYSV_ABI Ngs2GeomResetSourceParam(Ngs2GeomSourceParam* out_source_param
 }
 
 int KYTY_SYSV_ABI Ngs2GeomCalcListener(const Ngs2GeomListenerParam* param,
-				       Ngs2GeomListenerWork* out_work, uint32_t flags) {
+                                       Ngs2GeomListenerWork* out_work, uint32_t flags) {
 	PRINT_NAME();
 	LOGF("\t flags = 0x%08" PRIx32 "\n", flags);
 
@@ -3192,8 +3185,8 @@ int KYTY_SYSV_ABI Ngs2GeomCalcListener(const Ngs2GeomListenerParam* param,
 }
 
 int KYTY_SYSV_ABI Ngs2GeomApply(const Ngs2GeomListenerWork* listener,
-				const Ngs2GeomSourceParam* source, Ngs2GeomAttribute* out_attrib,
-				uint32_t flags) {
+                                const Ngs2GeomSourceParam* source, Ngs2GeomAttribute* out_attrib,
+                                uint32_t flags) {
 	PRINT_NAME();
 	LOGF("\t flags = 0x%08" PRIx32 "\n", flags);
 
@@ -3217,7 +3210,7 @@ int KYTY_SYSV_ABI Ngs2GeomApply(const Ngs2GeomListenerWork* listener,
 }
 
 int KYTY_SYSV_ABI Ngs2RackGetVoiceHandle(uintptr_t rack_handle, uint32_t voice_id,
-					 uintptr_t* handle) {
+                                         uintptr_t* handle) {
 	PRINT_NAME();
 
 	EXIT_NOT_IMPLEMENTED(handle == nullptr);
@@ -3359,7 +3352,7 @@ int KYTY_SYSV_ABI Ngs2VoiceControl(uintptr_t voice_handle, const Ngs2VoiceParamH
 						    reinterpret_cast<const Ngs2VoiceMatrixLevelsParam*>(param);
 						EXIT_NOT_IMPLEMENTED(matrix->matrix_id != 5);
 						voice->output_matrix.assign(matrix->levels,
-									    matrix->levels + matrix->num_levels);
+						                            matrix->levels + matrix->num_levels);
 						break;
 					}
 					case 5: voice->output_id = values[0]; break;
@@ -3371,7 +3364,7 @@ int KYTY_SYSV_ABI Ngs2VoiceControl(uintptr_t voice_handle, const Ngs2VoiceParamH
 				EXIT_NOT_IMPLEMENTED(!Ngs2RackIsCustom(voice->rack->type));
 				const auto index = param->id & 0x1fu;
 				EXIT_NOT_IMPLEMENTED((param->id & 0xffffffe0u) != 0x40001f00u ||
-						     index >= voice->modules.size());
+				                     index >= voice->modules.size());
 				struct FxParam {
 					Ngs2VoiceParamHeader header;
 					const void*          data;
@@ -3380,7 +3373,7 @@ int KYTY_SYSV_ABI Ngs2VoiceControl(uintptr_t voice_handle, const Ngs2VoiceParamH
 				const auto& fx     = *reinterpret_cast<const FxParam*>(param);
 				auto&       module = voice->modules[index];
 				EXIT_NOT_IMPLEMENTED(voice->rack->fx[index].control != 0 ||
-						     fx.size != module.param.size());
+				                     fx.size != module.param.size());
 				std::memcpy(module.param.data(), fx.data, fx.size);
 				module.flags |= 2;
 				break;
@@ -3403,7 +3396,7 @@ int KYTY_SYSV_ABI Ngs2VoiceControl(uintptr_t voice_handle, const Ngs2VoiceParamH
 						};
 						const auto& blocks = *reinterpret_cast<const BlocksParam*>(param);
 						EXIT_NOT_IMPLEMENTED(!voice->accepts_blocks ||
-								     (blocks.flags != 0 && blocks.flags != 0x11));
+						                     (blocks.flags != 0 && blocks.flags != 0x11));
 						voice->accepts_blocks = (blocks.flags & 1u) != 0;
 						for (uint32_t i = 0; i < blocks.count; ++i) {
 							const auto& block = blocks.blocks[i];
@@ -3411,8 +3404,8 @@ int KYTY_SYSV_ABI Ngs2VoiceControl(uintptr_t voice_handle, const Ngs2VoiceParamH
 							EXIT_NOT_IMPLEMENTED(
 							    voice->decoder == nullptr &&
 							    (uint64_t(block.num_skip_samples) + block.num_samples) *
-								    voice->channels * 2 >
-								block.data_size);
+							            voice->channels * 2 >
+							        block.data_size);
 							voice->blocks.push_back({blocks.data + block.data_offset, block});
 						}
 						break;
@@ -3426,7 +3419,7 @@ int KYTY_SYSV_ABI Ngs2VoiceControl(uintptr_t voice_handle, const Ngs2VoiceParamH
 			}
 			case 0x4002: {
 				EXIT_NOT_IMPLEMENTED(voice->rack->type != Ngs2RackType::CustomSubmixer ||
-						     (param->id & 0xffffu) != 0);
+				                     (param->id & 0xffffu) != 0);
 				const auto* channels   = reinterpret_cast<const uint32_t*>(param + 1);
 				EXIT_NOT_IMPLEMENTED(channels[0] != channels[1]);
 				voice->channels = channels[0];
@@ -3441,23 +3434,15 @@ int KYTY_SYSV_ABI Ngs2VoiceControl(uintptr_t voice_handle, const Ngs2VoiceParamH
 		if (param->next == 0) {
 			break;
 		}
-		// Bug #20 fix: validate param->next doesn't walk backwards or out of bounds
-		const auto next_addr = reinterpret_cast<uintptr_t>(param) + param->next;
-		const auto list_base = reinterpret_cast<uintptr_t>(param_list);
-		const auto list_end = list_base + sizeof(Ngs2VoiceParamHeader) * 256; // reasonable upper bound
-		if (next_addr < list_base || next_addr > list_end) {
-			LOGF("Ngs2VoiceControl: param->next walks out of bounds (next=%d, offset=0x%llx)\n",
-			     param->next, static_cast<unsigned long long>(next_addr - list_base));
-			break; // Stop processing instead of crashing
-		}
-		param = reinterpret_cast<const Ngs2VoiceParamHeader*>(next_addr);
+		param = reinterpret_cast<const Ngs2VoiceParamHeader*>(reinterpret_cast<uintptr_t>(param) +
+		                                                      param->next);
 	}
 
 	return OK;
 }
 
 int KYTY_SYSV_ABI Ngs2VoiceRunCommands(uintptr_t voice_handle, const void* commands,
-				       size_t num_commands) {
+                                       size_t num_commands) {
 	struct Command {
 		uint32_t id;
 		uint8_t  flags, type;
@@ -3499,7 +3484,7 @@ int KYTY_SYSV_ABI Ngs2VoiceRunCommands(uintptr_t voice_handle, const void* comma
 }
 
 int KYTY_SYSV_ABI Ngs2VoiceGetState(uintptr_t voice_handle, Ngs2VoiceState* state,
-				    size_t state_size) {
+                                    size_t state_size) {
 	PRINT_NAME();
 
 	EXIT_NOT_IMPLEMENTED(state == nullptr);

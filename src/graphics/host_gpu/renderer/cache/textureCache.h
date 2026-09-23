@@ -32,196 +32,196 @@ struct TextureCacheTestAccess;
 
 class TextureCache {
 public:
-	enum class BindingType : uint8_t { Texture, Storage, RenderTarget, DepthTarget, VideoOut };
+        enum class BindingType : uint8_t { Texture, Storage, RenderTarget, DepthTarget, VideoOut };
 
-	struct ImageDesc {
-		ImageInfo     info;
-		ImageViewInfo view_info;
-		BindingType   type = BindingType::Texture;
-	};
+        struct ImageDesc {
+                ImageInfo     info;
+                ImageViewInfo view_info;
+                BindingType   type = BindingType::Texture;
+        };
 
-	TextureCache(GraphicContext& graphics, CommandScheduler& scheduler, PageManager& page_manager,
-	             BufferCache& buffer_cache);
-	~TextureCache();
-	KYTY_CLASS_NO_COPY(TextureCache);
+        TextureCache(GraphicContext& graphics, CommandScheduler& scheduler, PageManager& page_manager,
+                     BufferCache& buffer_cache);
+        ~TextureCache();
+        KYTY_CLASS_NO_COPY(TextureCache);
 
-	[[nodiscard]] ImageId       FindImage(ImageDesc& desc, bool exact_format = false);
-	void                        UpdateImage(ImageId id);
-	[[nodiscard]] ImageId       FindImageFromRange(uint64_t address, uint64_t size,
-	                                               bool ensure_valid = true);
-	[[nodiscard]] vk::ImageView FindTexture(ImageId id, const ImageDesc& desc);
-	[[nodiscard]] vk::ImageView FindRenderTarget(ImageId id, const ImageDesc& desc);
-	[[nodiscard]] vk::ImageView FindDepthTarget(ImageId id, const ImageDesc& desc);
-	[[nodiscard]] Image&        GetImage(ImageId id) {
-		auto& image = m_slot_images[id];
-		TouchImage(image);
-		return image;
-	}
-	void MarkGpuWritten(ImageId id);
+        [[nodiscard]] ImageId       FindImage(ImageDesc& desc, bool exact_format = false);
+        void                        UpdateImage(ImageId id);
+        [[nodiscard]] ImageId       FindImageFromRange(uint64_t address, uint64_t size,
+                                                       bool ensure_valid = true);
+        [[nodiscard]] vk::ImageView FindTexture(ImageId id, const ImageDesc& desc);
+        [[nodiscard]] vk::ImageView FindRenderTarget(ImageId id, const ImageDesc& desc);
+        [[nodiscard]] vk::ImageView FindDepthTarget(ImageId id, const ImageDesc& desc);
+        [[nodiscard]] Image&        GetImage(ImageId id) {
+                auto& image = m_slot_images[id];
+                TouchImage(image);
+                return image;
+        }
+        void MarkGpuWritten(ImageId id);
 
-	[[nodiscard]] bool ClearImageFromBuffer(CommandBuffer& command, uint64_t address, uint64_t size,
-	                                        uint32_t packed_clear);
-	void               InvalidateMemory(uint64_t address, uint64_t size);
-	void               InvalidateMemoryFromGPU(uint64_t address, uint64_t size);
-	[[nodiscard]] bool IsRegionGpuModified(uint64_t address, uint64_t size);
+        [[nodiscard]] bool ClearImageFromBuffer(CommandBuffer& command, uint64_t address, uint64_t size,
+                                                uint32_t packed_clear);
+        void               InvalidateMemory(uint64_t address, uint64_t size);
+        void               InvalidateMemoryFromGPU(uint64_t address, uint64_t size);
+        [[nodiscard]] bool IsRegionGpuModified(uint64_t address, uint64_t size);
 
-	[[nodiscard]] bool IsMeta(uint64_t address);
-	[[nodiscard]] bool IsMetaCleared(uint64_t address, uint32_t slice);
-	[[nodiscard]] bool ClearMeta(uint64_t address);
-	[[nodiscard]] bool TouchMeta(uint64_t address, uint32_t slice, bool is_clear);
+        [[nodiscard]] bool IsMeta(uint64_t address);
+        [[nodiscard]] bool IsMetaCleared(uint64_t address, uint32_t slice);
+        [[nodiscard]] bool ClearMeta(uint64_t address);
+        [[nodiscard]] bool TouchMeta(uint64_t address, uint32_t slice, bool is_clear);
 
-	void UnmapMemory(uint64_t address, uint64_t size);
-	void ProcessDownloadImages();
-	void RunGarbageCollector();
+        void UnmapMemory(uint64_t address, uint64_t size);
+        void ProcessDownloadImages();
+        void RunGarbageCollector();
 
-	// Kyty-034: expose the alias registry for diagnostic + render-target
-	// cache use. Render-target caches (color/depth) need to query aliases
-	// when a target is bound, so they can invalidate overlapping texture
-	// views. Returning a const reference keeps the registry's internal
-	// state private to the TextureCache.
-	[[nodiscard]] const ImageAliasRegistry& AliasRegistry() const noexcept {
-		return m_alias_registry;
-	}
-	[[nodiscard]] ImageAliasRegistry& AliasRegistryMut() noexcept {
-		return m_alias_registry;
-	}
+        // Kyty-034: expose the alias registry for diagnostic + render-target
+        // cache use. Render-target caches (color/depth) need to query aliases
+        // when a target is bound, so they can invalidate overlapping texture
+        // views. Returning a const reference keeps the registry's internal
+        // state private to the TextureCache.
+        [[nodiscard]] const ImageAliasRegistry& AliasRegistry() const noexcept {
+                return m_alias_registry;
+        }
+        [[nodiscard]] ImageAliasRegistry& AliasRegistryMut() noexcept {
+                return m_alias_registry;
+        }
 
-	// Kyty-037: expose the per-page generation tracker so callers
-	// (render-target caches, texture read-back paths) can cheaply
-	// check "has this range changed since I last looked?" without
-	// walking the image cache.
-	[[nodiscard]] const GpuPageTracker& PageTracker() const noexcept {
-		return m_page_tracker;
-	}
-	[[nodiscard]] GpuPageTracker& PageTrackerMut() noexcept {
-		return m_page_tracker;
-	}
+        // Kyty-037: expose the per-page generation tracker so callers
+        // (render-target caches, texture read-back paths) can cheaply
+        // check "has this range changed since I last looked?" without
+        // walking the image cache.
+        [[nodiscard]] const GpuPageTracker& PageTracker() const noexcept {
+                return m_page_tracker;
+        }
+        [[nodiscard]] GpuPageTracker& PageTrackerMut() noexcept {
+                return m_page_tracker;
+        }
 
 private:
-	enum class TransferDirection { Upload, Download };
-	struct TextureTransfer;
-	struct ImageDownload;
+        enum class TransferDirection { Upload, Download };
+        struct TextureTransfer;
+        struct ImageDownload;
 
-	struct MetaDataInfo {
-		enum class Type : uint8_t { CMask, FMask, HTile };
+        struct MetaDataInfo {
+                enum class Type : uint8_t { CMask, FMask, HTile };
 
-		Type     type;
-		uint32_t clear_mask = UINT32_MAX;
-	};
+                Type     type;
+                uint32_t clear_mask = UINT32_MAX;
+        };
 
-	struct OverlapResult {
-		ImageId image;
-		int32_t mip   = -1;
-		int32_t layer = -1;
-	};
+        struct OverlapResult {
+                ImageId image;
+                int32_t mip   = -1;
+                int32_t layer = -1;
+        };
 
-	using ImageIds       = InlinePageOwnerList<ImageId, 16>;
-	using ImagePageTable = MultiLevelPageTable<ImageIds, 20, 40, 10>;
+        using ImageIds       = InlinePageOwnerList<ImageId, 16>;
+        using ImagePageTable = MultiLevelPageTable<ImageIds, 20, 40, 10>;
 
-	// Callers have validated the nonempty 40-bit range with TryGetPageRange.
-	template <typename Func>
-	static void ForEachPage(uint64_t address, size_t size, Func&& func) {
-		using FuncReturn = typename std::invoke_result<Func, uint64_t>::type;
-		static constexpr bool RETURNS_BOOL = std::is_same_v<FuncReturn, bool>;
-		const uint64_t page_end = (address + size - 1) >> ImagePageTable::kPageBits;
-		for (uint64_t page = address >> ImagePageTable::kPageBits; page <= page_end; ++page) {
-			if constexpr (RETURNS_BOOL) {
-				if (func(page)) {
-					break;
-				}
-			} else {
-				func(page);
-			}
-		}
-	}
+        // Callers have validated the nonempty 40-bit range with TryGetPageRange.
+        template <typename Func>
+        static void ForEachPage(uint64_t address, size_t size, Func&& func) {
+                using FuncReturn = typename std::invoke_result<Func, uint64_t>::type;
+                static constexpr bool RETURNS_BOOL = std::is_same_v<FuncReturn, bool>;
+                const uint64_t page_end = (address + size - 1) >> ImagePageTable::kPageBits;
+                for (uint64_t page = address >> ImagePageTable::kPageBits; page <= page_end; ++page) {
+                        if constexpr (RETURNS_BOOL) {
+                                if (func(page)) {
+                                        break;
+                                }
+                        } else {
+                                func(page);
+                        }
+                }
+        }
 
-	[[nodiscard]] ImageId     InsertImage(const ImageInfo& info);
-	[[nodiscard]] ImageId     GetNullImage(const ImageDesc& desc);
-	void                      RegisterImage(ImageId id);
-	void                      UnregisterImage(ImageId id);
-	void                      DeleteImage(ImageId id);
-	void                      FreeImage(ImageId id);
-	void                      TouchImage(Image& image);
-	void                      TrackImage(ImageId id);
-	void                      TrackImageHead(ImageId id);
-	void                      TrackImageTail(ImageId id);
-	void                      UntrackImage(ImageId id);
-	void                      UntrackImageHead(ImageId id);
-	void                      UntrackImageTail(ImageId id);
-	void                      MarkAsMaybeDirty(ImageId id, Image& image);
-	void                      TrackImageDownload(ImageId id, Image& image);
-	[[nodiscard]] static bool SameBacking(const ImageInfo& cached, const ImageInfo& requested,
-	                                      bool exact_format);
-	[[nodiscard]] static BindingType UploadBinding(const Image& image);
-	[[nodiscard]] bool               SafeToDownload(const Image& image);
+        [[nodiscard]] ImageId     InsertImage(const ImageInfo& info);
+        [[nodiscard]] ImageId     GetNullImage(const ImageDesc& desc);
+        void                      RegisterImage(ImageId id);
+        void                      UnregisterImage(ImageId id);
+        void                      DeleteImage(ImageId id);
+        void                      FreeImage(ImageId id);
+        void                      TouchImage(Image& image);
+        void                      TrackImage(ImageId id);
+        void                      TrackImageHead(ImageId id);
+        void                      TrackImageTail(ImageId id);
+        void                      UntrackImage(ImageId id);
+        void                      UntrackImageHead(ImageId id);
+        void                      UntrackImageTail(ImageId id);
+        void                      MarkAsMaybeDirty(ImageId id, Image& image);
+        void                      TrackImageDownload(ImageId id, Image& image);
+        [[nodiscard]] static bool SameBacking(const ImageInfo& cached, const ImageInfo& requested,
+                                              bool exact_format);
+        [[nodiscard]] static BindingType UploadBinding(const Image& image);
+        [[nodiscard]] bool               SafeToDownload(const Image& image);
 
-	// Caller holds m_lock; it also serializes the per-image query epoch.
-	[[nodiscard]] ImageIds      FindImagesInRegion(uint64_t address, uint64_t size,
-	                                               bool page_overlap) const;
-	[[nodiscard]] OverlapResult ResolveOverlap(const ImageInfo& requested, BindingType binding,
-	                                           ImageId cached, ImageId merged);
-	[[nodiscard]] ImageId       ResolveDepthOverlap(const ImageInfo& requested, BindingType binding,
-	                                                ImageId cached);
-	[[nodiscard]] ImageId       ExpandImage(const ImageInfo& info, ImageId source);
-	void                        RefreshImage(ImageId id);
-	void                        MaterializeDccClear(ImageId id, const ImageDesc& desc,
-	                                                uint32_t metadata_base_layer);
-	void                        InitializeImage(ImageId id);
-	[[nodiscard]] TextureTransfer
-	BuildTextureTransfer(const Image& image, BindingType binding, TransferDirection direction) const;
-	[[nodiscard]] ImageDownload BuildDownload(const Image& image) const;
-	void UploadImage(Image& image, Buffer& source, uint64_t source_offset);
-	void DownloadImage(Image& image, Buffer& destination, uint64_t destination_offset,
-	                       uint64_t destination_size, ImageDownload transfer);
-	void DownloadDepth(Image& image, Buffer& destination, uint64_t destination_offset);
-	void CommitGpuWrite(Image& image);
-	// Caller holds m_lock. Volume layer ranges select depth slices.
-	void ClearImage(CommandBuffer& command, ImageId id, vk::Format format,
-	                const vk::ImageSubresourceRange& range, const vk::ClearValue& clear);
-	void PrepareImageCopy(Image& image);
-	void RefreshCopySource(ImageId id);
-	[[nodiscard]] bool CopyD16(Image& destination, Image& source);
-	void               CopyImage(ImageId destination, ImageId source);
-	ImageId            AssociateStencil(ImageId depth, GuestRange stencil);
-	void CopyImageMip(ImageId destination, ImageId source, uint32_t mip, uint32_t layer);
-	void ValidateImageDesc(const ImageDesc& desc) const;
+        // Caller holds m_lock; it also serializes the per-image query epoch.
+        [[nodiscard]] ImageIds      FindImagesInRegion(uint64_t address, uint64_t size,
+                                                       bool page_overlap) const;
+        [[nodiscard]] OverlapResult ResolveOverlap(const ImageInfo& requested, BindingType binding,
+                                                   ImageId cached, ImageId merged);
+        [[nodiscard]] ImageId       ResolveDepthOverlap(const ImageInfo& requested, BindingType binding,
+                                                        ImageId cached);
+        [[nodiscard]] ImageId       ExpandImage(const ImageInfo& info, ImageId source);
+        void                        RefreshImage(ImageId id);
+        void                        MaterializeDccClear(ImageId id, const ImageDesc& desc,
+                                                        uint32_t metadata_base_layer);
+        void                        InitializeImage(ImageId id);
+        [[nodiscard]] TextureTransfer
+        BuildTextureTransfer(const Image& image, BindingType binding, TransferDirection direction) const;
+        [[nodiscard]] ImageDownload BuildDownload(const Image& image) const;
+        void UploadImage(Image& image, Buffer& source, uint64_t source_offset);
+        void DownloadImage(Image& image, Buffer& destination, uint64_t destination_offset,
+                               uint64_t destination_size, ImageDownload transfer);
+        void DownloadDepth(Image& image, Buffer& destination, uint64_t destination_offset);
+        void CommitGpuWrite(Image& image);
+        // Caller holds m_lock. Volume layer ranges select depth slices.
+        void ClearImage(CommandBuffer& command, ImageId id, vk::Format format,
+                        const vk::ImageSubresourceRange& range, const vk::ClearValue& clear);
+        void PrepareImageCopy(Image& image);
+        void RefreshCopySource(ImageId id);
+        [[nodiscard]] bool CopyD16(Image& destination, Image& source);
+        void               CopyImage(ImageId destination, ImageId source);
+        [[nodiscard]] ImageId AssociateStencil(ImageId depth, GuestRange stencil);
+        void CopyImageMip(ImageId destination, ImageId source, uint32_t mip, uint32_t layer);
+        void ValidateImageDesc(const ImageDesc& desc) const;
 
-	void               InvalidateCpuAliases(uint64_t address, uint64_t size);
-	[[nodiscard]] bool DownloadImageMemory(ImageId id);
+        void               InvalidateCpuAliases(uint64_t address, uint64_t size);
+        [[nodiscard]] bool DownloadImageMemory(ImageId id);
 
-	GraphicContext&                                   m_graphics;
-	CommandScheduler&                                 m_scheduler;
-	TrackingSpinLock                                  m_lock;
-	PageManager&                                      m_page_manager;
-	BlitHelper                                        m_blit_helper;
-	TileManager                                       m_tiler;
-	BufferCache&                                      m_buffer_cache;
-	Common::SlotVector<Image>                         m_slot_images;
-	ImagePageTable                                    m_image_page_table;
-	std::unordered_map<vk::Format, ImageId>           m_null_images;
-	Common::LeastRecentlyUsedCache<ImageId, uint64_t> m_lru_cache;
-	std::unordered_set<ImageId>                       m_download_images;
-	std::map<uint64_t, MetaDataInfo>                  m_surface_metas;
-	// Kyty-034: range-based alias registry. Every Register/Unregister
-	// call on m_image_page_table is mirrored here so callers can answer
-	// "who else is touching this guest range?" without walking the
-	// page table.
-	ImageAliasRegistry                                m_alias_registry;
-	// Kyty-037: per-page generation tracker. Bumped on every GPU
-	// write to a render-target / storage image so readers can do
-	// cheap "has anything changed since T?" checks.
-	GpuPageTracker                                     m_page_tracker;
-	uint64_t                                          m_total_used_memory  = 0;
-	uint64_t                                          m_trigger_gc_memory  = 0;
-	uint64_t                                          m_pressure_gc_memory = 1536ull * 1024 * 1024;
-	uint64_t         m_critical_gc_memory     = 3ull * 1024 * 1024 * 1024;
-	uint64_t         m_gc_tick                = 0;
-	mutable uint32_t m_image_query_epoch      = 0;
-	bool             m_readback_linear_images = false;
+        GraphicContext&                                   m_graphics;
+        CommandScheduler&                                 m_scheduler;
+        TrackingSpinLock                                  m_lock;
+        PageManager&                                      m_page_manager;
+        BlitHelper                                        m_blit_helper;
+        TileManager                                       m_tiler;
+        BufferCache&                                      m_buffer_cache;
+        Common::SlotVector<Image>                         m_slot_images;
+        ImagePageTable                                    m_image_page_table;
+        std::unordered_map<vk::Format, ImageId>           m_null_images;
+        Common::LeastRecentlyUsedCache<ImageId, uint64_t> m_lru_cache;
+        std::unordered_set<ImageId>                       m_download_images;
+        std::map<uint64_t, MetaDataInfo>                  m_surface_metas;
+        // Kyty-034: range-based alias registry. Every Register/Unregister
+        // call on m_image_page_table is mirrored here so callers can answer
+        // "who else is touching this guest range?" without walking the
+        // page table.
+        ImageAliasRegistry                                m_alias_registry;
+        // Kyty-037: per-page generation tracker. Bumped on every GPU
+        // write to a render-target / storage image so readers can do
+        // cheap "has anything changed since T?" checks.
+        GpuPageTracker                                     m_page_tracker;
+        uint64_t                                          m_total_used_memory  = 0;
+        uint64_t                                          m_trigger_gc_memory  = 0;
+        uint64_t                                          m_pressure_gc_memory = 1536ull * 1024 * 1024;
+        uint64_t         m_critical_gc_memory     = 3ull * 1024 * 1024 * 1024;
+        uint64_t         m_gc_tick                = 0;
+        mutable uint32_t m_image_query_epoch      = 0;
+        bool             m_readback_linear_images = false;
 
-	friend struct TextureCacheTestAccess;
-	friend class BufferCache;
-	friend class RenderExecutor;
+        friend struct TextureCacheTestAccess;
+        friend class BufferCache;
+        friend class RenderExecutor;
 };
 
 } // namespace Libs::Graphics
