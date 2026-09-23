@@ -7,7 +7,7 @@
 
 #include "common/logging/log.h"
 
-#include <SDL2/SDL_gamecontroller.h>
+#include <SDL3/SDL.h>
 #include <cstring>
 #include <fstream>
 
