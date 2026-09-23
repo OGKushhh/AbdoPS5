@@ -103,6 +103,9 @@ static void PrintUsage() {
         ::printf("  --keymap <Control=Input>             DualSense mapping; may be repeated.\n");
         ::printf("  --rd                                 Enable RenderDoc capture.\n");
         ::printf("  --shader-opcode-stats <path>         Dump shader opcode usage to JSON on exit.\n");
+        ::printf("  --ipc-server                        Start IPC server on localhost:28015 (default: on)\n");
+        ::printf("  --no-ipc                            Disable IPC server\n");
+        ::printf("  --ipc-client <host:port>            Connect to an IPC server (slave mode)\n");
 }
 
 static bool NextArg(int argc, char* argv[], int& index, std::string& out) {
@@ -203,6 +206,18 @@ static bool ParseArgs(int argc, char* argv[], RunOptions& options, bool& show_he
 
                 if (arg == "--vulkan-relax-requirements") {
                         options.config.vulkan_relax_requirements = true;
+                        continue;
+                }
+
+                if (arg == "--no-ipc") {
+                        options.config.no_ipc = true;
+                        continue;
+                }
+
+                if (arg == "--ipc-server") {
+                        // IPC server is on by default; this flag is a no-op
+                        // for explicitness
+                        options.config.no_ipc = false;
                         continue;
                 }
 

@@ -77,6 +77,8 @@ struct ConfigOptions {
         // predate these extensions (e.g. Pascal GTX 10-series lacks
         // fragmentShaderBarycentric). May cause visual glitches.
         bool                   vulkan_relax_requirements   = false;
+        // Kyty-023: disable IPC server (default: IPC enabled on localhost:28015)
+        bool                   no_ipc                       = false;
 #if KYTY_PLATFORM == KYTY_PLATFORM_WINDOWS
         bool red_zone_protection_enabled = false;
 #endif

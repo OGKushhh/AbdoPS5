@@ -15,6 +15,7 @@
 #include "graphics/host_gpu/tmrController.h"
 #include "graphics/presentation/screenshot.h"
 #include "graphics/presentation/window.h"
+#include "ipc/ipcClient.h"
 #include "kernel/fileSystem.h"
 #include "kernel/memoryCompression.h"
 #include "kernel/memory.h"
@@ -170,6 +171,12 @@ static void Init(const Config::ConfigOptions& cfg, const std::filesystem::path& 
 
         // Kyty-022: Initialize the screenshot module.
         Libs::Graphics::InitializeScreenshot();
+
+        // Kyty-023: Initialize the IPC server for external automation.
+        // Listens on localhost:28015. Can be disabled with --no-ipc.
+        if (!options.config.no_ipc) {
+                Libs::Ipc::InitializeIpcServer(28015);
+        }
 
         // Kyty-016: Register a store callback so the IOMMU's
         // COMPLETION_WAIT_STORE command can write 8 bytes to any
