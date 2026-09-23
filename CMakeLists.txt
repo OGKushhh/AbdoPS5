@@ -439,7 +439,7 @@ add_executable(haptic_tests EXCLUDE_FROM_ALL
         "${KYTY_TESTS_DIR}/HapticTests.cpp"
         "${KYTY_SOURCE_DIR}/libs/hapticPlayer.cpp"
 )
-target_link_libraries(haptic_tests common SDL2-static)
+target_link_libraries(haptic_tests common SDL3::SDL3-static)
 target_include_directories(haptic_tests PRIVATE ${inc_headers})
 add_test(NAME haptic_tests COMMAND $<TARGET_FILE:haptic_tests>)
 
