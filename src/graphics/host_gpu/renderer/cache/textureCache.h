@@ -8,6 +8,7 @@
 #include "graphics/host_gpu/pageManager.h"
 #include "graphics/host_gpu/regionManager.h"
 #include "graphics/host_gpu/renderer/cache/imageAliasRegistry.h"
+#include "graphics/host_gpu/renderer/cache/gpuPageTracker.h"
 #include "graphics/host_gpu/renderer/cache/multiLevelPageTable.h"
 #include "graphics/host_gpu/renderer/image/blitHelper.h"
 #include "graphics/host_gpu/renderer/image/image.h"
@@ -83,6 +84,17 @@ public:
 	}
 	[[nodiscard]] ImageAliasRegistry& AliasRegistryMut() noexcept {
 		return m_alias_registry;
+	}
+
+	// Kyty-037: expose the per-page generation tracker so callers
+	// (render-target caches, texture read-back paths) can cheaply
+	// check "has this range changed since I last looked?" without
+	// walking the image cache.
+	[[nodiscard]] const GpuPageTracker& PageTracker() const noexcept {
+		return m_page_tracker;
+	}
+	[[nodiscard]] GpuPageTracker& PageTrackerMut() noexcept {
+		return m_page_tracker;
 	}
 
 private:
@@ -195,6 +207,10 @@ private:
 	// "who else is touching this guest range?" without walking the
 	// page table.
 	ImageAliasRegistry                                m_alias_registry;
+	// Kyty-037: per-page generation tracker. Bumped on every GPU
+	// write to a render-target / storage image so readers can do
+	// cheap "has anything changed since T?" checks.
+	GpuPageTracker                                     m_page_tracker;
 	uint64_t                                          m_total_used_memory  = 0;
 	uint64_t                                          m_trigger_gc_memory  = 0;
 	uint64_t                                          m_pressure_gc_memory = 1536ull * 1024 * 1024;

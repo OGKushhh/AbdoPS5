@@ -1484,6 +1484,14 @@ void TextureCache::MarkGpuWritten(ImageId id) {
 	// task will mark those aliases as maybe-dirty so the next read
 	// triggers a refresh instead of returning stale data.
 	(void)m_alias_registry.NotifyGpuWrite(id, m_scheduler.CurrentTick());
+	// Kyty-037: bump per-page generation counters for the writer's
+	// guest address range so any reader that cached a snapshot of
+	// this range can cheaply detect that it is now stale. The cost
+	// is O(pages touched) which matches the existing page-walker
+	// cost in InvalidateCpuAliases().
+	m_page_tracker.NotifyGpuWrite(image.info.data.address,
+		                      image.info.data.size,
+		                      m_scheduler.CurrentTick());
 }
 
 void TextureCache::CommitGpuWrite(Image& image) {
@@ -1633,6 +1641,10 @@ void TextureCache::ClearImage(CommandBuffer& command, ImageId id, vk::Format for
 }
 
 void TextureCache::InvalidateMemory(uint64_t address, uint64_t size) {
+	// Kyty-037: drop per-page generation state for the invalidated
+	// range so future reads see kInitialGeneration (i.e. "nothing
+	// has been written here that we know of").
+	m_page_tracker.ClearRange(address, size);
 	if (!GuestRange {address, size}.Valid()) {
 		EXIT("TextureCache: invalid memory-invalidation range\n");
 	}
@@ -1841,6 +1853,9 @@ bool TextureCache::DownloadImageMemory(ImageId id) {
 }
 
 void TextureCache::InvalidateMemoryFromGPU(uint64_t address, uint64_t size) {
+	// Kyty-037: same as InvalidateMemory — clear generation state
+	// for the range so future reads see kInitialGeneration.
+	m_page_tracker.ClearRange(address, size);
 	if (!GuestRange {address, size}.Valid()) {
 		return;
 	}

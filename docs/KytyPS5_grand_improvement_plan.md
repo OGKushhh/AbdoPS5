@@ -922,6 +922,236 @@ Wire into `src/kernel/fileSystem.cpp`'s read path. Expose `--storage-bandwidth <
 
 ---
 
+## Phase 6 — PS5PCEM-Inspired Improvements (Post-v1)
+
+Items proposed after studying PS5PCEM (Zig-based PS5 emulator by iStark).
+Each item has a proven counterpart in PS5PCEM, lowering implementation risk.
+
+### Kyty-031 · Pipeline cache persistence
+
+| Field | Value |
+|---|---|
+| **Severity** | 🟢 Medium |
+| **Effort** | 1–2 days |
+| **Source** | PS5PCEM deep comparison |
+| **Status** | 🟢 Done |
+| **Depends on** | Kyty-025 (AGC driver) |
+
+**Root cause:** every launch recompiles every shader from scratch. PS5PCEM
+persists the compiled pipeline cache to disk and reloads it on next launch,
+eliminating the #1 perf bottleneck (repeated shader compilation).
+
+**Acceptance criteria:**
+- [x] Pipeline cache serialized to `~/.cache/abdops5/pipeline_cache.bin`
+- [x] Cache reloaded on next launch if the shader source hash matches
+- [x] Cache invalidated automatically when the emulator version changes
+
+---
+
+### Kyty-032 · Async pipeline compiler
+
+| Field | Value |
+|---|---|
+| **Severity** | 🟢 Medium |
+| **Effort** | 3–5 days |
+| **Source** | PS5PCEM deep comparison |
+| **Status** | 🟢 Done |
+| **Depends on** | Kyty-031 |
+
+**Root cause:** shader compilation blocks the render thread, causing frame
+hitches the first time a shader is needed. PS5PCEM compiles shaders on a
+background thread and uses a fallback shader until the real one is ready.
+
+**Acceptance criteria:**
+- [x] AsyncPipelineCompiler class dispatches compile jobs to a worker thread
+- [x] Render thread falls back to a simple shader while the real one compiles
+- [x] Compiled pipeline replaces the fallback atomically when ready
+
+---
+
+### Kyty-033 · Per-subresource Vulkan layout tracking
+
+| Field | Value |
+|---|---|
+| **Severity** | 🟢 Medium |
+| **Effort** | 1 week |
+| **Source** | PS5PCEM deep comparison |
+| **Status** | 🟢 Done |
+| **Depends on** | Kyty-018 (GPU page-fault emulation) |
+
+**Root cause:** the existing per-subresource layout tracking always
+transitioned both depth and stencil aspects together, losing the ability
+to track them independently for future `VK_KHR_separate_depth_stencil_layouts`
+support. Also emitted one barrier per (level, layer), which is wasteful
+for layered textures.
+
+**Acceptance criteria:**
+- [x] VulkanImageState carries dedicated stencil_* fields
+- [x] Image::GetBarriers coalesces adjacent subresources into a single barrier
+- [x] Image::ValidateDestinationLayout catches usage/layout mismatches up-front
+
+---
+
+### Kyty-034 · Image alias registry
+
+| Field | Value |
+|---|---|
+| **Severity** | 🟢 Medium |
+| **Effort** | 1–2 weeks |
+| **Source** | PS5PCEM deep comparison |
+| **Status** | 🟢 Done |
+| **Depends on** | Kyty-033 |
+
+**Root cause:** the TextureCache answers "which images alias this guest
+range?" via a multi-level page table walk, which is O(pages × images-per-page)
+per query. PS5PCEM has a dedicated range-based alias registry that answers
+in O(log N + K) where K is the number of overlapping ranges.
+
+**Acceptance criteria:**
+- [x] ImageAliasRegistry class with Register/Unregister/NotifyGpuWrite/FindOverlapping
+- [x] Wired into TextureCache::RegisterImage/UnregisterImage/MarkGpuWritten
+- [x] Per-image generation counter for change detection
+
+---
+
+### Kyty-035 · NID computation from names
+
+| Field | Value |
+|---|---|
+| **Severity** | 🟡 Low |
+| **Effort** | 2–3 days |
+| **Source** | PS5PCEM deep comparison |
+| **Status** | 🟢 Done |
+| **Depends on** | Kyty-004 (NID database) |
+
+**Root cause:** NIDs are hardcoded as string literals in LIB_FUNC() calls,
+so a typo silently produces an unresolvable symbol that only fails at game
+runtime. PS5PCEM computes NIDs from symbol names and verifies them at
+registration time.
+
+**Acceptance criteria:**
+- [x] `Loader::Nid::ComputeFromName()` public utility
+- [x] `LIB_FUNC_NAME(name, f)` macro for computing NID at registration
+- [x] `LIB_FUNC_VERIFY(n, name, f)` macro + `KYTY_VERIFY_NIDS` build flag
+- [x] SelfTest with 4 known NID/name pairs (kernel, videoOut, pad, audio)
+
+---
+
+### Kyty-036 · Windows installer
+
+| Field | Value |
+|---|---|
+| **Severity** | 🟡 Low |
+| **Effort** | 1 day |
+| **Source** | PS5PCEM deep comparison |
+| **Status** | 🟢 Done (in Kyty-021) |
+| **Depends on** | Kyty-021 |
+
+**Note:** the Inno Setup installer + CI step were already implemented as part
+of Kyty-021 (Flatpak/AppImage/macOS packaging). Kyty-036 is tracked
+separately because the PS5PCEM comparison called it out as a distinct
+deliverable, but the work was done under Kyty-021's umbrella. The installer
+step in CI is `continue-on-error: true` so a packaging failure does not
+block the main build artifact (the ZIP).
+
+**Acceptance criteria:**
+- [x] `packaging/windows/AbdoPS5.iss` Inno Setup script
+- [x] CI step installs Inno Setup via chocolatey and runs ISCC
+- [x] Installer .exe included in Windows artifact alongside the ZIP
+
+---
+
+### Kyty-037 · GPU page generation tracking
+
+| Field | Value |
+|---|---|
+| **Severity** | 🟢 Medium |
+| **Effort** | 1 week |
+| **Source** | PS5PCEM deep comparison |
+| **Status** | 🟢 Done |
+| **Depends on** | Kyty-018 (fault buffer), Kyty-034 (alias registry) |
+
+**Root cause:** the existing fault-buffer processing (Kyty-018) answers
+"is this page faulted?" but not "has anything in this range changed since
+generation T?". PS5PCEM tracks a per-page monotonic generation counter
+that bumps on every GPU write, enabling cheap change-detection queries.
+
+**Acceptance criteria:**
+- [x] `GpuPageTracker` class with per-4 KiB page generation counters
+- [x] `NotifyGpuWrite(addr, size, tick)` bumps every page in the range
+- [x] `MaxGeneration(addr, size)` returns the highest generation in the range
+- [x] `HasChangedSince(addr, size, since)` enables cheap snapshot checks
+- [x] `ClearRange(addr, size)` drops state on memory unmap
+- [x] Wired into TextureCache::MarkGpuWritten + InvalidateMemory* paths
+- [x] Lazy per-4 MiB region allocation (no upfront memory cost)
+
+---
+
+### Kyty-038 · Structured control flow lowering
+
+| Field | Value |
+|---|---|
+| **Severity** | 🟢 Medium |
+| **Effort** | 2–3 weeks |
+| **Source** | PS5PCEM deep comparison |
+| **Status** | 🔴 TODO |
+| **Depends on** | Kyty-025 (AGC driver) |
+
+**Root cause:** the shader recompiler emits unstructured SPIR-V (jumps +
+labels), which works but prevents many SPIR-V optimizations and breaks
+validation tools that expect OpSelectionMerge / OpLoopMerge. PS5PCEM emits
+structured control flow natively.
+
+**Acceptance criteria:**
+- [ ] Shader recompiler emits OpSelectionMerge for every if/else
+- [ ] Shader recompiler emits OpLoopMerge for every loop
+- [ ] spirv-val passes with `--target-env vulkan1.3` on a representative corpus
+
+---
+
+### Kyty-039 · PM4 command stream dump tool
+
+| Field | Value |
+|---|---|
+| **Severity** | 🟡 Low |
+| **Effort** | 2–3 days |
+| **Source** | PS5PCEM deep comparison |
+| **Status** | 🔴 TODO |
+| **Depends on** | — |
+
+**Root cause:** debugging GPU hangs requires understanding what the game
+actually sent. PS5PCEM has a PM4 dump tool that records the raw command
+stream to a file for offline analysis.
+
+**Acceptance criteria:**
+- [ ] `--dump-pm4 <path>` command-line flag
+- [ ] PM4 packets decoded with human-readable names
+- [ ] Output file replayable by a future test harness
+
+---
+
+### Kyty-040 · Constant folding + DCE in shader recompiler
+
+| Field | Value |
+|---|---|
+| **Severity** | 🟢 Medium |
+| **Effort** | 1 week |
+| **Source** | PS5PCEM deep comparison |
+| **Status** | 🔴 TODO |
+| **Depends on** | Kyty-038 (structured control flow) |
+
+**Root cause:** the shader IR has no optimization passes, so dead code and
+constant expressions are emitted as-is. PS5PCEM has constant folding and
+dead-code elimination passes that reduce SPIR-V size and improve runtime
+perf.
+
+**Acceptance criteria:**
+- [ ] ConstantFolding pass folds compile-time-constant arithmetic
+- [ ] DeadCodeElimination pass removes unused instructions
+- [ ] SPIR-V size reduced by ≥10% on a representative corpus
+
+---
+
 ## Summary: Execution Order
 
 ### Phase 1 — Quick Wins & Game Unblockers (Week 1)
@@ -993,7 +1223,7 @@ Wire into `src/kernel/fileSystem.cpp`'s read path. Expose `--storage-bandwidth <
 | Kyty-034 | Image alias registry | 1–2 weeks | 🟢 |
 | Kyty-035 | NID computation from names | 2–3 days | 🟢 |
 | Kyty-036 | Windows installer | 1 day | 🟢 |
-| Kyty-037 | GPU page generation tracking | 1 week | 🔴 |
+| Kyty-037 | GPU page generation tracking | 1 week | 🟢 |
 | Kyty-038 | Structured control flow lowering (OpSelectionMerge/OpLoopMerge) | 2–3 weeks | 🔴 |
 | Kyty-039 | PM4 command stream dump tool | 2–3 days | 🔴 |
 | Kyty-040 | Constant folding + DCE in shader recompiler | 1 week | 🔴 |
