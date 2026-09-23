@@ -908,7 +908,7 @@ Wire into `src/kernel/fileSystem.cpp`'s read path. Expose `--storage-bandwidth <
 | **Severity** | 🟡 High |
 | **Effort** | 1 day |
 | **Source** | shadPS4 SHAD-031/032/033 (proven pattern) |
-| **Status** | 🟠 Partial (11 docs exist, missing stub_policy/triage/game_hacks) |
+| **Status** | 🟢 Done |
 | **Depends on** | Kyty-002, Kyty-003 |
 
 **Proposed change:** Add three docs:
@@ -917,8 +917,8 @@ Wire into `src/kernel/fileSystem.cpp`'s read path. Expose `--storage-bandwidth <
 - `docs/triage_workflow.md` — compatibility issue triage process (mirrors shadPS4 SHAD-033)
 
 **Acceptance criteria:**
-- [ ] Each doc exists and is linked from `CONTRIBUTING.md`
-- [ ] Worked examples (Sifu, Returnal) included
+- [x] Each doc exists and is linked from `CONTRIBUTING.md`
+- [x] Worked examples (Sifu, Returnal) included
 
 ---
 
@@ -1216,7 +1216,7 @@ perf.
 | Kyty-027 | Port sharpemu's Metal backend | 4–8 weeks | 🔴 |
 | Kyty-028 | Port sharpemu's POSIX signal bridge | 1–2 weeks | 🟢 |
 | Kyty-029 | Weekly compatibility regression test | 1 week + ongoing | 🟢 |
-| Kyty-030 | Documentation (stub policy + triage + game hacks) | 1 day | 🟠 |
+| Kyty-030 | Documentation (stub policy + triage + game hacks) | 1 day | 🟢 |
 | Kyty-031 | Pipeline cache persistence | 1–2 days | 🟢 |
 | Kyty-032 | Async pipeline compiler | 3–5 days | 🟢 |
 | Kyty-033 | Per-subresource Vulkan layout tracking | 1 week | 🟢 |
