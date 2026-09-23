@@ -223,6 +223,13 @@ Opcode DecodeMimgOpcode(uint32_t opcode, const MimgSampleInfo* sample, const Mim
 		case 0x09u: return Opcode::IMAGE_STORE_MIP;
 		case 0x0eu: return Opcode::IMAGE_GET_RESINFO;
 		case 0x60u: return Opcode::IMAGE_GET_LOD;
+		// GFX10 packed MIMG opcodes — map to non-packed equivalents.
+		// These may produce minor visual artifacts from missing D16/D8
+		// packing, but avoid crashing the shader compiler (issue #778).
+		case 0xe0u: return Opcode::IMAGE_LOAD_MIP;   // IMAGE_LOAD_MIP_PCK_SGN
+		case 0xe2u: return Opcode::IMAGE_LOAD_MIP;   // IMAGE_LOAD_MIP_PCK
+		case 0xe4u: return Opcode::IMAGE_STORE_MIP;  // IMAGE_STORE_MIP_PCK
+		case 0xe6u: return Opcode::IMAGE_STORE_MIP;  // IMAGE_STORE_MIP_PCK (alt)
 		default: return Opcode::UNSUPPORTED;
 	}
 }
