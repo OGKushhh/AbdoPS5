@@ -12,7 +12,7 @@ LIB_VERSION("VideoOut", 1, "VideoOut", 1, 1);
 LIB_DEFINE(InitVideoOut_1) {
 	PRINT_NAME_ENABLE(true);
 
-	LIB_FUNC("Up36PTk687E", VideoOut::VideoOutOpen);
+	LIB_FUNC_VERIFY("Up36PTk687E", "sceVideoOutOpen", VideoOut::VideoOutOpen);
 	LIB_FUNC("uquVH4-Du78", VideoOut::VideoOutClose);
 	LIB_FUNC("PjS5uASwcV8", VideoOut::VideoOutSetBufferAttribute2);
 	LIB_FUNC("rKBUtgRrtbk", VideoOut::VideoOutRegisterBuffers2);

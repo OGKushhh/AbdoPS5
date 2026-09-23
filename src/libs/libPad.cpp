@@ -196,7 +196,7 @@ LIB_DEFINE(InitPad_1) {
 	PRINT_NAME_ENABLE(true);
 
 	LIB_FUNC("hv1luiJrqQM", Controller::PadInit);
-	LIB_FUNC("xk0AcarP3V4", Controller::PadOpen);
+	LIB_FUNC_VERIFY("xk0AcarP3V4", "scePadOpen", Controller::PadOpen);
 	LIB_FUNC("WFIiSfXGUq8", PadOpenExtStub);
 	LIB_FUNC("u1GRHp+oWoY", Controller::PadGetHandle);
 	LIB_FUNC("AcslpN1jHR8", PadDeviceClassGetExtendedInformation);

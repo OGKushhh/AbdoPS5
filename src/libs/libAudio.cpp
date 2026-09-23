@@ -121,7 +121,7 @@ LIB_VERSION("AudioOut", 1, "AudioOut", 1, 1);
 namespace AudioOut = Audio::AudioOut;
 
 LIB_DEFINE(InitAudio_1_AudioOut) {
-	LIB_FUNC("JfEPXVxhFqA", AudioOut::AudioOutInit);
+	LIB_FUNC_VERIFY("JfEPXVxhFqA", "sceAudioOutInit", AudioOut::AudioOutInit);
 	LIB_FUNC("ekNvsT22rsY", AudioOut::AudioOutOpen);
 	LIB_FUNC("b+uAV89IlxE", AudioOut::AudioOutSetVolume);
 	LIB_FUNC("w3PdaSTSwGE", AudioOut::AudioOutOutputs);

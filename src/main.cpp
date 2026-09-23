@@ -76,7 +76,8 @@ static void PrintUsage() {
         ::printf("  --amd-cpu                            Apply AMD CPU instruction patches.\n");
         ::printf("  --vblank-frequency <num>             Virtual vblank frequency. Default: 60.\n");
         ::printf("  --console-language <0-29>            Console language. Default: 1 (English US).\n");
-        ::printf("  --vulkan-validation <true|false>     Enable Vulkan validation.\n");
+        ::printf("  --dump-pm4 [path]                    Enable PM4 packet dump (Kyty-039). Default: _Pm4Dump.txt
+  --vulkan-validation <true|false>     Enable Vulkan validation.\n");
         ::printf("  --gpu-assisted-validation <t|f>      Bounds-check shader accesses on the GPU.\n"
                  "                                       Implies --vulkan-validation; very slow.\n");
         ::printf("  --shader-validation <true|false>     Enable shader validation.\n");
@@ -373,7 +374,12 @@ static bool ParseArgs(int argc, char* argv[], RunOptions& options, bool& show_he
                                 ::printf("invalid console language: %s\n", value.c_str());
                                 return false;
                         }
-                } else if (arg == "--vulkan-validation") {
+                } else if (arg == "--dump-pm4") {
+			options.config.pm4_dump_enabled = true;
+			if (!value.empty()) {
+				options.config.pm4_dump_path = value;
+			}
+		} else if (arg == "--vulkan-validation") {
                         if (!ParseBool(value, options.config.vulkan_validation_enabled)) {
                                 ::printf("invalid boolean for %s: %s\n", arg.c_str(), value.c_str());
                                 return false;
