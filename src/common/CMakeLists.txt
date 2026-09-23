@@ -1,31 +1,32 @@
 file(GLOB common_src CONFIGURE_DEPENDS
-	"*.cpp"
-	"logging/*.cpp"
-	"platform/*.cpp"
+        "*.cpp"
+        "logging/*.cpp"
+        "platform/*.cpp"
+        "${KYTY_SOURCE_DIR}/loader/*.cpp"
 )
 
 file(GLOB_RECURSE common_headers CONFIGURE_DEPENDS "*.h")
 
 if(KYTY_CLANG_CL)
-	set_source_files_properties(${common_src} PROPERTIES COMPILE_FLAGS "-Wno-pragma-pack")
+        set_source_files_properties(${common_src} PROPERTIES COMPILE_FLAGS "-Wno-pragma-pack")
 endif()
 
 add_library(common STATIC ${common_src} ${common_headers})
 
 target_include_directories(common
-	PUBLIC ${KYTY_SOURCE_DIR}
-	PRIVATE
-		${KYTY_THIRD_PARTY_DIR}/cpuinfo/include
+        PUBLIC ${KYTY_SOURCE_DIR}
+        PRIVATE
+                ${KYTY_THIRD_PARTY_DIR}/cpuinfo/include
 )
 
 target_link_libraries(common
-	PUBLIC
-		fmt::fmt
-		Tracy::TracyClient
-	PRIVATE
-		cpuinfo
-		kyty_git_version
-		spdlog::spdlog
+        PUBLIC
+                fmt::fmt
+                Tracy::TracyClient
+        PRIVATE
+                cpuinfo
+                kyty_git_version
+                spdlog::spdlog
 )
 
 get_property(inc_headers TARGET common PROPERTY INCLUDE_DIRECTORIES)
