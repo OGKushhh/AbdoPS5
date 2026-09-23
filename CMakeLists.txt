@@ -333,13 +333,6 @@ endif()
 
 set(kyty_emulator_link_libraries common Vulkan::Headers spirv-tools-opt spirv-tools SDL2-static imgui xxhash FFmpeg::ffmpeg fmt::fmt nlohmann_json::nlohmann_json LibAtrac9 kyty_git_version Zydis::Zydis xbyak::xbyak)
 
-# Kyty-022: zlib for PNG compression in screenshot.cpp.
-# On Windows, zlib comes from vcpkg; on Linux, from the system package.
-find_package(ZLIB QUIET)
-if(ZLIB_FOUND)
-        list(APPEND kyty_emulator_link_libraries ZLIB::ZLIB)
-endif()
-
 # Kyty-011: Cubeb audio backend (lower latency than SDL on Linux/PipeWire).
 # Conditionally linked — only when USE_CUBEB is ON (default ON in 3rdparty/CMakeLists.txt).
 # Note: target_compile_definitions is called after add_executable(kyty_emulator)
@@ -366,11 +359,6 @@ set(inc_headers
         ${KYTY_THIRD_PARTY_DIR}/renderdoc
         ${KYTY_THIRD_PARTY_DIR}/stb
 )
-
-# Kyty-022: Add zlib include path if found (for screenshot.cpp).
-if(ZLIB_FOUND AND ZLIB_INCLUDE_DIRS)
-        list(APPEND inc_headers ${ZLIB_INCLUDE_DIRS})
-endif()
 
 if (KYTY_CLANG_CL)
         list(APPEND kyty_emulator_link_libraries winpthread)
@@ -465,15 +453,6 @@ target_link_libraries(screenshot_tests common)
 target_include_directories(screenshot_tests PRIVATE
         ${inc_headers}
         "${KYTY_THIRD_PARTY_DIR}/stb")
-# Kyty-022: zlib for PNG compression. Try find_package first; if zlib
-# isn't found (rare — usually on Windows without vcpkg), fall back to
-# linking spirv-tools-opt which bundles zlib internally.
-find_package(ZLIB QUIET)
-if(ZLIB_FOUND)
-        target_link_libraries(screenshot_tests ZLIB::ZLIB)
-else()
-        target_link_libraries(screenshot_tests spirv-tools-opt)
-endif()
 add_test(NAME screenshot_tests COMMAND $<TARGET_FILE:screenshot_tests>)
 
 add_executable(bit_array_tests EXCLUDE_FROM_ALL
