@@ -985,7 +985,7 @@ Wire into `src/kernel/fileSystem.cpp`'s read path. Expose `--storage-bandwidth <
 | Kyty-026 | Tessellation front/back shader pairs | 2–3 weeks | 🟢 |
 | Kyty-027 | Port sharpemu's Metal backend | 4–8 weeks | 🔴 |
 | Kyty-028 | Port sharpemu's POSIX signal bridge | 1–2 weeks | 🟢 |
-| Kyty-029 | Weekly compatibility regression test | 1 week + ongoing | 🔴 |
+| Kyty-029 | Weekly compatibility regression test | 1 week + ongoing | 🟢 |
 | Kyty-030 | Documentation (stub policy + triage + game hacks) | 1 day | 🟠 |
 | Kyty-031 | Pipeline cache persistence | 1–2 days | 🟢 |
 | Kyty-032 | Async pipeline compiler | 3–5 days | 🔴 |
