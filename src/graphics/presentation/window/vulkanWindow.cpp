@@ -240,7 +240,11 @@ static void VulkanFindPhysicalDevice(vk::Instance instance, vk::SurfaceKHR surfa
 #if !defined(__APPLE__)
 		if (fragment_barycentric.fragmentShaderBarycentric != VK_TRUE) {
 			LOGF("fragmentShaderBarycentric is not supported\n");
-			skip_device = true;
+			if (!Config::VulkanRelaxRequirements()) {
+				skip_device = true;
+			} else {
+				LOGF("  -> vulkan_relax_requirements=true, continuing without barycentric\n");
+			}
 		}
 #endif
 
@@ -630,7 +634,9 @@ static vk::Device VulkanCreateDevice(GraphicContext& graphics,
 #else
 	vk::PhysicalDeviceFragmentShaderBarycentricFeaturesKHR fragment_barycentric {};
 	fragment_barycentric.pNext                     = &features12;
-	fragment_barycentric.fragmentShaderBarycentric = VK_TRUE;
+	if (!Config::VulkanRelaxRequirements()) {
+		fragment_barycentric.fragmentShaderBarycentric = VK_TRUE;
+	}
 	robustness2.pNext                              = &fragment_barycentric;
 #endif
 	if (robustness2_ext_enabled) {
