@@ -453,10 +453,15 @@ target_link_libraries(screenshot_tests common)
 target_include_directories(screenshot_tests PRIVATE
         ${inc_headers}
         "${KYTY_THIRD_PARTY_DIR}/stb")
-# Kyty-022: zlib for PNG compression. Link spirv-tools-opt (which
-# depends on zlib) so we get the same zlib on all platforms.
-# On Linux this also works via transitive dependency.
-target_link_libraries(screenshot_tests spirv-tools-opt)
+# Kyty-022: zlib for PNG compression. Try find_package first; if zlib
+# isn't found (rare — usually on Windows without vcpkg), fall back to
+# linking spirv-tools-opt which bundles zlib internally.
+find_package(ZLIB QUIET)
+if(ZLIB_FOUND)
+        target_link_libraries(screenshot_tests ZLIB::ZLIB)
+else()
+        target_link_libraries(screenshot_tests spirv-tools-opt)
+endif()
 add_test(NAME screenshot_tests COMMAND $<TARGET_FILE:screenshot_tests>)
 
 add_executable(bit_array_tests EXCLUDE_FROM_ALL
