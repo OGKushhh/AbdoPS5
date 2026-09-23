@@ -652,7 +652,7 @@ Wire into `src/kernel/fileSystem.cpp`'s read path. Expose `--storage-bandwidth <
 | **Severity** | 🟢 Medium |
 | **Effort** | 2–3 weeks |
 | **Source** | KytyPS5 already has `fault_buffer_process.comp` — verify it's complete |
-| **Status** | 🔴 TODO |
+| **Status** | 🟢 Done |
 | **Depends on** | — |
 
 **Root cause:** PS5 GPU supports true per-page faulting on PRT memory. KytyPS5 has a Vulkan compute shader (`fault_buffer_process.comp`) that emulates this, but it may have gaps.
@@ -964,7 +964,7 @@ Wire into `src/kernel/fileSystem.cpp`'s read path. Expose `--storage-bandwidth <
 |---|---|---|---|
 | Kyty-016 | Model the AMD IOMMU | 3–4 weeks | 🟢 |
 | Kyty-017 | Model the TMR controller | 1–2 weeks | 🟢 |
-| Kyty-018 | GPU page-fault emulation audit | 2–3 weeks | 🔴 |
+| Kyty-018 | GPU page-fault emulation audit | 2–3 weeks | 🟢 |
 | Kyty-019 | RectList primitive lowering audit | 1–2 weeks | 🟢 |
 | Kyty-020 | Hypervisor awareness (initially skip) | 4+ weeks | ⚪ |
 
@@ -972,8 +972,8 @@ Wire into `src/kernel/fileSystem.cpp`'s read path. Expose `--storage-bandwidth <
 
 | ID | Title | Effort | Status |
 |---|---|---|---|
-| Kyty-021 | Flatpak/AppImage/macOS packaging | 1–2 weeks | 🔴 |
-| Kyty-022 | Screenshot module | 1 week | 🔴 |
+| Kyty-021 | Flatpak/AppImage/macOS packaging | 1–2 weeks | 🟢 |
+| Kyty-022 | Screenshot module | 1 week | 🟢 |
 | Kyty-023 | IPC client | 3–5 days | 🔴 |
 | Kyty-024 | Pure-HLE fallback mode | Ongoing | 🔴 |
 
@@ -987,6 +987,17 @@ Wire into `src/kernel/fileSystem.cpp`'s read path. Expose `--storage-bandwidth <
 | Kyty-028 | Port sharpemu's POSIX signal bridge | 1–2 weeks | 🔴 |
 | Kyty-029 | Weekly compatibility regression test | 1 week + ongoing | 🔴 |
 | Kyty-030 | Documentation (stub policy + triage + game hacks) | 1 day | 🟠 |
+| Kyty-031 | Pipeline cache persistence | 1–2 days | 🔴 |
+| Kyty-032 | Async pipeline compiler | 3–5 days | 🔴 |
+| Kyty-033 | Per-subresource Vulkan layout tracking | 1 week | 🔴 |
+| Kyty-034 | Image alias registry | 1–2 weeks | 🔴 |
+| Kyty-035 | NID computation from names | 2–3 days | 🔴 |
+| Kyty-036 | Windows installer | 1 day | 🟢 |
+| Kyty-037 | GPU page generation tracking | 1 week | 🔴 |
+| Kyty-038 | Structured control flow lowering (OpSelectionMerge/OpLoopMerge) | 2–3 weeks | 🔴 |
+| Kyty-039 | PM4 command stream dump tool | 2–3 days | 🔴 |
+| Kyty-040 | Constant folding + DCE in shader recompiler | 1 week | 🔴 |
+
 
 ---
 
