@@ -23,139 +23,159 @@ constexpr size_t PageFaultAreaSize = MaxPageFaults * sizeof(uint64_t);
 } // namespace
 
 FaultManager::FaultManager(GraphicContext& graphics, CommandScheduler& scheduler,
-			   BufferCache& buffer_cache)
+                           BufferCache& buffer_cache)
     : m_graphics(graphics), m_scheduler(scheduler), m_buffer_cache(buffer_cache),
       m_fault_buffer(graphics, scheduler, MemoryUsage::DeviceLocal, 0, AllFlags,
-		     BufferCache::CACHING_NUMPAGES / 8),
+                     BufferCache::CACHING_NUMPAGES / 8),
       m_download_buffer(graphics, scheduler, MemoryUsage::Download, 0, AllFlags,
-			MaxPendingFaults * PageFaultAreaSize) {
-	SetVulkanObjectNameF(m_graphics.device, m_fault_buffer.Handle(), "Fault Buffer");
+                        MaxPendingFaults * PageFaultAreaSize) {
+        SetVulkanObjectNameF(m_graphics.device, m_fault_buffer.Handle(), "Fault Buffer");
 
-	const vk::DescriptorSetLayoutBinding bindings[] {
-	    {0, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eCompute, nullptr},
-	    {1, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eCompute, nullptr},
-	};
-	vk::DescriptorSetLayoutCreateInfo layout_info {};
-	layout_info.flags        = vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR;
-	layout_info.bindingCount = std::size(bindings);
-	layout_info.pBindings    = bindings;
-	RequireVulkanSuccess(
-	    m_graphics.device.createDescriptorSetLayout(&layout_info, nullptr,
-							&m_fault_process_desc_layout),
-	    "create fault-buffer descriptor layout");
+        const vk::DescriptorSetLayoutBinding bindings[] {
+            {0, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eCompute, nullptr},
+            {1, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eCompute, nullptr},
+        };
+        vk::DescriptorSetLayoutCreateInfo layout_info {};
+        layout_info.flags        = vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR;
+        layout_info.bindingCount = std::size(bindings);
+        layout_info.pBindings    = bindings;
+        RequireVulkanSuccess(
+            m_graphics.device.createDescriptorSetLayout(&layout_info, nullptr,
+                                                        &m_fault_process_desc_layout),
+            "create fault-buffer descriptor layout");
 
-	const auto module = CompileSPV(FAULT_BUFFER_PROCESS_SPV, m_graphics.device);
+        const auto module = CompileSPV(FAULT_BUFFER_PROCESS_SPV, m_graphics.device);
 
-	vk::PipelineLayoutCreateInfo pipeline_layout_info {};
-	pipeline_layout_info.setLayoutCount = 1;
-	pipeline_layout_info.pSetLayouts    = &m_fault_process_desc_layout;
-	// Bug #14 fix: if createPipelineLayout fails, clean up desc_layout before exiting
-	if (m_graphics.device.createPipelineLayout(&pipeline_layout_info, nullptr,
-						    &m_fault_process_pipeline_layout) != vk::Result::eSuccess) {
-		m_graphics.device.destroyDescriptorSetLayout(m_fault_process_desc_layout, nullptr);
-		m_fault_process_desc_layout = nullptr;
-		EXIT("create fault-buffer pipeline layout");
-	}
+        vk::PipelineLayoutCreateInfo pipeline_layout_info {};
+        pipeline_layout_info.setLayoutCount = 1;
+        pipeline_layout_info.pSetLayouts    = &m_fault_process_desc_layout;
+        // Bug #14 fix: if createPipelineLayout fails, clean up desc_layout before exiting
+        if (m_graphics.device.createPipelineLayout(&pipeline_layout_info, nullptr,
+                                                    &m_fault_process_pipeline_layout) != vk::Result::eSuccess) {
+                m_graphics.device.destroyDescriptorSetLayout(m_fault_process_desc_layout, nullptr);
+                m_fault_process_desc_layout = nullptr;
+                EXIT("create fault-buffer pipeline layout");
+        }
 
-	vk::PipelineShaderStageCreateInfo stage {};
-	stage.stage  = vk::ShaderStageFlagBits::eCompute;
-	stage.module = module;
-	stage.pName  = "main";
-	vk::ComputePipelineCreateInfo pipeline_info {};
-	pipeline_info.stage  = stage;
-	pipeline_info.layout = m_fault_process_pipeline_layout;
-	const auto result = m_graphics.device.createComputePipelines(
-	    nullptr, 1, &pipeline_info, nullptr, &m_fault_process_pipeline);
-	m_graphics.device.destroyShaderModule(module, nullptr);
-	// Bug #14 fix: if createComputePipelines fails, clean up pipeline_layout + desc_layout
-	if (result != vk::Result::eSuccess) {
-		m_graphics.device.destroyPipelineLayout(m_fault_process_pipeline_layout, nullptr);
-		m_fault_process_pipeline_layout = nullptr;
-		m_graphics.device.destroyDescriptorSetLayout(m_fault_process_desc_layout, nullptr);
-		m_fault_process_desc_layout = nullptr;
-		EXIT("create fault-buffer pipeline");
-	}
-	SetVulkanObjectNameF(m_graphics.device, m_fault_process_pipeline, "Fault Buffer Parser");
+        vk::PipelineShaderStageCreateInfo stage {};
+        stage.stage  = vk::ShaderStageFlagBits::eCompute;
+        stage.module = module;
+        stage.pName  = "main";
+        vk::ComputePipelineCreateInfo pipeline_info {};
+        pipeline_info.stage  = stage;
+        pipeline_info.layout = m_fault_process_pipeline_layout;
+        const auto result = m_graphics.device.createComputePipelines(
+            nullptr, 1, &pipeline_info, nullptr, &m_fault_process_pipeline);
+        m_graphics.device.destroyShaderModule(module, nullptr);
+        // Bug #14 fix: if createComputePipelines fails, clean up pipeline_layout + desc_layout
+        if (result != vk::Result::eSuccess) {
+                m_graphics.device.destroyPipelineLayout(m_fault_process_pipeline_layout, nullptr);
+                m_fault_process_pipeline_layout = nullptr;
+                m_graphics.device.destroyDescriptorSetLayout(m_fault_process_desc_layout, nullptr);
+                m_fault_process_desc_layout = nullptr;
+                EXIT("create fault-buffer pipeline");
+        }
+        SetVulkanObjectNameF(m_graphics.device, m_fault_process_pipeline, "Fault Buffer Parser");
 }
 
 FaultManager::~FaultManager() {
-	m_graphics.device.destroyPipeline(m_fault_process_pipeline, nullptr);
-	m_graphics.device.destroyPipelineLayout(m_fault_process_pipeline_layout, nullptr);
-	m_graphics.device.destroyDescriptorSetLayout(m_fault_process_desc_layout, nullptr);
+        m_graphics.device.destroyPipeline(m_fault_process_pipeline, nullptr);
+        m_graphics.device.destroyPipelineLayout(m_fault_process_pipeline_layout, nullptr);
+        m_graphics.device.destroyDescriptorSetLayout(m_fault_process_desc_layout, nullptr);
 }
 
 void FaultManager::ProcessFaultBuffer() {
-	if (const auto wait_tick = m_fault_areas[m_current_area]; wait_tick != 0) {
-		m_scheduler.Wait(wait_tick);
-		m_scheduler.PopPendingOperations();
-	}
+        if (const auto wait_tick = m_fault_areas[m_current_area]; wait_tick != 0) {
+                m_scheduler.Wait(wait_tick);
+                m_scheduler.PopPendingOperations();
+        }
 
-	const auto offset = m_current_area * PageFaultAreaSize;
-	auto*      mapped = m_download_buffer.Mapped().data() + offset;
-	std::memset(mapped, 0, PageFaultAreaSize);
-	m_download_buffer.Flush(offset, PageFaultAreaSize);
+        const auto offset = m_current_area * PageFaultAreaSize;
+        auto*      mapped = m_download_buffer.Mapped().data() + offset;
+        std::memset(mapped, 0, PageFaultAreaSize);
+        m_download_buffer.Flush(offset, PageFaultAreaSize);
 
-	vk::BufferMemoryBarrier2 pre_barrier {};
-	pre_barrier.srcStageMask  = vk::PipelineStageFlagBits2::eAllCommands;
-	pre_barrier.srcAccessMask = vk::AccessFlagBits2::eShaderWrite;
-	pre_barrier.dstStageMask  = vk::PipelineStageFlagBits2::eComputeShader;
-	pre_barrier.dstAccessMask = vk::AccessFlagBits2::eShaderRead;
-	pre_barrier.buffer        = m_fault_buffer.Handle();
-	pre_barrier.offset        = 0;
-	pre_barrier.size           = m_fault_buffer.Size();
-	auto post_barrier         = pre_barrier;
-	post_barrier.srcStageMask  = vk::PipelineStageFlagBits2::eComputeShader;
-	post_barrier.srcAccessMask = vk::AccessFlagBits2::eShaderWrite;
-	post_barrier.dstStageMask  = vk::PipelineStageFlagBits2::eAllCommands;
-	post_barrier.dstAccessMask = vk::AccessFlagBits2::eShaderWrite;
+        vk::BufferMemoryBarrier2 pre_barrier {};
+        pre_barrier.srcStageMask  = vk::PipelineStageFlagBits2::eAllCommands;
+        pre_barrier.srcAccessMask = vk::AccessFlagBits2::eShaderWrite;
+        pre_barrier.dstStageMask  = vk::PipelineStageFlagBits2::eComputeShader;
+        pre_barrier.dstAccessMask = vk::AccessFlagBits2::eShaderRead;
+        pre_barrier.buffer        = m_fault_buffer.Handle();
+        pre_barrier.offset        = 0;
+        pre_barrier.size           = m_fault_buffer.Size();
+        auto post_barrier         = pre_barrier;
+        post_barrier.srcStageMask  = vk::PipelineStageFlagBits2::eComputeShader;
+        post_barrier.srcAccessMask = vk::AccessFlagBits2::eShaderWrite;
+        post_barrier.dstStageMask  = vk::PipelineStageFlagBits2::eAllCommands;
+        post_barrier.dstAccessMask = vk::AccessFlagBits2::eShaderWrite;
 
-	const vk::DescriptorBufferInfo infos[] {
-	    {m_fault_buffer.Handle(), 0, m_fault_buffer.Size()},
-	    {m_download_buffer.Handle(), offset, PageFaultAreaSize},
-	};
-	std::array<vk::WriteDescriptorSet, 2> writes {};
-	for (uint32_t index = 0; index < writes.size(); ++index) {
-		writes[index].dstBinding      = index;
-		writes[index].descriptorCount = 1;
-		writes[index].descriptorType  = vk::DescriptorType::eStorageBuffer;
-		writes[index].pBufferInfo     = &infos[index];
-	}
+        const vk::DescriptorBufferInfo infos[] {
+            {m_fault_buffer.Handle(), 0, m_fault_buffer.Size()},
+            {m_download_buffer.Handle(), offset, PageFaultAreaSize},
+        };
+        std::array<vk::WriteDescriptorSet, 2> writes {};
+        for (uint32_t index = 0; index < writes.size(); ++index) {
+                writes[index].dstBinding      = index;
+                writes[index].descriptorCount = 1;
+                writes[index].descriptorType  = vk::DescriptorType::eStorageBuffer;
+                writes[index].pBufferInfo     = &infos[index];
+        }
 
-	m_scheduler.EndRendering();
-	auto command = m_scheduler.Current().Handle();
-	vk::DependencyInfo dependency {};
-	dependency.dependencyFlags          = vk::DependencyFlagBits::eByRegion;
-	dependency.bufferMemoryBarrierCount = 1;
-	dependency.pBufferMemoryBarriers    = &pre_barrier;
-	command.pipelineBarrier2(dependency);
-	command.bindPipeline(vk::PipelineBindPoint::eCompute, m_fault_process_pipeline);
-	command.pushDescriptorSetKHR(vk::PipelineBindPoint::eCompute,
-				     m_fault_process_pipeline_layout, 0, writes);
-	const auto num_threads    = BufferCache::CACHING_NUMPAGES / 32;
-	const auto num_workgroups = (num_threads + 63) / 64;
-	command.dispatch(static_cast<uint32_t>(num_workgroups), 1, 1);
-	dependency.pBufferMemoryBarriers = &post_barrier;
-	command.pipelineBarrier2(dependency);
+        m_scheduler.EndRendering();
+        auto command = m_scheduler.Current().Handle();
+        vk::DependencyInfo dependency {};
+        dependency.dependencyFlags          = vk::DependencyFlagBits::eByRegion;
+        dependency.bufferMemoryBarrierCount = 1;
+        dependency.pBufferMemoryBarriers    = &pre_barrier;
+        command.pipelineBarrier2(dependency);
+        command.bindPipeline(vk::PipelineBindPoint::eCompute, m_fault_process_pipeline);
+        command.pushDescriptorSetKHR(vk::PipelineBindPoint::eCompute,
+                                     m_fault_process_pipeline_layout, 0, writes);
+        const auto num_threads    = BufferCache::CACHING_NUMPAGES / 32;
+        const auto num_workgroups = (num_threads + 63) / 64;
+        command.dispatch(static_cast<uint32_t>(num_workgroups), 1, 1);
+        dependency.pBufferMemoryBarriers = &post_barrier;
+        command.pipelineBarrier2(dependency);
 
-	const auto area = m_current_area;
-	m_scheduler.DeferOperation([this, mapped, offset, area] {
-		m_download_buffer.Invalidate(offset, PageFaultAreaSize);
-		RangeSet    fault_ranges;
-		const auto* faults = std::bit_cast<const uint64_t*>(mapped);
-		const auto  count  = static_cast<uint32_t>(faults[0]);
-		for (uint32_t index = 1; index <= count; ++index) {
-			fault_ranges.Add(faults[index], BufferCache::CACHING_PAGESIZE);
-			LOGF("Accessed non-GPU cached memory at 0x%016" PRIx64 "\n", faults[index]);
-		}
-		fault_ranges.ForEach([this](uint64_t start, uint64_t end) {
-			EXIT_IF(end - start > std::numeric_limits<uint32_t>::max());
-			(void)m_buffer_cache.FindBuffer(start, end - start);
-		});
-		m_fault_areas[area] = 0;
-	});
+        const auto area = m_current_area;
+        m_scheduler.DeferOperation([this, mapped, offset, area] {
+                m_download_buffer.Invalidate(offset, PageFaultAreaSize);
+                RangeSet    fault_ranges;
+                const auto* faults = std::bit_cast<const uint64_t*>(mapped);
+                const auto  count  = static_cast<uint32_t>(faults[0]);
+                uint32_t    mapped_count  = 0;
+                uint32_t    unmapped_count = 0;
+                for (uint32_t index = 1; index <= count; ++index) {
+                        fault_ranges.Add(faults[index], BufferCache::CACHING_PAGESIZE);
+                        // Kyty-018: Enhanced fault logging — distinguish between
+                        // faults that were successfully mapped vs those that
+                        // couldn't be resolved (page not in any buffer).
+                        LOGF("GPU page fault: addr=0x%016" PRIx64 " page=%llu\n",
+                             faults[index],
+                             static_cast<unsigned long long>(faults[index] >> BufferCache::CACHING_PAGEBITS));
+                }
+                fault_ranges.ForEach([this, &mapped_count, &unmapped_count](uint64_t start, uint64_t end) {
+                        EXIT_IF(end - start > std::numeric_limits<uint32_t>::max());
+                        const auto buffer_id = m_buffer_cache.FindBuffer(start, static_cast<uint32_t>(end - start));
+                        if (buffer_id != BufferCache::NULL_BUFFER_ID) {
+                                ++mapped_count;
+                        } else {
+                                ++unmapped_count;
+                        }
+                });
+                if (count > 0) {
+                        LOGF("GPU fault buffer processed: %u faults, %u ranges mapped, %u unmapped\n",
+                             count, mapped_count, unmapped_count);
+                        m_fault_stats.total_faults    += count;
+                        m_fault_stats.total_mapped    += mapped_count;
+                        m_fault_stats.total_unmapped  += unmapped_count;
+                        m_fault_stats.last_batch_count = count;
+                }
+                m_fault_areas[area] = 0;
+        });
 
-	m_fault_areas[m_current_area++] = m_scheduler.CurrentTick();
-	m_current_area %= MaxPendingFaults;
+        m_fault_areas[m_current_area++] = m_scheduler.CurrentTick();
+        m_current_area %= MaxPendingFaults;
 }
 
 } // namespace Libs::Graphics
