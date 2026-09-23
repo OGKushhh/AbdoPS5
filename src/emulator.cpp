@@ -174,7 +174,7 @@ static void Init(const Config::ConfigOptions& cfg, const std::filesystem::path& 
 
         // Kyty-023: Initialize the IPC server for external automation.
         // Listens on localhost:28015. Can be disabled with --no-ipc.
-        if (!options.config.no_ipc) {
+        if (!cfg.no_ipc) {
                 Libs::Ipc::InitializeIpcServer(28015);
         }
 
