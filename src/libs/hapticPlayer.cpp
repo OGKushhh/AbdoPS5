@@ -76,7 +76,7 @@ void HapticPlayer::QueueSamples(const uint8_t* samples, size_t count) {
 }
 
 size_t HapticPlayer::Pump(void* pad_ptr) {
-        auto* pad = static_cast<SDL_GameController*>(pad_ptr);
+        auto* pad = static_cast<SDL_Gamepad*>(pad_ptr);
         if (pad == nullptr) {
                 return 0;
         }
@@ -128,7 +128,7 @@ size_t HapticPlayer::Pump(void* pad_ptr) {
         // If we sent no real samples, the buffer is empty — send
         // silence to stop the motors.
         if (samples_sent == 0) {
-                SDL_GameControllerRumble(pad, 0, 0, 10);  // 10ms silence
+                SDL_RumbleGamepad(pad, 0, 0, 10);  // 10ms silence
                 return 0;
         }
 
@@ -145,7 +145,7 @@ size_t HapticPlayer::Pump(void* pad_ptr) {
         // Map to rumble: use the small motor (high-frequency) for
         // haptic effects. Scale to 0-0xFFFF.
         const uint16_t rumble_intensity = static_cast<uint16_t>(avg_amplitude * 0xFFFF);
-        SDL_GameControllerRumble(pad, 0, rumble_intensity, 10);  // 10ms rumble
+        SDL_RumbleGamepad(pad, 0, rumble_intensity, 10);  // 10ms rumble
 
         m_total_played += samples_sent;
         return samples_sent;
