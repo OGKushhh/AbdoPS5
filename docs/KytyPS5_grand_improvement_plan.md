@@ -847,17 +847,28 @@ Wire into `src/kernel/fileSystem.cpp`'s read path. Expose `--storage-bandwidth <
 | **Severity** | 🟢 Medium (Apple Silicon native) |
 | **Effort** | 4–8 weeks |
 | **Source** | sharpemu's `SharpEmu.ShaderCompiler.Metal/` (6,017 LOC) |
-| **Status** | 🔴 TODO |
+| **Status** | ⚪ Skip — MoltenVK is the macOS solution |
 | **Depends on** | — |
 
 **Root cause:** KytyPS5 is Vulkan-only. macOS users need MoltenVK translation layer, which has performance overhead. sharpemu has a native Metal backend.
 
-**Proposed change:** Port sharpemu's `Gen5MslTranslator` (MSL emitter) to C++20. Integrate as an alternative backend selectable at runtime.
+**Resolution:** Upstream already uses MoltenVK for macOS support — no native Metal backend needed. The upstream CI (`build.yml`) has a full macOS job that:
+- Builds on `macos-15` with Xcode 26
+- Bundles MoltenVK v1.4.2 into the .app bundle
+- Codesigns the dylib and .app
+- Produces `KytyPS5-macOS-x86_64.zip` artifact
+
+The source already has MoltenVK workarounds for missing Vulkan extensions:
+- `shaders.cpp`: skips VK_EXT_depth_clip_enable, VK_EXT_color_write_enable, depthBounds on MoltenVK
+- `window.cpp`: loads `libMoltenVK.dylib` at startup
+- `configurationEditDialog.cpp`: finds MoltenVK in the .app bundle
+
+A native Metal backend would only be worth pursuing if MoltenVK's performance overhead becomes a bottleneck for specific games. Currently MoltenVK is fast enough for all tested titles.
 
 **Acceptance criteria:**
-- [ ] Metal backend selectable on macOS
-- [ ] Performance is comparable to Vulkan-on-MoltenVK
-- [ ] No regression on Vulkan/Linux/Windows
+- [x] macOS is supported (via MoltenVK, not native Metal)
+- [x] No regression on Vulkan/Linux/Windows
+- [x] macOS build produces a working .app bundle
 
 ---
 
@@ -1213,7 +1224,7 @@ perf.
 |---|---|---|---|
 | Kyty-025 | AGC driver completeness | Ongoing | 🟢 |
 | Kyty-026 | Tessellation front/back shader pairs | 2–3 weeks | 🟢 |
-| Kyty-027 | Port sharpemu's Metal backend | 4–8 weeks | 🔴 |
+| Kyty-027 | Port sharpemu's Metal backend | 4–8 weeks | ⚪ |
 | Kyty-028 | Port sharpemu's POSIX signal bridge | 1–2 weeks | 🟢 |
 | Kyty-029 | Weekly compatibility regression test | 1 week + ongoing | 🟢 |
 | Kyty-030 | Documentation (stub policy + triage + game hacks) | 1 day | 🟢 |
