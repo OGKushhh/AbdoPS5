@@ -7,6 +7,7 @@
 #include "common/slotVector.h"
 #include "graphics/host_gpu/pageManager.h"
 #include "graphics/host_gpu/regionManager.h"
+#include "graphics/host_gpu/renderer/cache/imageAliasRegistry.h"
 #include "graphics/host_gpu/renderer/cache/multiLevelPageTable.h"
 #include "graphics/host_gpu/renderer/image/blitHelper.h"
 #include "graphics/host_gpu/renderer/image/image.h"
@@ -71,6 +72,18 @@ public:
 	void UnmapMemory(uint64_t address, uint64_t size);
 	void ProcessDownloadImages();
 	void RunGarbageCollector();
+
+	// Kyty-034: expose the alias registry for diagnostic + render-target
+	// cache use. Render-target caches (color/depth) need to query aliases
+	// when a target is bound, so they can invalidate overlapping texture
+	// views. Returning a const reference keeps the registry's internal
+	// state private to the TextureCache.
+	[[nodiscard]] const ImageAliasRegistry& AliasRegistry() const noexcept {
+		return m_alias_registry;
+	}
+	[[nodiscard]] ImageAliasRegistry& AliasRegistryMut() noexcept {
+		return m_alias_registry;
+	}
 
 private:
 	enum class TransferDirection { Upload, Download };
@@ -177,6 +190,11 @@ private:
 	Common::LeastRecentlyUsedCache<ImageId, uint64_t> m_lru_cache;
 	std::unordered_set<ImageId>                       m_download_images;
 	std::map<uint64_t, MetaDataInfo>                  m_surface_metas;
+	// Kyty-034: range-based alias registry. Every Register/Unregister
+	// call on m_image_page_table is mirrored here so callers can answer
+	// "who else is touching this guest range?" without walking the
+	// page table.
+	ImageAliasRegistry                                m_alias_registry;
 	uint64_t                                          m_total_used_memory  = 0;
 	uint64_t                                          m_trigger_gc_memory  = 0;
 	uint64_t                                          m_pressure_gc_memory = 1536ull * 1024 * 1024;

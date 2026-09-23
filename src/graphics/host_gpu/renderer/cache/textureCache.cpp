@@ -279,6 +279,13 @@ void TextureCache::RegisterImage(ImageId id) {
 	image.registered = true;
 	image.lru_id     = m_lru_cache.Insert(id, m_gc_tick);
 	m_total_used_memory += image.AccountedSize();
+	// Kyty-034: mirror the registration into the alias registry so
+	// render-target caches can answer overlap queries in O(log N).
+	// The view_class is captured from the binding's last-known usage;
+	// for newly-registered images we default to Texture (0) and let
+	// FindRenderTarget / FindDepthTarget update it on first bind.
+	m_alias_registry.Register(id, image.info.data.address, image.info.data.size,
+		                          static_cast<uint8_t>(BindingType::Texture));
 }
 
 void TextureCache::UnregisterImage(ImageId id) {
@@ -304,6 +311,9 @@ void TextureCache::UnregisterImage(ImageId id) {
 	}
 	m_total_used_memory -= accounted;
 	image.registered = false;
+	// Kyty-034: drop the alias-registry entry. No-op if the image
+	// was never registered there (e.g. null images).
+	m_alias_registry.Unregister(id);
 }
 
 void TextureCache::DeleteImage(ImageId id) {
@@ -1468,6 +1478,12 @@ void TextureCache::MarkGpuWritten(ImageId id) {
 	}
 	TrackImage(id);
 	CommitGpuWrite(image);
+	// Kyty-034: notify the alias registry so it can bump the per-image
+	// generation counter and report overlapping readers. The returned
+	// overlap list is currently used for diagnostics only; a follow-up
+	// task will mark those aliases as maybe-dirty so the next read
+	// triggers a refresh instead of returning stale data.
+	(void)m_alias_registry.NotifyGpuWrite(id, m_scheduler.CurrentTick());
 }
 
 void TextureCache::CommitGpuWrite(Image& image) {
