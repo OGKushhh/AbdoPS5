@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=AbdoPS5
+Comment=PlayStation 5 Emulator
+Exec=launcher
+Icon=com.abdops5.AbdoPS5
+Terminal=false
+Categories=Game;Emulator;
+Keywords=PS5;PlayStation;Emulator;Sony;

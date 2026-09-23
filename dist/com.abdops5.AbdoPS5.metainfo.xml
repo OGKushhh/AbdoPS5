@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SPDX-FileCopyrightText: Copyright 2026 AbdoPS5 Emulator Project
+  SPDX-License-Identifier: GPL-2.0-or-later
+
+  Kyty-021: AppStream metainfo for AbdoPS5 (used by Flatpak + Linux package managers).
+-->
+<component type="desktop-application">
+  <id>com.abdops5.AbdoPS5</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-2.0-or-later</project_license>
+  <name>AbdoPS5</name>
+  <summary>PlayStation 5 emulator</summary>
+  <description>
+    <p>
+      AbdoPS5 is an experimental PlayStation 5 emulator for PC. It aims to
+      emulate the PS5's AMD RDNA2 GPU, AMD Zen 2 CPU, and system firmware
+      to run PS5 games on Windows and Linux.
+    </p>
+    <p>
+      Features include a Qt6 launcher with grid/list views, per-game
+      configuration, PKG extraction, IOMMU and TMR hardware modeling,
+      shader opcode tracking, DualSense haptics support, and more.
+    </p>
+  </description>
+  <url type="homepage">https://github.com/OGKushhh/AbdoPS5</url>
+  <url type="bugtracker">https://github.com/OGKushhh/AbdoPS5/issues</url>
+  <url type="donation">https://github.com/OGKushhh/AbdoPS5</url>
+  <categories>
+    <category>Game</category>
+    <category>Emulator</category>
+  </categories>
+  <recommends>
+    <control type="pointing"/>
+    <control type="keyboard"/>
+    <control type="gamepad"/>
+  </recommends>
+  <content_rating type="oars-1.1"/>
+  <launchable type="desktop-id">com.abdops5.AbdoPS5.desktop</launchable>
+  <releases>
+    <release version="0.1.0" date="2026-09-23">
+      <description>
+        <p>Initial release with unified GUI, IOMMU/TMR modeling, and shader tracking.</p>
+      </description>
+    </release>
+  </releases>
+</component>

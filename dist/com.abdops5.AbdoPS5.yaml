@@ -1,0 +1,61 @@
+# SPDX-FileCopyrightText: Copyright 2026 AbdoPS5 Emulator Project
+# SPDX-License-Identifier: GPL-2.0-or-later
+#
+# Kyty-021: Flatpak manifest for AbdoPS5.
+#
+# Usage:
+#   flatpak-builder build-dir com.abdops5.AbdoPS5.yaml
+#   flatpak-builder --user --install build-dir com.abdops5.AbdoPS5.yaml
+#
+# Builds the entire emulator from source inside the Flatpak sandbox.
+
+id: com.abdops5.AbdoPS5
+runtime: org.kde.Platform
+runtime-version: "6.7"
+sdk: org.kde.Sdk
+command: launcher
+finish-args:
+  # GPU access (Vulkan)
+  - --device=dri
+  # Audio
+  - --socket=pulseaudio
+  # Input (controllers, keyboard, mouse)
+  - --device=input
+  # File system access for game directories
+  - --filesystem=home:ro
+  - --filesystem=xdg-documents
+  # Network (for update checker)
+  - --share=network
+  # Environment
+  - --env=VK_ICD_FILENAMES=/usr/lib/x86_64-linux-gnu/icd.d/nvidia_icd.json:/usr/lib/x86_64-linux-gnu/icd.d/radeon_icd.json:/usr/share/vulkan/icd.d/intel_icd.x86_64.json
+modules:
+  - name: vulkan-headers
+    buildsystem: cmake-ninja
+    sources:
+      - type: git
+        url: https://github.com/KhronosGroup/Vulkan-Headers.git
+        commit: master
+  - name: spirv-headers
+    buildsystem: cmake-ninja
+    sources:
+      - type: git
+        url: https://github.com/KhronosGroup/SPIRV-Headers.git
+        commit: main
+  - name: spirv-tools
+    buildsystem: cmake-ninja
+    config-opts:
+      - -DSPIRV_SKIP_TESTS=ON
+      - -DSPIRV_HEADERS_SOURCE_DIR=/run/build/spirv-headers
+    sources:
+      - type: git
+        url: https://github.com/KhronosGroup/SPIRV-Tools.git
+        commit: main
+  - name: abdops5
+    buildsystem: cmake-ninja
+    config-opts:
+      - -DCMAKE_BUILD_TYPE=Release
+      - -DKYTY_BUILD_LAUNCHER=ON
+    sources:
+      - type: git
+        url: https://github.com/OGKushhh/AbdoPS5.git
+        branch: main-with-all-fixes

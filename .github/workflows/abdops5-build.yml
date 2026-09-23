@@ -166,11 +166,32 @@ jobs:
           $zipSize = [math]::Round((Get-Item $zipPath).Length / 1MB, 1)
           Write-Host "Created $zipPath ($zipSize MB)"
 
+      - name: Create Windows installer (Inno Setup)
+        shell: pwsh
+        run: |
+          # Download and install Inno Setup
+          $innoUrl = "https://files.jrsoftware.org/is/6/innosetup-6.2.2.exe"
+          $innoInstaller = "$env:TEMP\innosetup.exe"
+          Invoke-WebRequest -Uri $innoUrl -OutFile $innoInstaller
+          Start-Process -FilePath $innoInstaller -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART" -Wait
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          if (Test-Path $iscc) {
+            & $iscc packaging/windows/AbdoPS5.iss
+            if (Test-Path "AbdoPS5-Setup-0.1.0-x64.exe") {
+              $installerSize = [math]::Round((Get-Item "AbdoPS5-Setup-0.1.0-x64.exe").Length / 1MB, 1)
+              Write-Host "Created AbdoPS5-Setup-0.1.0-x64.exe ($installerSize MB)"
+            }
+          } else {
+            Write-Host "Inno Setup not found — skipping installer creation"
+          }
+
       - name: Upload final ZIP artifact
         uses: actions/upload-artifact@v4
         with:
           name: AbdoPS5-Windows-x64
-          path: AbdoPS5-Windows-x64.zip
+          path: |
+            AbdoPS5-Windows-x64.zip
+            AbdoPS5-Setup-*.exe
           if-no-files-found: error
           retention-days: 30
 
@@ -278,11 +299,19 @@ jobs:
           cd $GITHUB_WORKSPACE
           ls -lh AbdoPS5-Linux-x64.zip
 
+      - name: Create Linux AppImage
+        shell: bash
+        run: |
+          chmod +x packaging/linux/create-appimage.sh
+          bash packaging/linux/create-appimage.sh _Build/linux/install AbdoPS5-Linux-x64.AppImage || true
+
       - name: Upload Linux ZIP artifact
         uses: actions/upload-artifact@v4
         with:
           name: AbdoPS5-Linux-x64
-          path: AbdoPS5-Linux-x64.zip
+          path: |
+            AbdoPS5-Linux-x64.zip
+            AbdoPS5-Linux-x64.AppImage
           if-no-files-found: error
           retention-days: 30
 
