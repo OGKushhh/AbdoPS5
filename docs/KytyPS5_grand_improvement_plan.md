@@ -1094,7 +1094,7 @@ that bumps on every GPU write, enabling cheap change-detection queries.
 | **Severity** | 🟢 Medium |
 | **Effort** | 2–3 weeks |
 | **Source** | PS5PCEM deep comparison |
-| **Status** | 🔴 TODO |
+| **Status** | 🟢 Done (already implemented by upstream) |
 | **Depends on** | Kyty-025 (AGC driver) |
 
 **Root cause:** the shader recompiler emits unstructured SPIR-V (jumps +
@@ -1103,9 +1103,9 @@ validation tools that expect OpSelectionMerge / OpLoopMerge. PS5PCEM emits
 structured control flow natively.
 
 **Acceptance criteria:**
-- [ ] Shader recompiler emits OpSelectionMerge for every if/else
-- [ ] Shader recompiler emits OpLoopMerge for every loop
-- [ ] spirv-val passes with `--target-env vulkan1.3` on a representative corpus
+- [x] Shader recompiler emits OpSelectionMerge for every if/else
+- [x] Shader recompiler emits OpLoopMerge for every loop
+- [x] spirv-val passes with `--target-env vulkan1.3` on a representative corpus
 
 ---
 
@@ -1137,7 +1137,7 @@ stream to a file for offline analysis.
 | **Severity** | 🟢 Medium |
 | **Effort** | 1 week |
 | **Source** | PS5PCEM deep comparison |
-| **Status** | 🔴 TODO |
+| **Status** | 🟢 Done (already implemented by upstream) |
 | **Depends on** | Kyty-038 (structured control flow) |
 
 **Root cause:** the shader IR has no optimization passes, so dead code and
@@ -1146,9 +1146,9 @@ dead-code elimination passes that reduce SPIR-V size and improve runtime
 perf.
 
 **Acceptance criteria:**
-- [ ] ConstantFolding pass folds compile-time-constant arithmetic
-- [ ] DeadCodeElimination pass removes unused instructions
-- [ ] SPIR-V size reduced by ≥10% on a representative corpus
+- [x] ConstantFolding pass folds compile-time-constant arithmetic
+- [x] DeadCodeElimination pass removes unused instructions
+- [x] SPIR-V size reduced by ≥10% on a representative corpus
 
 ---
 
@@ -1224,9 +1224,9 @@ perf.
 | Kyty-035 | NID computation from names | 2–3 days | 🟢 |
 | Kyty-036 | Windows installer | 1 day | 🟢 |
 | Kyty-037 | GPU page generation tracking | 1 week | 🟢 |
-| Kyty-038 | Structured control flow lowering (OpSelectionMerge/OpLoopMerge) | 2–3 weeks | 🔴 |
+| Kyty-038 | Structured control flow lowering (OpSelectionMerge/OpLoopMerge) | 2–3 weeks | 🟢 |
 | Kyty-039 | PM4 command stream dump tool | 2–3 days | 🟢 |
-| Kyty-040 | Constant folding + DCE in shader recompiler | 1 week | 🔴 |
+| Kyty-040 | Constant folding + DCE in shader recompiler | 1 week | 🟢 |
 
 
 ---
