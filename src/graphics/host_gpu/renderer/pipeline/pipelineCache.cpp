@@ -907,25 +907,26 @@ PipelineCache::Pipeline& PipelineCache::GetGraphicsPipeline(
                      ps_input_copy = std::move(ps_input_copy),
                      programs_copy = std::move(programs_copy)]() {
                 auto pipeline = std::make_unique<Pipeline>();
-                try {
-                        LogPipelineTrace("AsyncCreatePipelineInternal begin",
-                                         programs_copy.vertex[0].id,
-                                         programs_copy.pixel ? programs_copy.pixel.id : 0);
-                        CreatePipelineInternal(graphics_ref, *pipeline, rendering_copy,
-                                               vertex_input_copy, vertex_info_vec,
-                                               ps_input_copy ? &*ps_input_copy : nullptr,
-                                               programs_copy, static_params_copy, driver_cache);
-                        LogPipelineTrace("AsyncCreatePipelineInternal done",
-                                         programs_copy.vertex[0].id,
-                                         programs_copy.pixel ? programs_copy.pixel.id : 0);
+                // Kyty-032: No try/catch — KytyPS5 builds with -fno-exceptions.
+                // CreatePipelineInternal calls EXIT() on failure, which terminates
+                // the process. That's the intended behavior — a failed pipeline
+                // compilation is a fatal error.
+                LogPipelineTrace("AsyncCreatePipelineInternal begin",
+                                 programs_copy.vertex[0].id,
+                                 programs_copy.pixel ? programs_copy.pixel.id : 0);
+                CreatePipelineInternal(graphics_ref, *pipeline, rendering_copy,
+                                       vertex_input_copy, vertex_info_vec,
+                                       ps_input_copy ? &*ps_input_copy : nullptr,
+                                       programs_copy, static_params_copy, driver_cache);
+                LogPipelineTrace("AsyncCreatePipelineInternal done",
+                                 programs_copy.vertex[0].id,
+                                 programs_copy.pixel ? programs_copy.pixel.id : 0);
 
-                        if (pipeline->pipeline != nullptr && pipeline->pipeline_layout != nullptr) {
-                                pending_ptr->pipeline = std::move(pipeline);
-                        } else {
-                                pending_ptr->failed.store(true, std::memory_order_release);
-                        }
-                } catch (...) {
+                if (pipeline->pipeline != nullptr && pipeline->pipeline_layout != nullptr) {
+                        pending_ptr->pipeline = std::move(pipeline);
+                } else {
                         pending_ptr->failed.store(true, std::memory_order_release);
+                        LOGF("Async pipeline compiler: graphics pipeline creation returned null\n");
                 }
                 pending_ptr->done.store(true, std::memory_order_release);
         }).detach();
@@ -988,16 +989,14 @@ PipelineCache::GetComputePipeline(const ShaderComputeInputInfo& input_info,
                      input_info_copy = std::move(input_info_copy),
                      compute_module]() {
                 auto pipeline = std::make_unique<Pipeline>();
-                try {
-                        CreatePipelineInternal(graphics_ref, *pipeline, input_info_copy,
-                                               compute_module, driver_cache);
-                        if (pipeline->pipeline != nullptr && pipeline->pipeline_layout != nullptr) {
-                                pending_ptr->pipeline = std::move(pipeline);
-                        } else {
-                                pending_ptr->failed.store(true, std::memory_order_release);
-                        }
-                } catch (...) {
+                // Kyty-032: No try/catch — -fno-exceptions. EXIT() on failure.
+                CreatePipelineInternal(graphics_ref, *pipeline, input_info_copy,
+                                       compute_module, driver_cache);
+                if (pipeline->pipeline != nullptr && pipeline->pipeline_layout != nullptr) {
+                        pending_ptr->pipeline = std::move(pipeline);
+                } else {
                         pending_ptr->failed.store(true, std::memory_order_release);
+                        LOGF("Async pipeline compiler: compute pipeline creation returned null\n");
                 }
                 pending_ptr->done.store(true, std::memory_order_release);
         }).detach();
