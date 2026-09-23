@@ -3032,22 +3032,24 @@ LIB_DEFINE(InitCoredump_1) {
 } // namespace Coredump
 
 LIB_DEFINE(InitLibKernel_1_FS) {
-        LIB_FUNC("1G3lF1Gg1k8", FileSystem::KernelOpen);
-        LIB_FUNC("UK2Tl2DWUns", FileSystem::KernelClose);
-        LIB_FUNC("Cg4srZ6TKbU", FileSystem::KernelRead);
-        LIB_FUNC("4wSze92BhLI", FileSystem::KernelWrite);
-        LIB_FUNC("+r3rMFwItV4", FileSystem::KernelPread);
-        LIB_FUNC("nKWi-N2HBV4", FileSystem::KernelPwrite);
-        LIB_FUNC("eV9wAD2riIA", FileSystem::KernelStat);
-        LIB_FUNC("kBwCPsYX-m4", FileSystem::KernelFstat);
-        LIB_FUNC("AUXVxWeJU-A", FileSystem::KernelUnlink);
-        LIB_FUNC("52NcYU9+lEo", FileSystem::KernelRename);
-        LIB_FUNC("taRWhTJFTgE", FileSystem::KernelGetdirentries);
-        LIB_FUNC("oib76F-12fk", FileSystem::KernelLseek);
-        LIB_FUNC("j2AIqSqJP0w", FileSystem::KernelGetdents);
-        LIB_FUNC("1-LFLmRFxxM", FileSystem::KernelMkdir);
-        LIB_FUNC("naInUjYt3so", FileSystem::KernelRmdir);
-        LIB_FUNC("uWyW3v98sU4", FileSystem::KernelCheckReachability);
+	LIB_FUNC("1G3lF1Gg1k8", FileSystem::KernelOpen);
+	LIB_FUNC("UK2Tl2DWUns", FileSystem::KernelClose);
+	LIB_FUNC("Cg4srZ6TKbU", FileSystem::KernelRead);
+	LIB_FUNC("4wSze92BhLI", FileSystem::KernelWrite);
+	LIB_FUNC("+r3rMFwItV4", FileSystem::KernelPread);
+	LIB_FUNC("yTj62I7kw4s", FileSystem::KernelPreadv);
+	LIB_FUNC("nKWi-N2HBV4", FileSystem::KernelPwrite);
+	LIB_FUNC("mBd4AfLP+u8", FileSystem::KernelPwritev);
+	LIB_FUNC("eV9wAD2riIA", FileSystem::KernelStat);
+	LIB_FUNC("kBwCPsYX-m4", FileSystem::KernelFstat);
+	LIB_FUNC("AUXVxWeJU-A", FileSystem::KernelUnlink);
+	LIB_FUNC("52NcYU9+lEo", FileSystem::KernelRename);
+	LIB_FUNC("taRWhTJFTgE", FileSystem::KernelGetdirentries);
+	LIB_FUNC("oib76F-12fk", FileSystem::KernelLseek);
+	LIB_FUNC("j2AIqSqJP0w", FileSystem::KernelGetdents);
+	LIB_FUNC("1-LFLmRFxxM", FileSystem::KernelMkdir);
+	LIB_FUNC("naInUjYt3so", FileSystem::KernelRmdir);
+	LIB_FUNC("uWyW3v98sU4", FileSystem::KernelCheckReachability);
 }
 
 LIB_DEFINE(InitLibKernel_1_Mem) {
