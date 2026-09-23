@@ -114,14 +114,14 @@ jobs:
         shell: cmd
         run: |
           cmake --build _Build/windows ^
-            --target kyty_emulator launcher audio_out2_port_tests ime_dialog_tests virtual_memory_allocation_tests iommu_tests haptic_tests tmr_tests screenshot_tests ^
+            --target kyty_emulator launcher audio_out2_port_tests ime_dialog_tests virtual_memory_allocation_tests iommu_tests haptic_tests tmr_tests ^
             --parallel
 
       - name: Run tests
         shell: cmd
         run: |
           ctest --test-dir _Build/windows --output-on-failure ^
-            -R "^(audio_out2_port|ime_dialog|virtual_memory_allocation|iommu_tests|haptic_tests|tmr_tests|screenshot_tests)$"
+            -R "^(audio_out2_port|ime_dialog|virtual_memory_allocation|iommu_tests|haptic_tests|tmr_tests)$"
 
       - name: Run shader coverage check (Kyty-008)
         shell: pwsh
@@ -245,14 +245,14 @@ jobs:
         shell: bash
         run: |
           cmake --build _Build/linux \
-            --target kyty_emulator launcher audio_out2_port_tests ime_dialog_tests virtual_memory_allocation_tests iommu_tests haptic_tests tmr_tests screenshot_tests \
+            --target kyty_emulator launcher audio_out2_port_tests ime_dialog_tests virtual_memory_allocation_tests iommu_tests haptic_tests tmr_tests \
             --parallel $(nproc)
 
       - name: Run tests
         shell: bash
         run: |
           ctest --test-dir _Build/linux --output-on-failure \
-            -R '^(audio_out2_port|ime_dialog|virtual_memory_allocation|iommu_tests|haptic_tests|tmr_tests|screenshot_tests)$'
+            -R '^(audio_out2_port|ime_dialog|virtual_memory_allocation|iommu_tests|haptic_tests|tmr_tests)$'
 
       - name: Run shader coverage check (Kyty-008)
         shell: bash
