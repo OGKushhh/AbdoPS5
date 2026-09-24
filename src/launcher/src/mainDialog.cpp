@@ -13,6 +13,7 @@
 #include "patchesDialog.h"
 #include "settingsPage.h"
 #include "updateChecker.h"
+#include "kytyGitVersion.h"
 
 #include <QAction>
 #include <QApplication>
@@ -379,9 +380,9 @@ void MainDialogPrivate::Setup(MainDialog* main_dialog) {
         m_stacked->addWidget(m_launch_screen);
 
         // Status bar — Design A faithful (28px height, muted text, separators)
-        auto* sb = main_dialog->statusBar();
-        sb->setSizeGripEnabled(false);
-        sb->setStyleSheet(
+        auto* status_bar = main_dialog->statusBar();
+        status_bar->setSizeGripEnabled(false);
+        status_bar->setStyleSheet(
             "QStatusBar { background: #07080b; color: #6b7280; font-size: 11px;"
             "  border-top: 1px solid #1f2330; }"
             "QStatusBar QLabel { color: #6b7280; margin-right: 12px; }"
@@ -394,18 +395,18 @@ void MainDialogPrivate::Setup(MainDialog* main_dialog) {
         auto* readyLabel = new QLabel(QString::fromUtf8("\xe2\x97\x8f Ready"), main_dialog);
         readyLabel->setStyleSheet("QLabel { color: #2ecc71; font-size: 11px; margin-right: 12px; }");
         // Vertical separators between status items
-        auto* sep1 = new QFrame(main_dialog);
-        sep1->setFrameShape(QFrame::VLine);
-        sep1->setStyleSheet("color: #2a2f3e; background: #2a2f3e; max-width: 1px; margin: 0px 4px;");
-        auto* sep2 = new QFrame(main_dialog);
-        sep2->setFrameShape(QFrame::VLine);
-        sep2->setStyleSheet("color: #2a2f3e; background: #2a2f3e; max-width: 1px; margin: 0px 4px;");
-        sb->addWidget(readyLabel);
-        sb->addWidget(sep1);
-        sb->addWidget(m_label_interpreter);
-        sb->addWidget(sep2);
-        sb->addWidget(m_label_version);
-        sb->addPermanentWidget(m_label_settings_file);
+        auto* sep_status1 = new QFrame(main_dialog);
+        sep_status1->setFrameShape(QFrame::VLine);
+        sep_status1->setStyleSheet("color: #2a2f3e; background: #2a2f3e; max-width: 1px; margin: 0px 4px;");
+        auto* sep_status2 = new QFrame(main_dialog);
+        sep_status2->setFrameShape(QFrame::VLine);
+        sep_status2->setStyleSheet("color: #2a2f3e; background: #2a2f3e; max-width: 1px; margin: 0px 4px;");
+        status_bar->addWidget(readyLabel);
+        status_bar->addWidget(sep_status1);
+        status_bar->addWidget(m_label_interpreter);
+        status_bar->addWidget(sep_status2);
+        status_bar->addWidget(m_label_version);
+        status_bar->addPermanentWidget(m_label_settings_file);
         m_check_updates_link   = new QLabel(
             QStringLiteral("<a href=\"check\">Updates</a>"), main_dialog);
         m_check_updates_link->setTextFormat(Qt::RichText);
@@ -481,11 +482,11 @@ void MainDialogPrivate::Setup(MainDialog* main_dialog) {
         // === Status bar — QMainWindow provides statusBar() for free ===
         // Shows the interpreter path + version + update link at the bottom
         // of the window, regardless of which page is current.
-        auto* sb = main_dialog->statusBar();
-        sb->setSizeGripEnabled(true);
-        sb->addWidget(m_label_interpreter, 1);
-        sb->addPermanentWidget(m_label_version);
-        sb->addPermanentWidget(m_check_updates_link);
+        auto* status_bar = main_dialog->statusBar();
+        status_bar->setSizeGripEnabled(true);
+        status_bar->addWidget(m_label_interpreter, 1);
+        status_bar->addPermanentWidget(m_label_version);
+        status_bar->addPermanentWidget(m_check_updates_link);
 
         // === Signal wiring ===
         connect(main_dialog, &MainDialog::Start, this, &MainDialogPrivate::FindInterpreter,
