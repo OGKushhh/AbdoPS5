@@ -151,7 +151,7 @@ private:
 QByteArray MainDialogPrivate::g_last_geometry;
 bool       MainDialogPrivate::g_check_updates_on_startup = true;
 
-MainDialog::MainDialog(QWidget* parent): QMainWindow(parent), m_p(new MainDialogPrivate(this)) {
+MainDialog::MainDialog(QWidget* parent): FramelessWindow(parent), m_p(new MainDialogPrivate(this)) {
         m_p->Setup(this);
 }
 
@@ -689,7 +689,7 @@ void MainDialog::ReadSettings(QSettings& s) {
 
 void MainDialog::resizeEvent(QResizeEvent* event) {
         emit Resize();
-        QMainWindow::resizeEvent(event);
+        FramelessWindow::resizeEvent(event);
 }
 
 void MainDialogPrivate::WriteSettings(QSettings& s) {
