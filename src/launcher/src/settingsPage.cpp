@@ -666,5 +666,6 @@ void SettingsPage::SaveToConfig(Configuration& config) const {
     config.printf_direction =
         static_cast<Configuration::LogDirection>(m_printf_dir->currentIndex());
 
-    emit settingsChanged();
+    // emit outside const method — caller should connect to settingsChanged
+    // and read values via LoadFromConfig/SaveToConfig pattern
 }
