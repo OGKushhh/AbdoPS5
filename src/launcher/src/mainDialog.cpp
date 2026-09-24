@@ -172,7 +172,11 @@ void MainDialogPrivate::Setup(MainDialog* main_dialog) {
             "QStatusBar { background: #0a0a14; color: #667788; font-size: 11px;"
             "  border-top: 1px solid #1a1a2e; }"
             "QStatusBar QLabel { color: #667788; margin: 0px 8px; }"
-            "QLabel { color: #ccddee; }"\n		"QLineEdit#searchBar { background: #1a1a2e; color: #ccddee; border: 1px solid #334455; border-radius: 4px; padding: 6px 12px; font-size: 13px; margin: 8px; }"\n		"QLineEdit#searchBar:focus { border-color: #1a9fff; }"\n		"QLineEdit::placeholder { color: #667788; }"
+            "QLabel { color: #ccddee; }"
+            "QLineEdit#searchBar { background: #1a1a2e; color: #ccddee; border: 1px solid #334455;"
+            "  border-radius: 4px; padding: 6px 12px; font-size: 13px; margin: 8px; }"
+            "QLineEdit#searchBar:focus { border-color: #1a9fff; }"
+            "QLineEdit::placeholder { color: #667788; }"
         );
 
         // === Central widget: sidebar (left) + QStackedWidget (right) ===
