@@ -6,6 +6,7 @@
 #include "configurationItem.h"
 #include "configurationListWidget.h"
 #include "game_grid_frame.h"
+#include "gameLaunchScreen.h"
 #include "hotkeys.h"
 #include "hub_menu_widget.h"
 #include "loader/pkg.h"
@@ -136,6 +137,7 @@ private:
         QStackedWidget*         m_stacked                = nullptr;
         ConfigurationListWidget* m_config_list          = nullptr;
         GameGridFrame*          m_grid_frame             = nullptr; // embedded as page 1
+        GameLaunchScreen*       m_launch_screen          = nullptr; // game detail + play button
         HubMenuWidget*          m_hub_menu               = nullptr; // cinema mode (separate window, immersive)
         SettingsPage*           m_settings_page          = nullptr; // redesigned settings (Kyty-UI)
         QLabel*                 m_label_settings_file    = nullptr;
@@ -267,6 +269,10 @@ void MainDialogPrivate::Setup(MainDialog* main_dialog) {
         m_settings_page = new SettingsPage(m_stacked);
         m_stacked->addWidget(m_settings_page);
 
+        // Page 3: Game launch screen — backdrop art + play button (Design A)
+        m_launch_screen = new GameLaunchScreen(m_stacked);
+        m_stacked->addWidget(m_launch_screen);
+
         // Status info on the status bar (always visible)
         m_label_settings_file = new QLabel(tr("Settings: config.ini"), main_dialog);
         m_label_interpreter    = new QLabel(tr("Emulator: not configured"), main_dialog);
@@ -380,10 +386,13 @@ void MainDialogPrivate::Setup(MainDialog* main_dialog) {
                         Update();
                 });
 
-        // Grid view: clicking a game in the grid syncs the selection back to
-        // the config list so Run() picks up the right game.
+        // Grid view: clicking a game shows the launch screen + syncs config list
         connect(m_grid_frame, &GameGridFrame::gameSelected, [this](const GameGridItem& item) {
-                m_main_dialog->setWindowTitle(item.title + " — AbdoPS5");
+                m_main_dialog->setWindowTitle(item.title + " — AbDoPS5");
+                // Show game launch screen with backdrop art + play button
+                m_launch_screen->SetGame(item);
+                m_stacked->setCurrentWidget(m_launch_screen);
+                // Sync selection to config list so Run() picks up the right game
                 auto* tree = m_config_list->findChild<QTreeWidget*>();
                 if (tree) {
                         for (int i = 0; i < tree->topLevelItemCount(); i++) {
@@ -396,8 +405,32 @@ void MainDialogPrivate::Setup(MainDialog* main_dialog) {
                 }
         });
 
-        // Grid view Esc: switch back to the list view (the grid is no longer
-        // a separate window — Esc just means "I'm done browsing the grid").
+        // Launch screen: back button returns to grid view
+        connect(m_launch_screen, &GameLaunchScreen::backRequested, [this]() {
+                m_stacked->setCurrentWidget(m_grid_frame);
+        });
+
+        // Launch screen: settings button switches to settings page
+        connect(m_launch_screen, &GameLaunchScreen::settingsRequested, [this]() {
+                m_sidebar->setCurrentRow(2);
+        });
+
+        // Launch screen: play button launches the game
+        connect(m_launch_screen, &GameLaunchScreen::playRequested, [this](const GameGridItem& item) {
+                auto* tree = m_config_list->findChild<QTreeWidget*>();
+                if (tree) {
+                        for (int i = 0; i < tree->topLevelItemCount(); i++) {
+                                auto* cfg_item = static_cast<ConfigurationItem*>(tree->topLevelItem(i));
+                                if (cfg_item && cfg_item->GetInfo().title_id == item.title_id) {
+                                        tree->setCurrentItem(cfg_item);
+                                        break;
+                                }
+                        }
+                }
+                Run();
+        });
+
+        // Grid view Esc: switch back to the list view
         connect(m_grid_frame, &GameGridFrame::GameGridFrameClosed, [this]() {
                 m_sidebar->setCurrentRow(0);
         });
