@@ -10,6 +10,7 @@
 #include "hub_menu_widget.h"
 #include "loader/pkg.h"
 #include "patchesDialog.h"
+#include "settingsPage.h"
 #include "updateChecker.h"
 
 #include <QAction>
@@ -135,6 +136,7 @@ private:
         ConfigurationListWidget* m_config_list          = nullptr;
         GameGridFrame*          m_grid_frame             = nullptr; // embedded as page 1
         HubMenuWidget*          m_hub_menu               = nullptr; // cinema mode (separate window, immersive)
+        SettingsPage*           m_settings_page          = nullptr; // redesigned settings (Kyty-UI)
         QLabel*                 m_label_settings_file    = nullptr;
         QLabel*                 m_label_interpreter      = nullptr;
         QLabel*                 m_label_version          = nullptr;
@@ -203,32 +205,22 @@ void MainDialogPrivate::Setup(MainDialog* main_dialog) {
         m_grid_frame = new GameGridFrame(m_stacked);
         m_stacked->addWidget(m_grid_frame);
 
-        // Page 2: Settings (labels + checkbox). The interpreter/version info
-        // also lives on the status bar so it's always visible regardless of
-        // the current page.
-        auto* settingsPage = new QWidget(m_stacked);
-        auto* settingsLayout = new QVBoxLayout(settingsPage);
-        settingsLayout->setContentsMargins(20, 20, 20, 20);
-        settingsLayout->setSpacing(8);
+        // Page 2: Settings — redesigned with real controls (Kyty-UI)
+        // Replaces the old "just show the .ini path" approach with a proper
+        // tabbed settings page: Graphics / Audio / Input / Advanced / Hacks
+        m_settings_page = new SettingsPage(m_stacked);
+        m_stacked->addWidget(m_settings_page);
 
-        m_label_settings_file = new QLabel(tr("Settings file: "), settingsPage);
-        m_label_interpreter    = new QLabel(tr("Emulator: "),     settingsPage);
-        m_label_version        = new QLabel(tr("Version: "),     settingsPage);
+        // Status info on the status bar (always visible)
+        m_label_settings_file = new QLabel(tr("Settings: config.ini"), main_dialog);
+        m_label_interpreter    = new QLabel(tr("Emulator: not configured"), main_dialog);
+        m_label_version        = new QLabel(tr("AbDoPS5 v0.1.0"), main_dialog);
         m_check_updates_link   = new QLabel(
-            QStringLiteral("<a href=\"check\">Check for updates</a>"), settingsPage);
+            QStringLiteral("<a href=\"check\">Check for updates</a>"), main_dialog);
         m_check_updates_link->setTextFormat(Qt::RichText);
         m_check_updates_on_startup = new QCheckBox(
-            tr("Check for updates on startup"), settingsPage);
+            tr("Check for updates on startup"), main_dialog);
         m_check_updates_on_startup->setChecked(g_check_updates_on_startup);
-
-        settingsLayout->addWidget(m_label_settings_file);
-        settingsLayout->addWidget(m_label_interpreter);
-        settingsLayout->addWidget(m_label_version);
-        settingsLayout->addWidget(m_check_updates_link);
-        settingsLayout->addWidget(m_check_updates_on_startup);
-        settingsLayout->addStretch();
-
-        m_stacked->addWidget(settingsPage);
 
         m_check_updates_link->setVisible(UpdateChecker::IsSupported());
         m_check_updates_on_startup->setVisible(UpdateChecker::IsSupported());
