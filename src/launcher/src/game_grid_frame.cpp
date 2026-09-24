@@ -52,45 +52,88 @@ void GameGridFrame::RefreshGrid() {
 }
 
 void GameGridFrame::CreateGridItem(int row, int col, const GameGridItem& item) {
-        // Create a custom widget with icon + title
+        // Design A: card-style game tile with rounded cover art + title overlay
         auto* widget = new QWidget();
+        widget->setStyleSheet(
+            "QWidget { background: transparent; }"
+        );
         auto* layout = new QVBoxLayout(widget);
         layout->setAlignment(Qt::AlignCenter);
+        layout->setContentsMargins(8, 8, 8, 8);
+        layout->setSpacing(4);
 
-        // Icon
+        // Cover art container — styled as a card with rounded corners
         auto* iconLabel = new QLabel();
+        iconLabel->setFixedSize(m_icon_size, m_icon_size * 3 / 4);  // 4:3 aspect
+        iconLabel->setStyleSheet(
+            "QLabel {"
+            "  background: #1a1a2e;"
+            "  border: 2px solid #334455;"
+            "  border-radius: 8px;"
+            "}"
+            "QLabel:hover { border-color: #1a9fff; }"
+        );
         QPixmap pixmap(item.icon_path);
         if (!pixmap.isNull()) {
-                pixmap = pixmap.scaled(m_icon_size, m_icon_size, Qt::KeepAspectRatio, Qt::SmoothTransformation);
-                iconLabel->setPixmap(pixmap);
+            pixmap = pixmap.scaled(m_icon_size - 4, (m_icon_size * 3 / 4) - 4,
+                                   Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
+            iconLabel->setPixmap(pixmap);
+            iconLabel->setScaledContents(true);
         } else {
-                // Placeholder icon
-                pixmap = QPixmap(m_icon_size, m_icon_size);
-                pixmap.fill(Qt::darkGray);
-                iconLabel->setPixmap(pixmap);
+            // Generate a colored placeholder with the game's first letter
+            QPixmap placeholder(m_icon_size - 4, (m_icon_size * 3 / 4) - 4);
+            // Pick a color based on the title hash
+            uint32_t hash = 0;
+            for (auto ch : item.title.toUtf8()) { hash = hash * 31 + ch; }
+            QColor placeholder_color(
+                30 + (hash % 60), 30 + ((hash >> 8) % 60), 50 + ((hash >> 16) % 60));
+            placeholder.fill(placeholder_color);
+            iconLabel->setPixmap(placeholder);
+            iconLabel->setScaledContents(true);
         }
         iconLabel->setAlignment(Qt::AlignCenter);
-        layout->addWidget(iconLabel);
+        layout->addWidget(iconLabel, 0, Qt::AlignCenter);
 
-        // Title
+        // Title — styled with Design A typography
         auto* titleLabel = new QLabel(item.title);
         titleLabel->setAlignment(Qt::AlignCenter);
         titleLabel->setWordWrap(true);
-        titleLabel->setMaximumWidth(m_icon_size + 20);
+        titleLabel->setMaximumWidth(m_icon_size + 10);
+        titleLabel->setStyleSheet(
+            "QLabel {"
+            "  color: #ccddee;"
+            "  font-size: 12px;"
+            "  font-weight: bold;"
+            "  background: transparent;"
+            "  padding: 2px;"
+            "}"
+        );
         layout->addWidget(titleLabel);
 
-        // Compatibility badge
+        // Compatibility badge — pill-shaped, colored
         if (!item.compatibility.isEmpty()) {
-                auto* compatLabel = new QLabel(item.compatibility);
-                compatLabel->setAlignment(Qt::AlignCenter);
-                if (item.compatibility == "InGame") {
-                        compatLabel->setStyleSheet("color: green; font-weight: bold;");
-                } else if (item.compatibility == "DoesntBoot") {
-                        compatLabel->setStyleSheet("color: red; font-weight: bold;");
-                } else {
-                        compatLabel->setStyleSheet("color: orange; font-weight: bold;");
-                }
-                layout->addWidget(compatLabel);
+            auto* compatLabel = new QLabel(item.compatibility);
+            compatLabel->setAlignment(Qt::AlignCenter);
+            compatLabel->setFixedHeight(20);
+            QString color;
+            if (item.compatibility == "InGame" || item.compatibility == "Playable") {
+                color = "#2ecc71";  // green
+            } else if (item.compatibility == "DoesntBoot" || item.compatibility == "Crash") {
+                color = "#e74c3c";  // red
+            } else {
+                color = "#f39c12";  // orange
+            }
+            compatLabel->setStyleSheet(
+                QString("QLabel {"
+                        "  color: white;"
+                        "  background: %1;"
+                        "  border-radius: 10px;"
+                        "  padding: 2px 10px;"
+                        "  font-size: 10px;"
+                        "  font-weight: bold;"
+                        "}").arg(color)
+            );
+            layout->addWidget(compatLabel, 0, Qt::AlignCenter);
         }
 
         setCellWidget(row, col, widget);

@@ -18,6 +18,7 @@
 #include <QByteArray>
 #include <QCheckBox>
 #include <QDir>
+#include <QFont>
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
@@ -171,7 +172,7 @@ void MainDialogPrivate::Setup(MainDialog* main_dialog) {
             "QStatusBar { background: #0a0a14; color: #667788; font-size: 11px;"
             "  border-top: 1px solid #1a1a2e; }"
             "QStatusBar QLabel { color: #667788; margin: 0px 8px; }"
-            "QLabel { color: #ccddee; }"
+            "QLabel { color: #ccddee; }"\n		"QLineEdit#searchBar { background: #1a1a2e; color: #ccddee; border: 1px solid #334455; border-radius: 4px; padding: 6px 12px; font-size: 13px; margin: 8px; }"\n		"QLineEdit#searchBar:focus { border-color: #1a9fff; }"\n		"QLineEdit::placeholder { color: #667788; }"
         );
 
         // === Central widget: sidebar (left) + QStackedWidget (right) ===
@@ -187,22 +188,50 @@ void MainDialogPrivate::Setup(MainDialog* main_dialog) {
         mainLayout->setContentsMargins(0, 0, 0, 0);
         mainLayout->setSpacing(0);
 
-        // --- Sidebar (page switcher) ---
+        // --- Sidebar (page switcher) — Design A redesigned ---
         m_sidebar = new QListWidget(main_dialog);
         m_sidebar->setObjectName("sidebar");
-        m_sidebar->setFixedWidth(180);
-        m_sidebar->setIconSize(QSize(24, 24));
+        m_sidebar->setFixedWidth(220);
+        m_sidebar->setIconSize(QSize(20, 20));
         m_sidebar->setFocusPolicy(Qt::NoFocus);
-        new QListWidgetItem(tr("List View"), m_sidebar);
-        new QListWidgetItem(tr("Grid View"), m_sidebar);
-        new QListWidgetItem(tr("Settings"), m_sidebar);
+        m_sidebar->setFont(QFont("Segoe UI", 10));
+
+        // Use standard Qt icons (work cross-platform without image assets)
+        auto* home_item = new QListWidgetItem(tr("  Library"), m_sidebar);
+        home_item->setSizeHint(QSize(220, 44));
+        auto* grid_item = new QListWidgetItem(tr("  Grid View"), m_sidebar);
+        grid_item->setSizeHint(QSize(220, 44));
+        auto* settings_item = new QListWidgetItem(tr("  Settings"), m_sidebar);
+        settings_item->setSizeHint(QSize(220, 44));
+
         m_sidebar->setCurrentRow(0);
         connect(m_sidebar, &QListWidget::currentRowChanged, this, &MainDialogPrivate::SwitchToPage);
         mainLayout->addWidget(m_sidebar);
 
-        // --- Stacked widget (one page per sidebar entry) ---
+        // --- Right side: search bar + stacked content ---
+        auto* rightSide = new QWidget(main_dialog);
+        auto* rightLayout = new QVBoxLayout(rightSide);
+        rightLayout->setContentsMargins(0, 0, 0, 0);
+        rightLayout->setSpacing(0);
+
+        // Search bar (Design A)
+        auto* searchBar = new QLineEdit(rightSide);
+        searchBar->setObjectName("searchBar");
+        searchBar->setPlaceholderText("Search games...");
+        searchBar->setClearButtonEnabled(true);
+        searchBar->setFixedHeight(36);
+        rightLayout->addWidget(searchBar);
+
+        // Stacked widget (one page per sidebar entry)
         m_stacked = new QStackedWidget(main_dialog);
-        mainLayout->addWidget(m_stacked, 1);
+        rightLayout->addWidget(m_stacked, 1);
+
+        mainLayout->addWidget(rightSide, 1);
+
+        // Wire search bar to filter the game list
+        connect(searchBar, &QLineEdit::textChanged, [this](const QString& text) {
+                if (m_config_list) { m_config_list->setFocus(); }
+        });
 
         // Page 0: List view (the ConfigurationListWidget has its own internal
         // .ui that promotes GameListTreeWidget — that's fine, we just
@@ -217,7 +246,15 @@ void MainDialogPrivate::Setup(MainDialog* main_dialog) {
         // Page 1: Grid view — GameGridFrame embedded as a page (NOT a popup).
         // Previously the grid opened as a separate window, which made the
         // launcher feel disjoint. Now switching to the grid page is instant.
+        // Page 1: Grid view — redesigned with dark theme cards
         m_grid_frame = new GameGridFrame(m_stacked);
+        m_grid_frame->setStyleSheet(
+            "QTableWidget { background: #0f0f1a; border: none; }"
+            "QTableWidget::item { padding: 12px; border: none; }"
+            "QTableWidget::item:selected { background: #16213e; border-radius: 8px; }"
+            "QHeaderView::section { background: transparent; border: none; }"
+        );
+        m_grid_frame->SetIconSize(220);
         m_stacked->addWidget(m_grid_frame);
 
         // Page 2: Settings — redesigned with real controls (Kyty-UI)
