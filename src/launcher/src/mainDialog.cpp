@@ -164,23 +164,45 @@ void MainDialogPrivate::Setup(MainDialog* main_dialog) {
         m_main_dialog = main_dialog;
         m_update_checker = new UpdateChecker(main_dialog);
 
-        // Kyty-UI: Apply global dark theme (Design A)
+        // Kyty-UI: Design A theme — faithful to HTML mockup color tokens
         main_dialog->setStyleSheet(
-            "QMainWindow { background: #0a0a14; }"
-            "QListWidget#sidebar { background: #1a1a2e; border: none; color: #8899aa;"
-            "  font-size: 13px; padding: 8px 0px; outline: none; }"
-            "QListWidget#sidebar::item { padding: 12px 20px; border-left: 3px solid transparent; }"
-            "QListWidget#sidebar::item:selected { background: #16213e; color: #1a9fff;"
-            "  border-left: 3px solid #1a9fff; }"
-            "QListWidget#sidebar::item:hover { background: #16213e; color: #ccddee; }"
-            "QStatusBar { background: #0a0a14; color: #667788; font-size: 11px;"
-            "  border-top: 1px solid #1a1a2e; }"
-            "QStatusBar QLabel { color: #667788; margin: 0px 8px; }"
-            "QLabel { color: #ccddee; }"
-            "QLineEdit#searchBar { background: #1a1a2e; color: #ccddee; border: 1px solid #334455;"
-            "  border-radius: 4px; padding: 6px 12px; font-size: 13px; margin: 8px; }"
+            // Design tokens from mockup:
+            // --bg-darkest: #07080b  --bg-dark: #0e1016  --bg-surface: #161922
+            // --bg-elevated: #1d212d --bg-hover: #262b39  --border: #2a2f3e
+            // --border-soft: #1f2330 --accent: #1a9fff   --accent-hover: #4ab8ff
+            // --text-primary: #f3f5f8 --text-secondary: #a8b0bd --text-muted: #6b7280
+            "QMainWindow { background: #0e1016; }"
+            // Sidebar: --bg-darkest with right border
+            "QListWidget#sidebar {"
+            "  background: #07080b; border: none; border-right: 1px solid #1f2330;"
+            "  color: #a8b0bd; font-size: 13px; font-weight: 500; padding: 16px 12px; outline: none; }"
+            "QListWidget#sidebar::item { padding: 9px 10px; border-radius: 6px; margin: 0px 4px; }"
+            // Active: accent-dim background + left border + accent-hover text
+            "QListWidget#sidebar::item:selected {"
+            "  background: rgba(26,159,255,0.12); color: #4ab8ff;"
+            "  border-left: 2px solid #1a9fff; }"
+            // Hover: surface background
+            "QListWidget#sidebar::item:hover { background: #161922; color: #f3f5f8; }"
+            // Status bar: --bg-darkest, 28px height, muted text
+            "QStatusBar { background: #07080b; color: #6b7280; font-size: 11px;"
+            "  border-top: 1px solid #1f2330; min-height: 28px; padding: 0px 16px; }"
+            "QStatusBar QLabel { color: #6b7280; margin: 0px 16px 0px 0px; }"
+            "QStatusBar::item { border: none; }"
+            // Labels
+            "QLabel { color: #f3f5f8; }"
+            // Search bar
+            "QLineEdit#searchBar { background: #161922; color: #f3f5f8;"
+            "  border: 1px solid #2a2f3e; border-radius: 6px; padding: 8px 14px;"
+            "  font-size: 13px; margin: 12px; }"
             "QLineEdit#searchBar:focus { border-color: #1a9fff; }"
-            "QLineEdit::placeholder { color: #667788; }"
+            "QLineEdit::placeholder { color: #6b7280; }"
+            // Menu bar
+            "QMenuBar { background: transparent; color: #a8b0bd; font-size: 12px; }"
+            "QMenuBar::item { padding: 4px 10px; background: transparent; border-radius: 4px; }"
+            "QMenuBar::item:selected { background: #161922; color: #1a9fff; }"
+            "QMenu { background: #0e1016; color: #f3f5f8; border: 1px solid #2a2f3e; border-radius: 6px; }"
+            "QMenu::item { padding: 6px 24px; border-radius: 4px; }"
+            "QMenu::item:selected { background: #161922; color: #1a9fff; }"
         );
 
         // === Central widget: sidebar (left) + QStackedWidget (right) ===
@@ -196,25 +218,74 @@ void MainDialogPrivate::Setup(MainDialog* main_dialog) {
         mainLayout->setContentsMargins(0, 0, 0, 0);
         mainLayout->setSpacing(0);
 
-        // --- Sidebar (page switcher) — Design A redesigned ---
-        m_sidebar = new QListWidget(main_dialog);
+        // --- Sidebar (Design A faithful) ---
+        // Mockup structure: user avatar section + nav items + footer
+        auto* sidebarWidget = new QWidget(main_dialog);
+        sidebarWidget->setFixedWidth(220);
+        sidebarWidget->setStyleSheet(
+            "QWidget { background: #07080b; border-right: 1px solid #1f2330; }"
+        );
+        auto* sidebarLayout = new QVBoxLayout(sidebarWidget);
+        sidebarLayout->setContentsMargins(12, 16, 12, 12);
+        sidebarLayout->setSpacing(4);
+
+        // User section (avatar + name)
+        auto* userWidget = new QWidget(sidebarWidget);
+        auto* userLayout = new QHBoxLayout(userWidget);
+        userLayout->setContentsMargins(8, 8, 8, 16);
+        auto* avatar = new QLabel("●", userWidget);
+        avatar->setStyleSheet(
+            "QLabel { color: #1a9fff; font-size: 24px; background: transparent; }"
+        );
+        auto* userName = new QLabel("AbDoPS5", userWidget);
+        userName->setStyleSheet(
+            "QLabel { color: #f3f5f8; font-size: 14px; font-weight: bold; background: transparent; }"
+        );
+        userLayout->addWidget(avatar);
+        userLayout->addWidget(userName);
+        userLayout->addStretch();
+        sidebarLayout->addWidget(userWidget);
+
+        // Separator
+        auto* sep1 = new QFrame(sidebarWidget);
+        sep1->setFrameShape(QFrame::HLine);
+        sep1->setStyleSheet("background: #1f2330; max-height: 1px; border: none;");
+        sidebarLayout->addWidget(sep1);
+        sidebarLayout->addSpacing(12);
+
+        // Nav items
+        m_sidebar = new QListWidget(sidebarWidget);
         m_sidebar->setObjectName("sidebar");
-        m_sidebar->setFixedWidth(220);
-        m_sidebar->setIconSize(QSize(20, 20));
+        m_sidebar->setIconSize(QSize(18, 18));
         m_sidebar->setFocusPolicy(Qt::NoFocus);
         m_sidebar->setFont(QFont("Segoe UI", 10));
+        m_sidebar->setStyleSheet(
+            "QListWidget { background: transparent; border: none; outline: none; }"
+            "QListWidget::item { padding: 9px 10px; border-radius: 6px; margin: 1px 4px; color: #a8b0bd; font-weight: 500; }"
+            "QListWidget::item:selected { background: rgba(26,159,255,0.12); color: #4ab8ff; border-left: 2px solid #1a9fff; }"
+            "QListWidget::item:hover { background: #161922; color: #f3f5f8; }"
+        );
 
-        // Use standard Qt icons (work cross-platform without image assets)
-        auto* home_item = new QListWidgetItem(tr("  Library"), m_sidebar);
-        home_item->setSizeHint(QSize(220, 44));
-        auto* grid_item = new QListWidgetItem(tr("  Grid View"), m_sidebar);
-        grid_item->setSizeHint(QSize(220, 44));
-        auto* settings_item = new QListWidgetItem(tr("  Settings"), m_sidebar);
-        settings_item->setSizeHint(QSize(220, 44));
+        auto* nav_library = new QListWidgetItem(tr("  Library"), m_sidebar);
+        nav_library->setSizeHint(QSize(196, 38));
+        auto* nav_grid = new QListWidgetItem(tr("  Grid View"), m_sidebar);
+        nav_grid->setSizeHint(QSize(196, 38));
+        auto* nav_settings = new QListWidgetItem(tr("  Settings"), m_sidebar);
+        nav_settings->setSizeHint(QSize(196, 38));
 
         m_sidebar->setCurrentRow(0);
         connect(m_sidebar, &QListWidget::currentRowChanged, this, &MainDialogPrivate::SwitchToPage);
-        mainLayout->addWidget(m_sidebar);
+        sidebarLayout->addWidget(m_sidebar);
+        sidebarLayout->addStretch();
+
+        // Footer: version info
+        auto* footerLabel = new QLabel("v0.1.0", sidebarWidget);
+        footerLabel->setStyleSheet(
+            "QLabel { color: #6b7280; font-size: 10px; padding: 8px; background: transparent; }"
+        );
+        sidebarLayout->addWidget(footerLabel);
+
+        mainLayout->addWidget(sidebarWidget);
 
         // --- Right side: search bar + stacked content ---
         auto* rightSide = new QWidget(main_dialog);
@@ -307,17 +378,40 @@ void MainDialogPrivate::Setup(MainDialog* main_dialog) {
         m_launch_screen = new GameLaunchScreen(m_stacked);
         m_stacked->addWidget(m_launch_screen);
 
-        // Status info on the status bar (always visible)
-        m_label_settings_file = new QLabel(tr("Settings: config.ini"), main_dialog);
-        m_label_interpreter    = new QLabel(tr("Emulator: not configured"), main_dialog);
-        m_label_version        = new QLabel(tr("AbDoPS5 v0.1.0"), main_dialog);
+        // Status bar — Design A faithful (28px height, muted text, separators)
+        auto* sb = main_dialog->statusBar();
+        sb->setSizeGripEnabled(false);
+        sb->setStyleSheet(
+            "QStatusBar { background: #07080b; color: #6b7280; font-size: 11px;"
+            "  border-top: 1px solid #1f2330; }"
+            "QStatusBar QLabel { color: #6b7280; margin-right: 12px; }"
+            "QStatusBar::item { border: none; }"
+        );
+        m_label_settings_file = new QLabel(m_config_list->GetSettingsFile(), main_dialog);
+        m_label_interpreter    = new QLabel("Not configured", main_dialog);
+        m_label_version        = new QLabel(QString("AbDoPS5 %1").arg(KYTY_GIT_HASH), main_dialog);
+        // Green "Ready" indicator (mockup status bar)
+        auto* readyLabel = new QLabel(QString::fromUtf8("\xe2\x97\x8f Ready"), main_dialog);
+        readyLabel->setStyleSheet("QLabel { color: #2ecc71; font-size: 11px; margin-right: 12px; }");
+        // Vertical separators between status items
+        auto* sep1 = new QFrame(main_dialog);
+        sep1->setFrameShape(QFrame::VLine);
+        sep1->setStyleSheet("color: #2a2f3e; background: #2a2f3e; max-width: 1px; margin: 0px 4px;");
+        auto* sep2 = new QFrame(main_dialog);
+        sep2->setFrameShape(QFrame::VLine);
+        sep2->setStyleSheet("color: #2a2f3e; background: #2a2f3e; max-width: 1px; margin: 0px 4px;");
+        sb->addWidget(readyLabel);
+        sb->addWidget(sep1);
+        sb->addWidget(m_label_interpreter);
+        sb->addWidget(sep2);
+        sb->addWidget(m_label_version);
+        sb->addPermanentWidget(m_label_settings_file);
         m_check_updates_link   = new QLabel(
-            QStringLiteral("<a href=\"check\">Check for updates</a>"), main_dialog);
+            QStringLiteral("<a href=\"check\">Updates</a>"), main_dialog);
         m_check_updates_link->setTextFormat(Qt::RichText);
-        m_check_updates_on_startup = new QCheckBox(
-            tr("Check for updates on startup"), main_dialog);
+        m_check_updates_link->setStyleSheet("QLabel { color: #1a9fff; margin-right: 12px; }");
+        m_check_updates_on_startup = new QCheckBox(tr("Auto-check"), main_dialog);
         m_check_updates_on_startup->setChecked(g_check_updates_on_startup);
-
         m_check_updates_link->setVisible(UpdateChecker::IsSupported());
         m_check_updates_on_startup->setVisible(UpdateChecker::IsSupported());
 
