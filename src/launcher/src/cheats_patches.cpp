@@ -35,6 +35,19 @@ static const struct {
 
 CheatsPatches::CheatsPatches(const QString& title_id, QWidget* parent)
     : QDialog(parent), m_title_id(title_id) {
+        setStyleSheet(
+            "QDialog { background: #0a0a14; }"
+            "QLabel { color: #ccddee; font-size: 13px; }"
+            "QTreeWidget { background: #0f0f1a; color: #ccddee; border: 1px solid #1a1a2e; }"
+            "QTreeWidget::item { padding: 4px 8px; }"
+            "QTreeWidget::item:selected { background: #16213e; color: #1a9fff; }"
+            "QHeaderView::section { background: #1a1a2e; color: #8899aa; border: none; padding: 6px; }"
+            "QPushButton { background: #1a1a2e; color: #ccddee; border: 1px solid #334455; border-radius: 4px; padding: 8px 16px; }"
+            "QPushButton:hover { border-color: #1a9fff; background: #16213e; }"
+            "QCheckBox { color: #ccddee; spacing: 8px; }"
+            "QCheckBox::indicator { width: 18px; height: 18px; border: 2px solid #334455; border-radius: 4px; background: #1a1a2e; }"
+            "QCheckBox::indicator:checked { background: #1a9fff; border-color: #1a9fff; }"
+        );
         setupUI();
         loadHacks();
         loadPatches();

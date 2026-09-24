@@ -19,6 +19,8 @@
 #include <QByteArray>
 #include <QCheckBox>
 #include <QDir>
+#include <QGraphicsOpacityEffect>
+#include <QPropertyAnimation>
 #include <QFont>
 #include <QFile>
 #include <QFileDialog>
@@ -234,9 +236,36 @@ void MainDialogPrivate::Setup(MainDialog* main_dialog) {
 
         mainLayout->addWidget(rightSide, 1);
 
-        // Wire search bar to filter the game list
+        // Wire search bar to filter the game list + grid
         connect(searchBar, &QLineEdit::textChanged, [this](const QString& text) {
-                if (m_config_list) { m_config_list->setFocus(); }
+                // Filter the config list tree
+                auto* tree = m_config_list ? m_config_list->findChild<QTreeWidget*>() : nullptr;
+                if (tree) {
+                        for (int i = 0; i < tree->topLevelItemCount(); i++) {
+                                auto* item = tree->topLevelItem(i);
+                                bool match = text.isEmpty() ||
+                                             item->text(0).contains(text, Qt::CaseInsensitive);
+                                item->setHidden(!match);
+                        }
+                }
+                // Filter the grid
+                if (m_grid_frame) {
+                        // Re-populate grid with filtered games
+                        QVector<GameGridItem> filtered;
+                        // Access the grid's internal game list via the config list
+                        if (tree) {
+                                for (int i = 0; i < tree->topLevelItemCount(); i++) {
+                                        auto* item = tree->topLevelItem(i);
+                                        if (!item->isHidden()) {
+                                                GameGridItem gi;
+                                                gi.title = item->text(0);
+                                                gi.title_id = item->text(1);
+                                                filtered.append(gi);
+                                        }
+                                }
+                        }
+                        m_grid_frame->PopulateGames(filtered);
+                }
         });
 
         // Page 0: List view (the ConfigurationListWidget has its own internal
@@ -268,6 +297,11 @@ void MainDialogPrivate::Setup(MainDialog* main_dialog) {
         // tabbed settings page: Graphics / Audio / Input / Advanced / Hacks
         m_settings_page = new SettingsPage(m_stacked);
         m_stacked->addWidget(m_settings_page);
+
+        // Kyty-UI: load current config values into the settings page
+        // Called when the settings page is first shown AND when a game
+        // with custom settings is selected.
+        // Save is triggered when switching away from the settings page.
 
         // Page 3: Game launch screen — backdrop art + play button (Design A)
         m_launch_screen = new GameLaunchScreen(m_stacked);
@@ -392,6 +426,16 @@ void MainDialogPrivate::Setup(MainDialog* main_dialog) {
                 // Show game launch screen with backdrop art + play button
                 m_launch_screen->SetGame(item);
                 m_stacked->setCurrentWidget(m_launch_screen);
+                // Kyty-UI: fade in the launch screen backdrop
+                auto* effect = new QGraphicsOpacityEffect(m_launch_screen);
+                effect->setOpacity(0.0);
+                m_launch_screen->setGraphicsEffect(effect);
+                auto* anim = new QPropertyAnimation(effect, "opacity", m_launch_screen);
+                anim->setDuration(350);
+                anim->setStartValue(0.0);
+                anim->setEndValue(1.0);
+                anim->setEasingCurve(QEasingCurve::OutCubic);
+                anim->start(QAbstractAnimation::DeleteWhenStopped);
                 // Sync selection to config list so Run() picks up the right game
                 auto* tree = m_config_list->findChild<QTreeWidget*>();
                 if (tree) {
@@ -442,7 +486,7 @@ void MainDialogPrivate::Setup(MainDialog* main_dialog) {
         // Sensible default size on first launch; user-resized geometry is
         // restored from QSettings on subsequent launches.
         if (g_last_geometry.isEmpty()) {
-                main_dialog->resize(900, 600);
+                main_dialog->resize(1280, 820);
         }
 
         Update();
@@ -818,7 +862,27 @@ void MainDialogPrivate::Update() {
 
 void MainDialogPrivate::SwitchToPage(int index) {
         if (index < 0 || index >= m_stacked->count()) return;
+        // Kyty-UI: save settings when leaving the settings page (index 2)
+        if (m_stacked->currentIndex() == 2 && index != 2 && m_settings_page) {
+                auto* tree = m_config_list ? m_config_list->findChild<QTreeWidget*>() : nullptr;
+                if (tree) {
+                        auto* current = static_cast<ConfigurationItem*>(tree->currentItem());
+                        if (current) {
+                                m_settings_page->SaveToConfig(current->GetInfo());
+                        }
+                }
+        }
         m_stacked->setCurrentIndex(index);
+        // Kyty-UI: load settings when entering the settings page
+        if (index == 2 && m_settings_page) {
+                auto* tree = m_config_list ? m_config_list->findChild<QTreeWidget*>() : nullptr;
+                if (tree) {
+                        auto* current = static_cast<ConfigurationItem*>(tree->currentItem());
+                        if (current) {
+                                m_settings_page->LoadFromConfig(current->GetInfo());
+                        }
+                }
+        }
         if (index == 1) {
                 // Grid page — refresh from the current config list so newly
                 // added/removed games show up immediately.
