@@ -3,6 +3,7 @@
 #include <QApplication>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QMenuBar>
 #include <QMouseEvent>
 #include <QPushButton>
 #include <QScreen>
@@ -114,7 +115,7 @@ void FramelessWindow::SetupTitleBar() {
         "QMenu::item:selected { background: #16213e; color: #1a9fff; }"
     );
     // Insert menu bar into the title bar layout (after title, before buttons)
-    layout->insertWidget(1, menubar);
+    layout->insertWidget(1, static_cast<QWidget*>(menubar));
 }
 
 void FramelessWindow::mousePressEvent(QMouseEvent* event) {
