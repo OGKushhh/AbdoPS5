@@ -159,6 +159,21 @@ void MainDialogPrivate::Setup(MainDialog* main_dialog) {
         m_main_dialog = main_dialog;
         m_update_checker = new UpdateChecker(main_dialog);
 
+        // Kyty-UI: Apply global dark theme (Design A)
+        main_dialog->setStyleSheet(
+            "QMainWindow { background: #0a0a14; }"
+            "QListWidget#sidebar { background: #1a1a2e; border: none; color: #8899aa;"
+            "  font-size: 13px; padding: 8px 0px; outline: none; }"
+            "QListWidget#sidebar::item { padding: 12px 20px; border-left: 3px solid transparent; }"
+            "QListWidget#sidebar::item:selected { background: #16213e; color: #1a9fff;"
+            "  border-left: 3px solid #1a9fff; }"
+            "QListWidget#sidebar::item:hover { background: #16213e; color: #ccddee; }"
+            "QStatusBar { background: #0a0a14; color: #667788; font-size: 11px;"
+            "  border-top: 1px solid #1a1a2e; }"
+            "QStatusBar QLabel { color: #667788; margin: 0px 8px; }"
+            "QLabel { color: #ccddee; }"
+        );
+
         // === Central widget: sidebar (left) + QStackedWidget (right) ===
         // We build the entire UI in C++ — no .ui file, no reparenting, no
         // layout fighting. The previous design used Ui::MainDialog from

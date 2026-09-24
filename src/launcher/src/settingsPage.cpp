@@ -1,4 +1,5 @@
 #include "settingsPage.h"
+#include "inputTab.h"
 
 #include <QFormLayout>
 #include <QFrame>
@@ -185,8 +186,8 @@ void SettingsPage::SetupUi() {
     m_tabs = new QStackedWidget(this);
     m_tabs->addWidget(CreateGraphicsTab());
     m_tabs->addWidget(CreateAudioTab());
-    // Input tab uses the existing InputMappingDialog — placeholder for now
-    m_tabs->addWidget(new QWidget(m_tabs)); // Input placeholder
+    // Input tab — controller diagram + button mapping + analog settings
+    m_tabs->addWidget(new InputTab(m_tabs));
     m_tabs->addWidget(CreateAdvancedTab());
     m_tabs->addWidget(CreateHacksTab());
     mainLayout->addWidget(m_tabs, 1);
