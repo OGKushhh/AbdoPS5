@@ -407,6 +407,8 @@ void MainDialogPrivate::Setup(MainDialog* main_dialog) {
         status_bar->addWidget(sep_status2);
         status_bar->addWidget(m_label_version);
         status_bar->addPermanentWidget(m_label_settings_file);
+        status_bar->addPermanentWidget(m_check_updates_link);
+        status_bar->addPermanentWidget(m_check_updates_on_startup);
         m_check_updates_link   = new QLabel(
             QStringLiteral("<a href=\"check\">Updates</a>"), main_dialog);
         m_check_updates_link->setTextFormat(Qt::RichText);
@@ -479,14 +481,7 @@ void MainDialogPrivate::Setup(MainDialog* main_dialog) {
         connect(action_bg_music, &QAction::triggered, this, &MainDialogPrivate::OnToggleBackgroundMusic);
         m_action_bg_music = action_bg_music; // cached so OnToggleBackgroundMusic can sync the checkbox
 
-        // === Status bar — QMainWindow provides statusBar() for free ===
-        // Shows the interpreter path + version + update link at the bottom
-        // of the window, regardless of which page is current.
-        auto* status_bar = main_dialog->statusBar();
-        status_bar->setSizeGripEnabled(true);
-        status_bar->addWidget(m_label_interpreter, 1);
-        status_bar->addPermanentWidget(m_label_version);
-        status_bar->addPermanentWidget(m_check_updates_link);
+        // Status bar widgets already added above (Design A status bar)
 
         // === Signal wiring ===
         connect(main_dialog, &MainDialog::Start, this, &MainDialogPrivate::FindInterpreter,
