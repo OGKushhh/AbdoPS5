@@ -368,7 +368,7 @@ jobs:
         shell: bash
         run: |
           cmake --build _Build/macos \
-            --target kyty_emulator launcher audio_out2_port_tests ime_dialog_tests virtual_memory_allocation_tests kytyps5_elf_info kytyps5_nids kytyps5_pkg_inspect kytyps5_param_sfo \
+            --target kyty_emulator launcher audio_out2_port_tests ime_dialog_tests virtual_memory_allocation_tests \
             --parallel
 
       - name: Run tests
