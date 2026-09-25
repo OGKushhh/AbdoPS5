@@ -177,6 +177,10 @@ bool VulkanRelaxRequirements() {
         return g_config->vulkan_relax_requirements;
 }
 
+bool GpuMeshIndirectEnabled() {
+	return g_config->gpu_mesh_indirect_enabled;
+}
+
 #if KYTY_PLATFORM == KYTY_PLATFORM_WINDOWS
 bool RedZoneProtectionEnabled() {
         return g_config->red_zone_protection_enabled;
