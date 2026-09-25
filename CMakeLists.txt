@@ -242,6 +242,8 @@ file(GLOB kyty_emulator_src CONFIGURE_DEPENDS
 	"${KYTY_SOURCE_DIR}/kernel/*.h"
 	"${KYTY_SOURCE_DIR}/loader/*.cpp"
 	"${KYTY_SOURCE_DIR}/loader/*.h"
+	"${KYTY_SOURCE_DIR}/ipc/*.cpp"
+	"${KYTY_SOURCE_DIR}/ipc/*.h"
 )
 
 find_program(KYTY_GLSLANG_VALIDATOR glslangValidator REQUIRED)
