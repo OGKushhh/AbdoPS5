@@ -3,7 +3,6 @@
 
 #include <QMainWindow>
 #include <QString>
-#include "framelessWindow.h"
 
 class QWidget;
 class QProcess;
@@ -24,7 +23,7 @@ class Configuration;
 // layout for free, and we build the central widget (sidebar + QStackedWidget
 // with List/Grid/Settings pages) entirely in C++ — no .ui file, no
 // reparenting, no layout fighting.
-class MainDialog: public FramelessWindow {
+class MainDialog: public QMainWindow {
         Q_OBJECT
 
 signals:

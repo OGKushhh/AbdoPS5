@@ -469,16 +469,6 @@ static QString TrophyTooltip(const TrophyRow& row) {
 } // namespace
 
 TrophyViewerDialog::TrophyViewerDialog(QWidget* parent): QDialog(parent) {
-    setStyleSheet(
-        "QDialog { background: #0a0a14; }"
-        "QLabel { color: #ccddee; font-size: 13px; }"
-        "QTabWidget::pane { border: 1px solid #1a1a2e; background: #0f0f1a; }"
-        "QTabBar::tab { background: #1a1a2e; color: #8899aa; padding: 8px 16px; border: none; }"
-        "QTabBar::tab:selected { background: #16213e; color: #1a9fff; }"
-        "QTableWidget { background: #0f0f1a; color: #ccddee; border: none; gridline-color: #1a1a2e; }"
-        "QTableWidget::item { padding: 4px; }"
-        "QHeaderView::section { background: #1a1a2e; color: #8899aa; border: none; padding: 6px; }"
-    );
 	setWindowTitle(tr("Trophy Viewer"));
 	resize(1000, 640);
 

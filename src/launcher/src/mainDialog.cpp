@@ -6,23 +6,17 @@
 #include "configurationItem.h"
 #include "configurationListWidget.h"
 #include "game_grid_frame.h"
-#include "gameLaunchScreen.h"
 #include "hotkeys.h"
 #include "hub_menu_widget.h"
 #include "loader/pkg.h"
 #include "patchesDialog.h"
-#include "settingsPage.h"
 #include "updateChecker.h"
-#include "kytyGitVersion.h"
 
 #include <QAction>
 #include <QApplication>
 #include <QByteArray>
 #include <QCheckBox>
 #include <QDir>
-#include <QGraphicsOpacityEffect>
-#include <QPropertyAnimation>
-#include <QFont>
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
@@ -140,9 +134,7 @@ private:
         QStackedWidget*         m_stacked                = nullptr;
         ConfigurationListWidget* m_config_list          = nullptr;
         GameGridFrame*          m_grid_frame             = nullptr; // embedded as page 1
-        GameLaunchScreen*       m_launch_screen          = nullptr; // game detail + play button
         HubMenuWidget*          m_hub_menu               = nullptr; // cinema mode (separate window, immersive)
-        SettingsPage*           m_settings_page          = nullptr; // redesigned settings (Kyty-UI)
         QLabel*                 m_label_settings_file    = nullptr;
         QLabel*                 m_label_interpreter      = nullptr;
         QLabel*                 m_label_version          = nullptr;
@@ -157,54 +149,13 @@ private:
 QByteArray MainDialogPrivate::g_last_geometry;
 bool       MainDialogPrivate::g_check_updates_on_startup = true;
 
-MainDialog::MainDialog(QWidget* parent): FramelessWindow(parent), m_p(new MainDialogPrivate(this)) {
+MainDialog::MainDialog(QWidget* parent): QMainWindow(parent), m_p(new MainDialogPrivate(this)) {
         m_p->Setup(this);
 }
 
 void MainDialogPrivate::Setup(MainDialog* main_dialog) {
         m_main_dialog = main_dialog;
         m_update_checker = new UpdateChecker(main_dialog);
-
-        // Kyty-UI: Design A theme — faithful to HTML mockup color tokens
-        main_dialog->setStyleSheet(
-            // Design tokens from mockup:
-            // --bg-darkest: #07080b  --bg-dark: #0e1016  --bg-surface: #161922
-            // --bg-elevated: #1d212d --bg-hover: #262b39  --border: #2a2f3e
-            // --border-soft: #1f2330 --accent: #1a9fff   --accent-hover: #4ab8ff
-            // --text-primary: #f3f5f8 --text-secondary: #a8b0bd --text-muted: #6b7280
-            "QMainWindow { background: #0e1016; }"
-            // Sidebar: --bg-darkest with right border
-            "QListWidget#sidebar {"
-            "  background: #07080b; border: none; border-right: 1px solid #1f2330;"
-            "  color: #a8b0bd; font-size: 13px; font-weight: 500; padding: 16px 12px; outline: none; }"
-            "QListWidget#sidebar::item { padding: 9px 10px; border-radius: 6px; margin: 0px 4px; }"
-            // Active: accent-dim background + left border + accent-hover text
-            "QListWidget#sidebar::item:selected {"
-            "  background: rgba(26,159,255,0.12); color: #4ab8ff;"
-            "  border-left: 2px solid #1a9fff; }"
-            // Hover: surface background
-            "QListWidget#sidebar::item:hover { background: #161922; color: #f3f5f8; }"
-            // Status bar: --bg-darkest, 28px height, muted text
-            "QStatusBar { background: #07080b; color: #6b7280; font-size: 11px;"
-            "  border-top: 1px solid #1f2330; min-height: 28px; padding: 0px 16px; }"
-            "QStatusBar QLabel { color: #6b7280; margin: 0px 16px 0px 0px; }"
-            "QStatusBar::item { border: none; }"
-            // Labels
-            "QLabel { color: #f3f5f8; }"
-            // Search bar
-            "QLineEdit#searchBar { background: #161922; color: #f3f5f8;"
-            "  border: 1px solid #2a2f3e; border-radius: 6px; padding: 8px 14px;"
-            "  font-size: 13px; margin: 12px; }"
-            "QLineEdit#searchBar:focus { border-color: #1a9fff; }"
-            "QLineEdit::placeholder { color: #6b7280; }"
-            // Menu bar
-            "QMenuBar { background: transparent; color: #a8b0bd; font-size: 12px; }"
-            "QMenuBar::item { padding: 4px 10px; background: transparent; border-radius: 4px; }"
-            "QMenuBar::item:selected { background: #161922; color: #1a9fff; }"
-            "QMenu { background: #0e1016; color: #f3f5f8; border: 1px solid #2a2f3e; border-radius: 6px; }"
-            "QMenu::item { padding: 6px 24px; border-radius: 4px; }"
-            "QMenu::item:selected { background: #161922; color: #1a9fff; }"
-        );
 
         // === Central widget: sidebar (left) + QStackedWidget (right) ===
         // We build the entire UI in C++ — no .ui file, no reparenting, no
@@ -219,132 +170,22 @@ void MainDialogPrivate::Setup(MainDialog* main_dialog) {
         mainLayout->setContentsMargins(0, 0, 0, 0);
         mainLayout->setSpacing(0);
 
-        // --- Sidebar (Design A faithful) ---
-        // Mockup structure: user avatar section + nav items + footer
-        auto* sidebarWidget = new QWidget(main_dialog);
-        sidebarWidget->setFixedWidth(220);
-        sidebarWidget->setStyleSheet(
-            "QWidget { background: #07080b; border-right: 1px solid #1f2330; }"
-        );
-        auto* sidebarLayout = new QVBoxLayout(sidebarWidget);
-        sidebarLayout->setContentsMargins(12, 16, 12, 12);
-        sidebarLayout->setSpacing(4);
-
-        // User section (avatar + name)
-        auto* userWidget = new QWidget(sidebarWidget);
-        auto* userLayout = new QHBoxLayout(userWidget);
-        userLayout->setContentsMargins(8, 8, 8, 16);
-        auto* avatar = new QLabel("●", userWidget);
-        avatar->setStyleSheet(
-            "QLabel { color: #1a9fff; font-size: 24px; background: transparent; }"
-        );
-        auto* userName = new QLabel("AbDoPS5", userWidget);
-        userName->setStyleSheet(
-            "QLabel { color: #f3f5f8; font-size: 14px; font-weight: bold; background: transparent; }"
-        );
-        userLayout->addWidget(avatar);
-        userLayout->addWidget(userName);
-        userLayout->addStretch();
-        sidebarLayout->addWidget(userWidget);
-
-        // Separator
-        auto* sep1 = new QFrame(sidebarWidget);
-        sep1->setFrameShape(QFrame::HLine);
-        sep1->setStyleSheet("background: #1f2330; max-height: 1px; border: none;");
-        sidebarLayout->addWidget(sep1);
-        sidebarLayout->addSpacing(12);
-
-        // Nav items
-        m_sidebar = new QListWidget(sidebarWidget);
+        // --- Sidebar (page switcher) ---
+        m_sidebar = new QListWidget(main_dialog);
         m_sidebar->setObjectName("sidebar");
-        m_sidebar->setIconSize(QSize(18, 18));
+        m_sidebar->setFixedWidth(180);
+        m_sidebar->setIconSize(QSize(24, 24));
         m_sidebar->setFocusPolicy(Qt::NoFocus);
-        m_sidebar->setFont(QFont("Segoe UI", 10));
-        m_sidebar->setStyleSheet(
-            "QListWidget { background: transparent; border: none; outline: none; }"
-            "QListWidget::item { padding: 9px 10px; border-radius: 6px; margin: 1px 4px; color: #a8b0bd; font-weight: 500; }"
-            "QListWidget::item:selected { background: rgba(26,159,255,0.12); color: #4ab8ff; border-left: 2px solid #1a9fff; }"
-            "QListWidget::item:hover { background: #161922; color: #f3f5f8; }"
-        );
-
-        auto* nav_library = new QListWidgetItem(tr("  Library"), m_sidebar);
-        nav_library->setSizeHint(QSize(196, 38));
-        auto* nav_grid = new QListWidgetItem(tr("  Grid View"), m_sidebar);
-        nav_grid->setSizeHint(QSize(196, 38));
-        auto* nav_settings = new QListWidgetItem(tr("  Settings"), m_sidebar);
-        nav_settings->setSizeHint(QSize(196, 38));
-
+        new QListWidgetItem(tr("List View"), m_sidebar);
+        new QListWidgetItem(tr("Grid View"), m_sidebar);
+        new QListWidgetItem(tr("Settings"), m_sidebar);
         m_sidebar->setCurrentRow(0);
         connect(m_sidebar, &QListWidget::currentRowChanged, this, &MainDialogPrivate::SwitchToPage);
-        sidebarLayout->addWidget(m_sidebar);
-        sidebarLayout->addStretch();
+        mainLayout->addWidget(m_sidebar);
 
-        // Footer: version info
-        auto* footerLabel = new QLabel("v0.1.0", sidebarWidget);
-        footerLabel->setStyleSheet(
-            "QLabel { color: #6b7280; font-size: 10px; padding: 8px; background: transparent; }"
-        );
-        sidebarLayout->addWidget(footerLabel);
-
-        mainLayout->addWidget(sidebarWidget);
-
-        // --- Right side: search bar + stacked content ---
-        auto* rightSide = new QWidget(main_dialog);
-        auto* rightLayout = new QVBoxLayout(rightSide);
-        rightLayout->setContentsMargins(0, 0, 0, 0);
-        rightLayout->setSpacing(0);
-
-        // Search bar (Design A)
-        auto* searchBar = new QLineEdit(rightSide);
-        searchBar->setObjectName("searchBar");
-        searchBar->setStyleSheet(
-            "QLineEdit { background: #161922; color: #f3f5f8;"
-            "  border: 1px solid #2a2f3e; border-radius: 6px;"
-            "  padding: 8px 14px; font-size: 13px; }"
-            "QLineEdit:focus { border-color: #1a9fff; }"
-        );
-        searchBar->setPlaceholderText("Search games...");
-        searchBar->setClearButtonEnabled(true);
-        searchBar->setFixedHeight(36);
-        rightLayout->addWidget(searchBar);
-
-        // Stacked widget (one page per sidebar entry)
+        // --- Stacked widget (one page per sidebar entry) ---
         m_stacked = new QStackedWidget(main_dialog);
-        rightLayout->addWidget(m_stacked, 1);
-
-        mainLayout->addWidget(rightSide, 1);
-
-        // Wire search bar to filter the game list + grid
-        connect(searchBar, &QLineEdit::textChanged, [this](const QString& text) {
-                // Filter the config list tree
-                auto* tree = m_config_list ? m_config_list->findChild<QTreeWidget*>() : nullptr;
-                if (tree) {
-                        for (int i = 0; i < tree->topLevelItemCount(); i++) {
-                                auto* item = tree->topLevelItem(i);
-                                bool match = text.isEmpty() ||
-                                             item->text(0).contains(text, Qt::CaseInsensitive);
-                                item->setHidden(!match);
-                        }
-                }
-                // Filter the grid
-                if (m_grid_frame) {
-                        // Re-populate grid with filtered games
-                        QVector<GameGridItem> filtered;
-                        // Access the grid's internal game list via the config list
-                        if (tree) {
-                                for (int i = 0; i < tree->topLevelItemCount(); i++) {
-                                        auto* item = tree->topLevelItem(i);
-                                        if (!item->isHidden()) {
-                                                GameGridItem gi;
-                                                gi.title = item->text(0);
-                                                gi.title_id = item->text(1);
-                                                filtered.append(gi);
-                                        }
-                                }
-                        }
-                        m_grid_frame->PopulateGames(filtered);
-                }
-        });
+        mainLayout->addWidget(m_stacked, 1);
 
         // Page 0: List view (the ConfigurationListWidget has its own internal
         // .ui that promotes GameListTreeWidget — that's fine, we just
@@ -359,85 +200,40 @@ void MainDialogPrivate::Setup(MainDialog* main_dialog) {
         // Page 1: Grid view — GameGridFrame embedded as a page (NOT a popup).
         // Previously the grid opened as a separate window, which made the
         // launcher feel disjoint. Now switching to the grid page is instant.
-        // Page 1: Grid view — redesigned with dark theme cards
         m_grid_frame = new GameGridFrame(m_stacked);
-        m_grid_frame->setStyleSheet(
-            "QTableWidget { background: #0f0f1a; border: none; }"
-            "QTableWidget::item { padding: 12px; border: none; }"
-            "QTableWidget::item:selected { background: #16213e; border-radius: 8px; }"
-            "QHeaderView::section { background: transparent; border: none; }"
-        );
-        m_grid_frame->SetIconSize(220);
         m_stacked->addWidget(m_grid_frame);
 
-        // Page 2: Settings — redesigned with real controls (Kyty-UI)
-        // Replaces the old "just show the .ini path" approach with a proper
-        // tabbed settings page: Graphics / Audio / Input / Advanced / Hacks
-        m_settings_page = new SettingsPage(m_stacked);
-        m_stacked->addWidget(m_settings_page);
+        // Page 2: Settings (labels + checkbox). The interpreter/version info
+        // also lives on the status bar so it's always visible regardless of
+        // the current page.
+        auto* settingsPage = new QWidget(m_stacked);
+        auto* settingsLayout = new QVBoxLayout(settingsPage);
+        settingsLayout->setContentsMargins(20, 20, 20, 20);
+        settingsLayout->setSpacing(8);
 
-        // Kyty-UI: load current config values into the settings page
-        // Called when the settings page is first shown AND when a game
-        // with custom settings is selected.
-        // Save is triggered when switching away from the settings page.
-
-        // Page 3: Game launch screen — backdrop art + play button (Design A)
-        m_launch_screen = new GameLaunchScreen(m_stacked);
-        m_stacked->addWidget(m_launch_screen);
-
-        // Status bar — Design A faithful (28px height, muted text, separators)
-        auto* status_bar = main_dialog->statusBar();
-        status_bar->setSizeGripEnabled(false);
-        status_bar->setStyleSheet(
-            "QStatusBar { background: #07080b; color: #6b7280; font-size: 11px;"
-            "  border-top: 1px solid #1f2330; }"
-            "QStatusBar QLabel { color: #6b7280; margin-right: 12px; }"
-            "QStatusBar::item { border: none; }"
-        );
-        m_label_settings_file = new QLabel(m_config_list->GetSettingsFile(), main_dialog);
-        m_label_interpreter    = new QLabel("Not configured", main_dialog);
-        m_label_version        = new QLabel(QString("AbDoPS5 %1").arg(KYTY_GIT_HASH), main_dialog);
-        // Green "Ready" indicator (mockup status bar)
-        auto* readyLabel = new QLabel(QString::fromUtf8("\xe2\x97\x8f Ready"), main_dialog);
-        readyLabel->setStyleSheet("QLabel { color: #2ecc71; font-size: 11px; margin-right: 12px; }");
-        // Vertical separators between status items
-        auto* sep_status1 = new QFrame(main_dialog);
-        sep_status1->setFrameShape(QFrame::VLine);
-        sep_status1->setStyleSheet("color: #2a2f3e; background: #2a2f3e; max-width: 1px; margin: 0px 4px;");
-        auto* sep_status2 = new QFrame(main_dialog);
-        sep_status2->setFrameShape(QFrame::VLine);
-        sep_status2->setStyleSheet("color: #2a2f3e; background: #2a2f3e; max-width: 1px; margin: 0px 4px;");
-        status_bar->addWidget(readyLabel);
-        status_bar->addWidget(sep_status1);
-        status_bar->addWidget(m_label_interpreter);
-        status_bar->addWidget(sep_status2);
-        status_bar->addWidget(m_label_version);
-        status_bar->addPermanentWidget(m_label_settings_file);
-        status_bar->addPermanentWidget(m_check_updates_link);
-        status_bar->addPermanentWidget(m_check_updates_on_startup);
+        m_label_settings_file = new QLabel(tr("Settings file: "), settingsPage);
+        m_label_interpreter    = new QLabel(tr("Emulator: "),     settingsPage);
+        m_label_version        = new QLabel(tr("Version: "),     settingsPage);
         m_check_updates_link   = new QLabel(
-            QStringLiteral("<a href=\"check\">Updates</a>"), main_dialog);
+            QStringLiteral("<a href=\"check\">Check for updates</a>"), settingsPage);
         m_check_updates_link->setTextFormat(Qt::RichText);
-        m_check_updates_link->setStyleSheet("QLabel { color: #1a9fff; margin-right: 12px; }");
-        m_check_updates_on_startup = new QCheckBox(tr("Auto-check"), main_dialog);
+        m_check_updates_on_startup = new QCheckBox(
+            tr("Check for updates on startup"), settingsPage);
         m_check_updates_on_startup->setChecked(g_check_updates_on_startup);
+
+        settingsLayout->addWidget(m_label_settings_file);
+        settingsLayout->addWidget(m_label_interpreter);
+        settingsLayout->addWidget(m_label_version);
+        settingsLayout->addWidget(m_check_updates_link);
+        settingsLayout->addWidget(m_check_updates_on_startup);
+        settingsLayout->addStretch();
+
+        m_stacked->addWidget(settingsPage);
+
         m_check_updates_link->setVisible(UpdateChecker::IsSupported());
         m_check_updates_on_startup->setVisible(UpdateChecker::IsSupported());
 
-        // Kyty-UI: Add content below the title bar (don't replace the
-        // FramelessWindow's container which holds the custom title bar).
-        // Find the container's layout and add the content widget.
-        auto* existingCentral = main_dialog->centralWidget();
-        if (existingCentral) {
-                auto* existingLayout = qobject_cast<QVBoxLayout*>(existingCentral->layout());
-                if (existingLayout) {
-                        existingLayout->addWidget(central, 1);
-                } else {
-                        main_dialog->setCentralWidget(central);
-                }
-        } else {
-                main_dialog->setCentralWidget(central);
-        }
+        main_dialog->setCentralWidget(central);
 
         // === Menu bar — QMainWindow provides menuBar() for free ===
         // (No more shoehorning a QMenuBar into a QDialog layout.)
@@ -500,7 +296,14 @@ void MainDialogPrivate::Setup(MainDialog* main_dialog) {
         connect(action_bg_music, &QAction::triggered, this, &MainDialogPrivate::OnToggleBackgroundMusic);
         m_action_bg_music = action_bg_music; // cached so OnToggleBackgroundMusic can sync the checkbox
 
-        // Status bar widgets already added above (Design A status bar)
+        // === Status bar — QMainWindow provides statusBar() for free ===
+        // Shows the interpreter path + version + update link at the bottom
+        // of the window, regardless of which page is current.
+        auto* sb = main_dialog->statusBar();
+        sb->setSizeGripEnabled(true);
+        sb->addWidget(m_label_interpreter, 1);
+        sb->addPermanentWidget(m_label_version);
+        sb->addPermanentWidget(m_check_updates_link);
 
         // === Signal wiring ===
         connect(main_dialog, &MainDialog::Start, this, &MainDialogPrivate::FindInterpreter,
@@ -529,23 +332,10 @@ void MainDialogPrivate::Setup(MainDialog* main_dialog) {
                         Update();
                 });
 
-        // Grid view: clicking a game shows the launch screen + syncs config list
+        // Grid view: clicking a game in the grid syncs the selection back to
+        // the config list so Run() picks up the right game.
         connect(m_grid_frame, &GameGridFrame::gameSelected, [this](const GameGridItem& item) {
-                m_main_dialog->setWindowTitle(item.title + " — AbDoPS5");
-                // Show game launch screen with backdrop art + play button
-                m_launch_screen->SetGame(item);
-                m_stacked->setCurrentWidget(m_launch_screen);
-                // Kyty-UI: fade in the launch screen backdrop
-                auto* effect = new QGraphicsOpacityEffect(m_launch_screen);
-                effect->setOpacity(0.0);
-                m_launch_screen->setGraphicsEffect(effect);
-                auto* anim = new QPropertyAnimation(effect, "opacity", m_launch_screen);
-                anim->setDuration(350);
-                anim->setStartValue(0.0);
-                anim->setEndValue(1.0);
-                anim->setEasingCurve(QEasingCurve::OutCubic);
-                anim->start(QAbstractAnimation::DeleteWhenStopped);
-                // Sync selection to config list so Run() picks up the right game
+                m_main_dialog->setWindowTitle(item.title + " — AbdoPS5");
                 auto* tree = m_config_list->findChild<QTreeWidget*>();
                 if (tree) {
                         for (int i = 0; i < tree->topLevelItemCount(); i++) {
@@ -558,42 +348,20 @@ void MainDialogPrivate::Setup(MainDialog* main_dialog) {
                 }
         });
 
-        // Launch screen: back button returns to grid view
-        connect(m_launch_screen, &GameLaunchScreen::backRequested, [this]() {
-                m_stacked->setCurrentWidget(m_grid_frame);
-        });
-
-        // Launch screen: settings button switches to settings page
-        connect(m_launch_screen, &GameLaunchScreen::settingsRequested, [this]() {
-                m_sidebar->setCurrentRow(2);
-        });
-
-        // Launch screen: play button launches the game
-        connect(m_launch_screen, &GameLaunchScreen::playRequested, [this](const GameGridItem& item) {
-                auto* tree = m_config_list->findChild<QTreeWidget*>();
-                if (tree) {
-                        for (int i = 0; i < tree->topLevelItemCount(); i++) {
-                                auto* cfg_item = static_cast<ConfigurationItem*>(tree->topLevelItem(i));
-                                if (cfg_item && cfg_item->GetInfo().title_id == item.title_id) {
-                                        tree->setCurrentItem(cfg_item);
-                                        break;
-                                }
-                        }
-                }
-                Run();
-        });
-
-        // Grid view Esc: switch back to the list view
+        // Grid view Esc: switch back to the list view (the grid is no longer
+        // a separate window — Esc just means "I'm done browsing the grid").
         connect(m_grid_frame, &GameGridFrame::GameGridFrameClosed, [this]() {
                 m_sidebar->setCurrentRow(0);
         });
 
         m_label_settings_file->setText(tr("Settings file: ") + m_config_list->GetSettingsFile());
 
+        main_dialog->restoreGeometry(g_last_geometry);
         main_dialog->setWindowTitle(QStringLiteral("AbdoPS5"));
-        main_dialog->resize(1280, 820);
-        if (!g_last_geometry.isEmpty()) {
-                main_dialog->restoreGeometry(g_last_geometry);
+        // Sensible default size on first launch; user-resized geometry is
+        // restored from QSettings on subsequent launches.
+        if (g_last_geometry.isEmpty()) {
+                main_dialog->resize(900, 600);
         }
 
         Update();
@@ -914,7 +682,7 @@ void MainDialog::ReadSettings(QSettings& s) {
 
 void MainDialog::resizeEvent(QResizeEvent* event) {
         emit Resize();
-        FramelessWindow::resizeEvent(event);
+        QMainWindow::resizeEvent(event);
 }
 
 void MainDialogPrivate::WriteSettings(QSettings& s) {
@@ -969,27 +737,7 @@ void MainDialogPrivate::Update() {
 
 void MainDialogPrivate::SwitchToPage(int index) {
         if (index < 0 || index >= m_stacked->count()) return;
-        // Kyty-UI: save settings when leaving the settings page (index 2)
-        if (m_stacked->currentIndex() == 2 && index != 2 && m_settings_page) {
-                auto* tree = m_config_list ? m_config_list->findChild<QTreeWidget*>() : nullptr;
-                if (tree) {
-                        auto* current = static_cast<ConfigurationItem*>(tree->currentItem());
-                        if (current) {
-                                m_settings_page->SaveToConfig(current->GetInfo());
-                        }
-                }
-        }
         m_stacked->setCurrentIndex(index);
-        // Kyty-UI: load settings when entering the settings page
-        if (index == 2 && m_settings_page) {
-                auto* tree = m_config_list ? m_config_list->findChild<QTreeWidget*>() : nullptr;
-                if (tree) {
-                        auto* current = static_cast<ConfigurationItem*>(tree->currentItem());
-                        if (current) {
-                                m_settings_page->LoadFromConfig(current->GetInfo());
-                        }
-                }
-        }
         if (index == 1) {
                 // Grid page — refresh from the current config list so newly
                 // added/removed games show up immediately.
