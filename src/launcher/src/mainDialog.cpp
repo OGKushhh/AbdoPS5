@@ -297,6 +297,12 @@ void MainDialogPrivate::Setup(MainDialog* main_dialog) {
         // Search bar (Design A)
         auto* searchBar = new QLineEdit(rightSide);
         searchBar->setObjectName("searchBar");
+        searchBar->setStyleSheet(
+            "QLineEdit { background: #161922; color: #f3f5f8;"
+            "  border: 1px solid #2a2f3e; border-radius: 6px;"
+            "  padding: 8px 14px; font-size: 13px; }"
+            "QLineEdit:focus { border-color: #1a9fff; }"
+        );
         searchBar->setPlaceholderText("Search games...");
         searchBar->setClearButtonEnabled(true);
         searchBar->setFixedHeight(36);
@@ -418,7 +424,20 @@ void MainDialogPrivate::Setup(MainDialog* main_dialog) {
         m_check_updates_link->setVisible(UpdateChecker::IsSupported());
         m_check_updates_on_startup->setVisible(UpdateChecker::IsSupported());
 
-        main_dialog->setCentralWidget(central);
+        // Kyty-UI: Add content below the title bar (don't replace the
+        // FramelessWindow's container which holds the custom title bar).
+        // Find the container's layout and add the content widget.
+        auto* existingCentral = main_dialog->centralWidget();
+        if (existingCentral) {
+                auto* existingLayout = qobject_cast<QVBoxLayout*>(existingCentral->layout());
+                if (existingLayout) {
+                        existingLayout->addWidget(central, 1);
+                } else {
+                        main_dialog->setCentralWidget(central);
+                }
+        } else {
+                main_dialog->setCentralWidget(central);
+        }
 
         // === Menu bar — QMainWindow provides menuBar() for free ===
         // (No more shoehorning a QMenuBar into a QDialog layout.)
@@ -571,12 +590,10 @@ void MainDialogPrivate::Setup(MainDialog* main_dialog) {
 
         m_label_settings_file->setText(tr("Settings file: ") + m_config_list->GetSettingsFile());
 
-        main_dialog->restoreGeometry(g_last_geometry);
         main_dialog->setWindowTitle(QStringLiteral("AbdoPS5"));
-        // Sensible default size on first launch; user-resized geometry is
-        // restored from QSettings on subsequent launches.
-        if (g_last_geometry.isEmpty()) {
-                main_dialog->resize(1280, 820);
+        main_dialog->resize(1280, 820);
+        if (!g_last_geometry.isEmpty()) {
+                main_dialog->restoreGeometry(g_last_geometry);
         }
 
         Update();
