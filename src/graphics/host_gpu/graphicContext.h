@@ -114,9 +114,12 @@ private:
 };
 
 struct VulkanImageState {
-	vk::PipelineStageFlags2 pl_stage    = vk::PipelineStageFlagBits2::eAllCommands;
-	vk::AccessFlags2        access_mask = vk::AccessFlagBits2::eNone;
-	vk::ImageLayout         layout      = vk::ImageLayout::eUndefined;
+	vk::PipelineStageFlags2 pl_stage        = vk::PipelineStageFlagBits2::eAllCommands;
+	vk::AccessFlags2        access_mask      = vk::AccessFlagBits2::eNone;
+	vk::ImageLayout         layout           = vk::ImageLayout::eUndefined;
+	vk::ImageLayout         stencil_layout   = vk::ImageLayout::eUndefined;
+	vk::AccessFlags2        stencil_access   = vk::AccessFlagBits2::eNone;
+	vk::PipelineStageFlags2 stencil_pl_stage = vk::PipelineStageFlagBits2::eAllCommands;
 };
 
 struct VulkanImage {

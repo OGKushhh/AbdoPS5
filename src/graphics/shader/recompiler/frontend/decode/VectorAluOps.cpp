@@ -250,6 +250,24 @@ constexpr VopcOpcodeInfo VOPC_OPCODE_LIST[] = {
     {0xd6u, Opcode::V_CMPX_GE_U32},        {0xe1u, Opcode::V_CMP_LT_U64, false},
     {0xe2u, Opcode::V_CMP_EQ_U64, false},  {0xe4u, Opcode::V_CMP_GT_U64, false},
     {0xe5u, Opcode::V_CMP_NE_U64, false},
+    // V_CMP_*_I64 (0xA0-0xA7) — Kyty-001
+    {0xa0u, Opcode::V_CMP_F_I64, false},  {0xa1u, Opcode::V_CMP_LT_I64, false},
+    {0xa3u, Opcode::V_CMP_LE_I64, false}, {0xa4u, Opcode::V_CMP_GT_I64, false},
+    {0xa5u, Opcode::V_CMP_NE_I64, false}, {0xa6u, Opcode::V_CMP_GE_I64, false},
+    {0xa7u, Opcode::V_CMP_T_I64, false},
+    // V_CMPX_*_I64 (0xB0-0xB7) — Kyty-001
+    {0xb0u, Opcode::V_CMPX_F_I64, false},  {0xb1u, Opcode::V_CMPX_LT_I64, false},
+    {0xb2u, Opcode::V_CMPX_EQ_I64, false}, {0xb3u, Opcode::V_CMPX_LE_I64, false},
+    {0xb4u, Opcode::V_CMPX_GT_I64, false}, {0xb6u, Opcode::V_CMPX_GE_I64, false},
+    {0xb7u, Opcode::V_CMPX_T_I64, false},
+    // V_CMP_*_U64 (0xE0-0xE7) — Kyty-001
+    {0xe0u, Opcode::V_CMP_F_U64, false},  {0xe3u, Opcode::V_CMP_LE_U64, false},
+    {0xe6u, Opcode::V_CMP_GE_U64, false}, {0xe7u, Opcode::V_CMP_T_U64, false},
+    // V_CMPX_*_U64 (0xF0-0xF7) — Kyty-001
+    {0xf0u, Opcode::V_CMPX_F_U64, false},  {0xf1u, Opcode::V_CMPX_LT_U64, false},
+    {0xf2u, Opcode::V_CMPX_EQ_U64, false}, {0xf3u, Opcode::V_CMPX_LE_U64, false},
+    {0xf4u, Opcode::V_CMPX_GT_U64, false}, {0xf6u, Opcode::V_CMPX_GE_U64, false},
+    {0xf7u, Opcode::V_CMPX_T_U64, false},
     {0xf5u, Opcode::V_CMPX_NE_U64, false}, {0xc9u, Opcode::V_CMP_LT_F16},
     {0xcau, Opcode::V_CMP_EQ_F16},         {0xcbu, Opcode::V_CMP_LE_F16},
     {0xccu, Opcode::V_CMP_GT_F16},         {0xcdu, Opcode::V_CMP_LG_F16},
