@@ -238,6 +238,10 @@ static void VulkanFindPhysicalDevice(vk::Instance instance, vk::SurfaceKHR surfa
 #endif
 		}
 #if !defined(__APPLE__)
+		if (device_features2.features.depthClamp != VK_TRUE) {
+			LOGF("depthClamp is not supported\n");
+			skip_device = true;
+		}
 		if (fragment_barycentric.fragmentShaderBarycentric != VK_TRUE) {
 			LOGF("fragmentShaderBarycentric is not supported\n");
 			skip_device = true;
@@ -560,8 +564,10 @@ static vk::Device VulkanCreateDevice(GraphicContext& graphics,
 	vk::PhysicalDeviceVulkan11Properties properties11 {};
 	properties11.pNext = &subgroup_size_control;
 
+	vk::PhysicalDeviceFloatControlsProperties float_controls {};
+	float_controls.pNext = &properties11;
 	vk::PhysicalDeviceProperties2 properties2 {};
-	properties2.pNext = &properties11;
+	properties2.pNext = &float_controls;
 
 	if (graphics.mesh_shader_enabled) {
 		subgroup_size_control.pNext = &graphics.mesh_shader_properties;
@@ -607,6 +613,7 @@ static vk::Device VulkanCreateDevice(GraphicContext& graphics,
 	device_features.robustBufferAccess       = VK_TRUE;
 #if !defined(__APPLE__)
 	device_features.depthBounds = VK_TRUE; // unsupported by MoltenVK
+	device_features.depthClamp  = VK_TRUE;
 #endif
 	device_features.shaderStorageImageWriteWithoutFormat = VK_TRUE;
 	device_features.shaderImageGatherExtended            = VK_TRUE;
@@ -623,6 +630,15 @@ static vk::Device VulkanCreateDevice(GraphicContext& graphics,
 	device_features.vertexPipelineStoresAndAtomics       = VK_TRUE;
 	graphics.sample_rate_shading_enabled                 = true;
 	device_features.shaderInt64 = VK_TRUE;
+	device_features.shaderFloat64 =
+	    supported_features2.features.shaderFloat64 &&
+	    float_controls.shaderSignedZeroInfNanPreserveFloat64 &&
+	    float_controls.shaderRoundingModeRTEFloat32;
+	// if (device_features.shaderFloat64 && !float_controls.shaderDenormPreserveFloat64) {
+	// 	Log::WriteToConsoleAndLog(
+	// 	    "WARNING: Vulkan device does not guarantee FP64 denormal preservation; "
+	// 	    "continuing with native FP64 arithmetic. Very small values may be flushed to zero.\n");
+	// }
 
 	vk::PhysicalDeviceRobustness2FeaturesEXT robustness2 {};
 #if defined(__APPLE__)

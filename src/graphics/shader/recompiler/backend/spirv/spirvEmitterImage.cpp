@@ -784,11 +784,11 @@ void EmitImage(ValueEmitContext& ctx, const IR::Inst& inst) {
 		                         ? &state.program.descriptor_sources[image.source]
 		                         : nullptr;
 		if (handle == nullptr || source == nullptr || !source->indirect_image.has_value() ||
-		    source->indirect_image->key_arg >= handle->NumArgs()) {
+		    handle->NumArgs() == 0u) {
 			ctx.Fail(inst, "has invalid indirect image key provenance");
 			return;
 		}
-		const auto key = ctx.Def(handle->Arg(source->indirect_image->key_arg));
+		const auto key = ctx.Def(handle->Arg(0));
 		if (state.flattened_srt_variable == 0 || image.indirect_search_iterations == 0u ||
 		    image.indirect_resources.size() < 2u) {
 			ctx.Fail(inst, "has no indirect image runtime mapping");
@@ -877,7 +877,7 @@ void EmitImage(ValueEmitContext& ctx, const IR::Inst& inst) {
 		return;
 	}
 	const auto atomic_opcode = ImageAtomicOpcode(op);
-	if (atomic_opcode != spv::OpNop) {
+	if (image_info.access == IR::ImageAccess::Atomic) {
 		const auto dimension = image.dimension;
 		ctx.Define(inst, EmitValueOrZeroIfCondition(state, ctx.Arg(inst, 3), [&]() {
 			           const auto pointer      = state.builder.AllocateId();
@@ -887,6 +887,15 @@ void EmitImage(ValueEmitContext& ctx, const IR::Inst& inst) {
 			                                     StorageImageDescriptorPointer(state, mem.resource),
 			                                     CoordU32(ctx, mem, *address, dimension),
 			                                     ConstantU32(state, 0));
+			           if (op == IR::ValueOpcode::ImageAtomicFMin32 ||
+			               op == IR::ValueOpcode::ImageAtomicFMax32) {
+				           return AtomicUpdate(state, pointer, IR::ResourceKind::Image,
+				                               [&](uint32_t old) {
+					                               return EmitFloatAtomicReplacement(
+					                                   state, old, ctx.Arg(inst, 2),
+					                                   op == IR::ValueOpcode::ImageAtomicFMax32);
+				                               });
+			           }
 			           const auto old = state.builder.AllocateId();
 			           state.builder.AddFunction(atomic_opcode, TypeU32(state), old, pointer,
 			                                     ConstantU32(state, spv::ScopeDevice),
