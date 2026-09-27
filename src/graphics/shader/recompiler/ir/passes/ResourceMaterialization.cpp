@@ -2,6 +2,7 @@
 
 #include "common/assert.h"
 #include "graphics/guest_gpu/gpu_format.h"
+#include "graphics/shader/recompiler/BufferFormat.h"
 #include "graphics/shader/recompiler/ir/ShaderIR.h"
 #include "graphics/shader/shaderBindings.h"
 
@@ -400,6 +401,9 @@ struct ImageRemap {
 	template <typename T>
 	void Apply(std::vector<T>& images) const {
 		EXIT_IF(images.size() != source_count);
+		if (count == source_count) {
+			return;
+		}
 		for (uint32_t index = 0; index < source_count; index++) {
 			if (indices[index] != UINT32_MAX && indices[index] != index) {
 				images[indices[index]] = std::move(images[index]);
@@ -446,6 +450,7 @@ static bool BuildResourceSpecialization(const ResourcePlan& program, ResourceSna
 		                             : Prospero::BufferFormat::kInvalid,
 		    .descriptor_swizzle =
 		        program.info.buffers[i].formatted ? descriptor.DstSelXYZW() : DstSel(4, 5, 6, 7),
+		    .zero_stride_oob = descriptor.OutOfBounds() == 0u && stride == 0u,
 		});
 	}
 	for (uint32_t i = 0; i < specialization.images.size(); i++) {
@@ -485,7 +490,8 @@ static bool BuildResourceSpecialization(const ResourcePlan& program, ResourceSna
 		image.cube      = DescriptorIsCube(descriptor);
 		const auto format =
 		    static_cast<Prospero::BufferFormat>((descriptor.dwords[1] >> 20u) & 0x1ffu);
-		if (base.atomic && format != Prospero::BufferFormat::k32UInt) {
+		if (base.atomic && format != Prospero::BufferFormat::k32UInt &&
+		    format != Prospero::BufferFormat::k32Float) {
 			return SpecializationFail(
 			    fmt::format("atomic image descriptor {} uses unsupported format {}", i,
 			                static_cast<uint32_t>(format)));
@@ -514,7 +520,7 @@ static bool BuildResourceSpecialization(const ResourcePlan& program, ResourceSna
 				    fmt::format("storage image descriptor {} uses unsupported format {}", i,
 				                static_cast<uint32_t>(format)));
 			}
-			if (raw_sint_storage) {
+			if (raw_sint_storage || base.atomic) {
 				image.numeric_class = Prospero::TextureNumericClass::Uint;
 			}
 		} else if (image.numeric_class == Prospero::TextureNumericClass::Unsupported ||
@@ -1001,10 +1007,10 @@ bool MaterializeResources(const ResourcePlan& program, const SrtRuntime& runtime
 		}
 	}
 	snapshot.images.resize(program.info.images.size());
-	specialization.images.clear();
-	specialization.images.reserve(program.info.images.size());
-	for (const auto& image: program.info.images) {
-		specialization.images.push_back({
+	specialization.images.resize(program.info.images.size());
+	for (uint32_t i = 0; i < program.info.images.size(); ++i) {
+		const auto& image = program.info.images[i];
+		specialization.images[i] = {
 		    .numeric_class = image.numeric_class,
 		    .dimension = image.dimension,
 		    .mip_count = image.mip_count,
@@ -1014,10 +1020,7 @@ bool MaterializeResources(const ResourcePlan& program, const SrtRuntime& runtime
 		    .indirect_mapping_offset = image.indirect_mapping_offset,
 		    .indirect_search_iterations = image.indirect_search_iterations,
 		    .cube = image.cube,
-		});
-	}
-	for (uint32_t i = 0; i < program.info.images.size(); ++i) {
-		const auto& image = program.info.images[i];
+		};
 		const auto* source = Source(program, image.source);
 		if (source == nullptr) {
 			return false;
@@ -1129,6 +1132,49 @@ void ApplyResourceSpecialization(Program& program, const ResourceSpecialization&
 	for (auto* block: program.blocks) {
 		for (auto it = block->begin(); it != block->end(); ++it) {
 			auto& inst = *it;
+			if (BufferAccessOf(inst.GetOpcode()) == BufferAccess::Read) {
+				const auto& memory = memory_info[inst.Flags<MemoryFlags>().index];
+				if (memory.kind == ResourceKind::Buffer &&
+				    specialization.buffers[memory.resource].zero_stride_oob) {
+					// Bounds mode 0 checks offset >= stride, so zero stride
+					// makes every vector read out of bounds regardless of its address.
+					const auto count = BufferComponentCount(inst.GetOpcode());
+					std::array<Value, 4> values {Value(0u), Value(0u), Value(0u), Value(0u)};
+					if (memory.formatted && !memory.typed) {
+						const auto& buffer = buffers[memory.resource];
+						const auto format = Format::GetFormatInfo(buffer.descriptor_format);
+						for (uint32_t component = 0; component < count; component++) {
+							if (format.type == Format::ComponentType::Unknown ||
+							    GetDstSel(buffer.descriptor_swizzle, component) != 1u) continue;
+							const auto one = Format::FormattedConstantBits(
+							    format, Format::FormattedSourceKind::One);
+							values[component] = Value(&*block->PrependNewInst(
+							    it, ValueOpcode::SelectU32,
+							    {inst.Arg(inst.NumArgs() - 1), Value(one), Value(0u)}));
+						}
+					}
+					Value result = values[0];
+					switch (inst.GetType()) {
+						case Type::U8: result = Value(uint8_t {0}); break;
+						case Type::U16: result = Value(uint16_t {0}); break;
+						case Type::U32x2:
+							result = Value(&*block->PrependNewInst(it, ValueOpcode::CompositeConstructU32x2,
+							                                      {values[0], values[1]}));
+							break;
+						case Type::U32x3:
+							result = Value(&*block->PrependNewInst(it, ValueOpcode::CompositeConstructU32x3,
+							                                      {values[0], values[1], values[2]}));
+							break;
+						case Type::U32x4:
+							result = Value(&*block->PrependNewInst(it, ValueOpcode::CompositeConstructU32x4,
+							                                      {values[0], values[1], values[2], values[3]}));
+							break;
+						default: break;
+					}
+					inst.ReplaceUsesWith(result);
+				}
+				continue;
+			}
 			const auto image_opcode = ImageOpcodeInfoOf(inst.GetOpcode());
 			if (image_opcode.access == ImageAccess::None) {
 				continue;

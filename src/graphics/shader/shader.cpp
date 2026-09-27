@@ -409,16 +409,6 @@ static void ShaderApplyAttribSemantics(ShaderVertexInputInfo& info,
 		uint32_t offset      = (attrib[in.semantic] >> 14u) & 0xfffu;
 		uint32_t fetch_index = (attrib[in.semantic] >> 26u) & 0x1u;
 
-		if (fetch_index != 0) {
-			static std::atomic<uint64_t> log_count = 0;
-			auto                         log_id    = log_count.fetch_add(1);
-			if (log_id < 64) {
-				LOGF("\t temporary: PS5 vertex attrib semantic %u uses fetch index %u, buffer "
-				     "index %zu\n",
-				     static_cast<uint32_t>(in.semantic), fetch_index, index);
-			}
-		}
-
 		EXIT_NOT_IMPLEMENTED(index >= ShaderVertexInputInfo::RES_MAX);
 
 		const auto* sharp = &buffer[index * 4];
@@ -439,14 +429,6 @@ static void ShaderApplyAttribSemantics(ShaderVertexInputInfo& info,
 			const auto                   format_raw    = static_cast<uint32_t>(format);
 			const auto                   buffer_format = format_raw >> 2u;
 			const auto                   channels      = (format_raw & 3u) + 1u;
-			static std::atomic<uint64_t> log_count      = 0;
-			auto                         log_id         = log_count.fetch_add(1);
-			if (log_id < 64) {
-				LOGF("\t PS5 vertex attrib semantic %u uses attrib format %u -> buffer "
-				     "format %u, offset %u, buffer index %zu\n",
-				     static_cast<uint32_t>(in.semantic), static_cast<uint32_t>(format),
-				     static_cast<uint32_t>(buffer_format), offset, index);
-			}
 			// AGC vertex formats encode the buffer format above the two channel-count bits.
 			// The fetch prolog selects X001, XY01, XYZ1, or XYZW from that count.
 			r.fields[3] = (r.fields[3] & ~((0x7fu << 12u) | 0xfffu)) |
@@ -640,6 +622,7 @@ static void ShaderGetStaticInputInfoCS(const HW::ComputeShaderInfo& regs,
 	info.threads_num[2]                   = regs.cs_regs.num_thread_z;
 	info.lds_size_dwords                  = static_cast<uint32_t>(regs.cs_regs.lds_size) * 128u;
 	info.scratch_size_dwords              = data.scratch_size_dwords;
+	info.float_mode                       = regs.cs_regs.float_mode;
 	info.group_id[0]                      = regs.cs_regs.tgid_x_en != 0;
 	info.group_id[1]                      = regs.cs_regs.tgid_y_en != 0;
 	info.group_id[2]                      = regs.cs_regs.tgid_z_en != 0;
@@ -745,7 +728,7 @@ void BuildStageStaticKey(const ShaderPixelInputInfo& info, std::vector<uint32_t>
 void BuildStageStaticKey(const ShaderComputeInputInfo& info, std::vector<uint32_t>& key) {
 	key.clear();
 	key.push_back(info.workgroup_register);
-	key.push_back(info.wave_size);
+	key.push_back(info.wave_size | (static_cast<uint32_t>(info.float_mode) << 8u));
 	key.push_back(info.host_subgroup_size);
 	key.push_back(info.thread_ids_num);
 	key.push_back(info.lds_size_dwords);

@@ -87,6 +87,9 @@ constexpr OpcodeMap VOP1_OPCODE_LIST[] = {
     {0x00u, Opcode::V_NOP},
     {0x01u, Opcode::V_MOV_B32},
     {0x02u, Opcode::V_READFIRSTLANE_B32},
+    {0x04u, Opcode::V_CVT_F64_I32},
+    {0x0fu, Opcode::V_CVT_F32_F64},
+    {0x2fu, Opcode::V_RCP_F64},
     {0x05u, Opcode::V_CVT_F32_I32},
     {0x06u, Opcode::V_CVT_F32_U32},
     {0x07u, Opcode::V_CVT_U32_F32},
@@ -146,6 +149,9 @@ constexpr OpcodeMap VOP3_ENCODED_VOP1_OPCODE_LIST[] = {
     {0x00u, Opcode::V_NOP},
     {0x01u, Opcode::V_MOV_B32},
     {0x02u, Opcode::V_READFIRSTLANE_B32},
+    {0x04u, Opcode::V_CVT_F64_I32},
+    {0x0fu, Opcode::V_CVT_F32_F64},
+    {0x2fu, Opcode::V_RCP_F64},
     {0x05u, Opcode::V_CVT_F32_I32},
     {0x06u, Opcode::V_CVT_F32_U32},
     {0x07u, Opcode::V_CVT_U32_F32},
@@ -214,6 +220,7 @@ constexpr VopcOpcodeInfo VOPC_OPCODE_LIST[] = {
     {0x11u, Opcode::V_CMPX_LT_F32},        {0x12u, Opcode::V_CMPX_EQ_F32},
     {0x13u, Opcode::V_CMPX_LE_F32},        {0x14u, Opcode::V_CMPX_GT_F32},
     {0x15u, Opcode::V_CMPX_LG_F32},        {0x16u, Opcode::V_CMPX_GE_F32},
+    {0x17u, Opcode::V_CMPX_O_F32},
     {0x19u, Opcode::V_CMPX_NGE_F32},       {0x1au, Opcode::V_CMPX_NLG_F32},
     {0x1bu, Opcode::V_CMPX_NGT_F32},       {0x1cu, Opcode::V_CMPX_NLE_F32},
     {0x1du, Opcode::V_CMPX_NEQ_F32},       {0x1eu, Opcode::V_CMPX_NLT_F32},
@@ -236,32 +243,14 @@ constexpr VopcOpcodeInfo VOPC_OPCODE_LIST[] = {
     {0xc1u, Opcode::V_CMP_LT_U32},         {0xc2u, Opcode::V_CMP_EQ_U32},
     {0xc3u, Opcode::V_CMP_LE_U32},         {0xc4u, Opcode::V_CMP_GT_U32},
     {0xc5u, Opcode::V_CMP_NE_U32},         {0xc6u, Opcode::V_CMP_GE_U32},
-    {0xc7u, Opcode::V_CMP_T_U32},
-    // Kyty-001: Complete V_CMP_*_{U,I}64 decoder table entries.
-    // V_CMP_*_I64 (0xA0-0xA7)
-    {0xa0u, Opcode::V_CMP_F_I64, false},  {0xa1u, Opcode::V_CMP_LT_I64, false},
-    {0xa2u, Opcode::V_CMP_EQ_I64, false}, {0xa3u, Opcode::V_CMP_LE_I64, false},
-    {0xa4u, Opcode::V_CMP_GT_I64, false}, {0xa5u, Opcode::V_CMP_NE_I64, false},
-    {0xa6u, Opcode::V_CMP_GE_I64, false}, {0xa7u, Opcode::V_CMP_T_I64, false},
-    // V_CMPX_*_I64 (0xB0-0xB7)
-    {0xb0u, Opcode::V_CMPX_F_I64, false},  {0xb1u, Opcode::V_CMPX_LT_I64, false},
-    {0xb2u, Opcode::V_CMPX_EQ_I64, false}, {0xb3u, Opcode::V_CMPX_LE_I64, false},
-    {0xb4u, Opcode::V_CMPX_GT_I64, false}, {0xb5u, Opcode::V_CMPX_NE_I64, false},
-    {0xb6u, Opcode::V_CMPX_GE_I64, false}, {0xb7u, Opcode::V_CMPX_T_I64, false},
-    // V_CMP_*_U64 (0xE0-0xE7)
-    {0xe0u, Opcode::V_CMP_F_U64, false},  {0xe1u, Opcode::V_CMP_LT_U64, false},
-    {0xe2u, Opcode::V_CMP_EQ_U64, false}, {0xe3u, Opcode::V_CMP_LE_U64, false},
-    {0xe4u, Opcode::V_CMP_GT_U64, false}, {0xe5u, Opcode::V_CMP_NE_U64, false},
-    {0xe6u, Opcode::V_CMP_GE_U64, false}, {0xe7u, Opcode::V_CMP_T_U64, false},
-    // V_CMPX_*_U64 (0xF0-0xF7)
-    {0xf0u, Opcode::V_CMPX_F_U64, false},  {0xf1u, Opcode::V_CMPX_LT_U64, false},
-    {0xf2u, Opcode::V_CMPX_EQ_U64, false}, {0xf3u, Opcode::V_CMPX_LE_U64, false},
-    {0xf4u, Opcode::V_CMPX_GT_U64, false}, {0xf5u, Opcode::V_CMPX_NE_U64, false},
-    {0xf6u, Opcode::V_CMPX_GE_U64, false}, {0xf7u, Opcode::V_CMPX_T_U64, false},
-    {0xd1u, Opcode::V_CMPX_LT_U32},        {0xd2u, Opcode::V_CMPX_EQ_U32},
-    {0xd3u, Opcode::V_CMPX_LE_U32},        {0xd4u, Opcode::V_CMPX_GT_U32},
-    {0xd5u, Opcode::V_CMPX_NE_U32},        {0xd6u, Opcode::V_CMPX_GE_U32},
-    {0xc9u, Opcode::V_CMP_LT_F16},
+    {0xc7u, Opcode::V_CMP_T_U32},          {0xa2u, Opcode::V_CMP_EQ_I64, false},
+    {0xb5u, Opcode::V_CMPX_NE_I64, false}, {0xd1u, Opcode::V_CMPX_LT_U32},
+    {0xd2u, Opcode::V_CMPX_EQ_U32},        {0xd3u, Opcode::V_CMPX_LE_U32},
+    {0xd4u, Opcode::V_CMPX_GT_U32},        {0xd5u, Opcode::V_CMPX_NE_U32},
+    {0xd6u, Opcode::V_CMPX_GE_U32},        {0xe1u, Opcode::V_CMP_LT_U64, false},
+    {0xe2u, Opcode::V_CMP_EQ_U64, false},  {0xe4u, Opcode::V_CMP_GT_U64, false},
+    {0xe5u, Opcode::V_CMP_NE_U64, false},
+    {0xf5u, Opcode::V_CMPX_NE_U64, false}, {0xc9u, Opcode::V_CMP_LT_F16},
     {0xcau, Opcode::V_CMP_EQ_F16},         {0xcbu, Opcode::V_CMP_LE_F16},
     {0xccu, Opcode::V_CMP_GT_F16},         {0xcdu, Opcode::V_CMP_LG_F16},
     {0xceu, Opcode::V_CMP_GE_F16},         {0xebu, Opcode::V_CMP_NGT_F16},
@@ -284,6 +273,8 @@ constexpr OpcodeMap VOP3_OPCODE_LIST[] = {
     {0x146u, Opcode::V_CUBETC_F32},
     {0x147u, Opcode::V_CUBEMA_F32},
     {0x14bu, Opcode::V_FMA_F32},
+    {0x14cu, Opcode::V_FMA_F64},
+    {0x165u, Opcode::V_MUL_F64},
     {0x148u, Opcode::V_BFE_U32},
     {0x149u, Opcode::V_BFE_I32},
     {0x14au, Opcode::V_BFI_B32},
@@ -469,6 +460,8 @@ bool IsVopcCompareExec(Opcode opcode);
 
 bool IsVop1FloatSourceOpcode(Opcode opcode) {
 	switch (opcode) {
+		case Opcode::V_CVT_F32_F64:
+		case Opcode::V_RCP_F64:
 		case Opcode::V_MOV_B32:
 		case Opcode::V_CVT_F32_F16:
 		case Opcode::V_CVT_U32_F32:
@@ -539,9 +532,12 @@ constexpr Vop1SdwaRule VOP1_SDWA_RULES[] = {
     {Opcode::V_CVT_F32_U32, SdwaSelBytes() | SdwaSelWords() | SdwaSelFull(), 0, 0, false},
     {Opcode::V_CVT_F32_I32, SdwaSelBytes() | SdwaSelWords() | SdwaSelFull(), 0, 0, false},
     {Opcode::V_CVT_F32_UBYTE0, SdwaSelBytes() | SdwaSelWords() | SdwaSelFull(), 0, 0, false},
+    // The source field extract and the destination insert are independent (Translate.cpp), so a
+    // partial destination may combine with any source selector.
     {Opcode::V_NOT_B32, SdwaSelBytes() | SdwaSelWords() | SdwaSelFull(), SdwaSelBytes() | SdwaSelWords(),
-     SdwaSelFull(), false},
+     SdwaSelBytes() | SdwaSelWords() | SdwaSelFull(), false},
     {Opcode::V_FFBL_B32, SdwaSelBytes() | SdwaSelWords() | SdwaSelFull(), 0, 0, false},
+    {Opcode::V_FFBH_U32, SdwaSelBytes() | SdwaSelWords() | SdwaSelFull(), 0, 0, false},
     {Opcode::V_CVT_F32_F16, SdwaSelWords() | SdwaSelFull(), 0, 0, true},
     {Opcode::V_CVT_F16_F32, SdwaSelBytes() | SdwaSelWords() | SdwaSelFull(), SdwaSelWords(),
      SdwaSelBytes() | SdwaSelWords() | SdwaSelFull(), true},
@@ -614,7 +610,7 @@ bool IsVop1SdwaSourceSupported(Opcode opcode, uint32_t src_sel, bool src_neg, bo
 }
 
 bool IsVop1SdwaDestinationSupported(Opcode opcode, uint32_t dst_sel, uint32_t dst_u,
-				    uint32_t src_sel) {
+                                    uint32_t src_sel) {
 	if (dst_sel == 6u) {
 		return IsValidFullSdwaDestinationUnused(dst_u);
 	}
@@ -656,7 +652,7 @@ bool ValidateVop1Sdwa(Instruction& inst, uint32_t opcode, uint32_t modifier) {
 	}
 	if (!IsVop1SdwaDestinationSupported(inst.opcode, dst_sel, dst_u, src0_sel)) {
 		SetUnsupported(inst, Family::VOP1, opcode,
-			       "VOP1 SDWA destination selector is not supported");
+		               "VOP1 SDWA destination selector is not supported");
 		return false;
 	}
 	if (!IsVop1SdwaSourceSupported(inst.opcode, src0_sel, src0_neg != 0u, src0_abs != 0u) ||
@@ -668,7 +664,7 @@ bool ValidateVop1Sdwa(Instruction& inst, uint32_t opcode, uint32_t modifier) {
 }
 
 void DecodeVop1Sdwa(uint32_t pc, std::span<const uint32_t> code, uint32_t word_index,
-		    uint32_t opcode, uint32_t vdst, Instruction& inst) {
+                    uint32_t opcode, uint32_t vdst, Instruction& inst) {
 	const auto modifier  = code[word_index + 1u];
 	const auto src0      = modifier & 0xffu;
 	const auto dst_sel   = (modifier >> 8u) & 0x7u;
@@ -723,7 +719,12 @@ void ApplyDppModifier(Operand& operand, uint32_t modifier, uint32_t encoding) {
 }
 
 void DecodeVop1Dpp(uint32_t pc, std::span<const uint32_t> code, uint32_t word_index,
-		   uint32_t opcode, uint32_t vdst, Instruction& inst) {
+                   uint32_t opcode, uint32_t vdst, Instruction& inst) {
+	if (inst.opcode == Opcode::V_CVT_F64_I32 || inst.opcode == Opcode::V_CVT_F32_F64 ||
+	    inst.opcode == Opcode::V_RCP_F64) {
+		SetUnsupported(inst, Family::VOP1, opcode, "FP64 instructions do not support DPP");
+		return;
+	}
 	const auto modifier = code[word_index + 1u];
 	const auto src0     = modifier & 0xffu;
 	SetRawWords(inst, code, word_index, 2);
@@ -740,7 +741,7 @@ void DecodeVop1Dpp(uint32_t pc, std::span<const uint32_t> code, uint32_t word_in
 
 	if (!IsVop1FloatSourceOpcode(inst.opcode) && (inst.src0.negate || inst.src0.absolute)) {
 		SetUnsupported(inst, Family::VOP1, opcode,
-			       "VOP1 DPP integer source modifiers are not supported");
+		               "VOP1 DPP integer source modifiers are not supported");
 		return;
 	}
 	ReadLiteralOperands(code, word_index, inst);
@@ -773,6 +774,7 @@ bool IsVop2FloatOpcode(Opcode opcode) {
 
 bool IsVop1FloatResultOpcode(Opcode opcode) {
 	switch (opcode) {
+		case Opcode::V_CVT_F32_F64:
 		case Opcode::V_CVT_F32_I32:
 		case Opcode::V_CVT_F32_U32:
 		case Opcode::V_CVT_F32_F16:
@@ -838,6 +840,7 @@ bool IsVopcFloatCompareOpcode(Opcode opcode) {
 		case Opcode::V_CMPX_GT_F32:
 		case Opcode::V_CMPX_LG_F32:
 		case Opcode::V_CMPX_GE_F32:
+		case Opcode::V_CMPX_O_F32:
 		case Opcode::V_CMPX_NGE_F32:
 		case Opcode::V_CMPX_NLG_F32:
 		case Opcode::V_CMPX_NGT_F32:
@@ -930,7 +933,7 @@ constexpr Vop2SdwaRule VOP2_SDWA_RULES[] = {
     {SdwaSelWords() | SdwaSelFull(), SdwaSelAll(), SdwaSelAll(), true, false},
 };
 static_assert(sizeof(VOP2_SDWA_RULES) / sizeof(VOP2_SDWA_RULES[0]) ==
-	      static_cast<size_t>(Vop2SdwaProfile::Count));
+              static_cast<size_t>(Vop2SdwaProfile::Count));
 
 const Vop2SdwaRule* FindVop2SdwaRule(uint32_t encoding) {
 	const auto* info = Detail::FindOpcode(VOP2_OPS, encoding);
@@ -969,7 +972,7 @@ bool ValidateVop2Sdwa(Instruction& inst, uint32_t opcode, const Vop2SdwaFields& 
 		    (fields.src0_neg != 0u || fields.src0_abs != 0u || fields.src1_neg != 0u ||
 		     fields.src1_abs != 0u)) {
 			SetUnsupported(inst, Family::VOP2, opcode,
-				       "VOP2 SDWA source modifiers are not supported");
+			               "VOP2 SDWA source modifiers are not supported");
 			return false;
 		}
 		return true;
@@ -978,12 +981,12 @@ bool ValidateVop2Sdwa(Instruction& inst, uint32_t opcode, const Vop2SdwaFields& 
 	const auto* rule = FindVop2SdwaRule(opcode);
 	if (rule == nullptr) {
 		SetUnsupported(inst, Family::VOP2, opcode,
-			       "VOP2 SDWA modifier is not supported for opcode");
+		               "VOP2 SDWA modifier is not supported for opcode");
 		return false;
 	}
 	if (!IsVop2SdwaDestinationSupported(*rule, fields)) {
 		SetUnsupported(inst, Family::VOP2, opcode,
-			       "VOP2 SDWA destination selector is not supported");
+		               "VOP2 SDWA destination selector is not supported");
 		return false;
 	}
 	if (!HasSdwaSelector(rule->src0_selectors, fields.src0_sel) ||
@@ -992,7 +995,7 @@ bool ValidateVop2Sdwa(Instruction& inst, uint32_t opcode, const Vop2SdwaFields& 
 		return false;
 	}
 	const bool has_source_modifiers = (fields.src0_neg != 0u || fields.src0_abs != 0u ||
-					   fields.src1_neg != 0u || fields.src1_abs != 0u);
+	                                   fields.src1_neg != 0u || fields.src1_abs != 0u);
 	const bool cndmask_float_modifiers =
 	    inst.opcode == Opcode::V_CNDMASK_B32 && fields.src0_sel == 6u && fields.src1_sel == 6u;
 	if (!rule->source_modifiers && has_source_modifiers && !cndmask_float_modifiers) {
@@ -1003,7 +1006,7 @@ bool ValidateVop2Sdwa(Instruction& inst, uint32_t opcode, const Vop2SdwaFields& 
 }
 
 void FinalizeVop2Instruction(std::span<const uint32_t> code, uint32_t word_index,
-			     Instruction& inst) {
+                             Instruction& inst) {
 	switch (inst.opcode) {
 		case Opcode::V_MADMK_F32:
 		case Opcode::V_FMAMK_F16:
@@ -1038,7 +1041,7 @@ void FinalizeVop2Instruction(std::span<const uint32_t> code, uint32_t word_index
 }
 
 void DecodeVop2Sdwa(uint32_t pc, std::span<const uint32_t> code, uint32_t word_index,
-		    uint32_t opcode, uint32_t vdst, uint32_t vsrc1, Instruction& inst) {
+                    uint32_t opcode, uint32_t vdst, uint32_t vsrc1, Instruction& inst) {
 	const auto modifier = code[word_index + 1u];
 	const auto fields   = DecodeVop2SdwaFields(modifier);
 	SetRawWords(inst, code, word_index, 2);
@@ -1066,7 +1069,7 @@ void DecodeVop2Sdwa(uint32_t pc, std::span<const uint32_t> code, uint32_t word_i
 }
 
 void DecodeVop2Dpp(uint32_t pc, std::span<const uint32_t> code, uint32_t word_index,
-		   uint32_t opcode, uint32_t vdst, uint32_t vsrc1, Instruction& inst) {
+                   uint32_t opcode, uint32_t vdst, uint32_t vsrc1, Instruction& inst) {
 	const auto modifier = code[word_index + 1u];
 	const auto src0     = modifier & 0xffu;
 	SetRawWords(inst, code, word_index, 2);
@@ -1086,7 +1089,7 @@ void DecodeVop2Dpp(uint32_t pc, std::span<const uint32_t> code, uint32_t word_in
 	if (!IsVop2FloatOpcode(inst.opcode) && !packed_fmac &&
 	    (inst.src0.negate || inst.src0.absolute || inst.src1.negate || inst.src1.absolute)) {
 		SetUnsupported(inst, Family::VOP2, opcode,
-			       "VOP2 DPP integer source modifiers are not supported");
+		               "VOP2 DPP integer source modifiers are not supported");
 		return;
 	}
 	FinalizeVop2Instruction(code, word_index, inst);
@@ -1131,7 +1134,7 @@ bool SupportsVopcSdwa(Opcode opcode) {
 }
 
 void DecodeVopcSdwa(uint32_t pc, std::span<const uint32_t> code, uint32_t word_index,
-		    uint32_t opcode, uint32_t vsrc1, Instruction& inst) {
+                    uint32_t opcode, uint32_t vsrc1, Instruction& inst) {
 	const auto modifier = code[word_index + 1u];
 	const auto fields   = DecodeVopcSdwaFields(modifier);
 	SetRawWords(inst, code, word_index, 2);
@@ -1141,7 +1144,7 @@ void DecodeVopcSdwa(uint32_t pc, std::span<const uint32_t> code, uint32_t word_i
 	}
 	if (!SupportsVopcSdwa(inst.opcode)) {
 		SetUnsupported(inst, Family::VOPC, opcode,
-			       "VOPC SDWA modifier is not supported for opcode");
+		               "VOPC SDWA modifier is not supported for opcode");
 		return;
 	}
 
@@ -1167,7 +1170,7 @@ void DecodeVopcSdwa(uint32_t pc, std::span<const uint32_t> code, uint32_t word_i
 }
 
 void DecodeVopcDpp(uint32_t pc, std::span<const uint32_t> code, uint32_t word_index,
-		   uint32_t opcode, uint32_t vsrc1, Instruction& inst) {
+                   uint32_t opcode, uint32_t vsrc1, Instruction& inst) {
 	const auto modifier = code[word_index + 1u];
 	const auto src0     = modifier & 0xffu;
 	SetRawWords(inst, code, word_index, 2);
@@ -1192,6 +1195,7 @@ void DecodeVopcDpp(uint32_t pc, std::span<const uint32_t> code, uint32_t word_in
 
 uint32_t NativeVop3SourceCount(Opcode opcode) {
 	switch (opcode) {
+		case Opcode::V_MUL_F64:
 		case Opcode::V_MUL_LO_U32:
 		case Opcode::V_MUL_HI_U32:
 		case Opcode::V_MUL_LO_I32:
@@ -1267,7 +1271,7 @@ bool IsMadMixF16(Opcode opcode) {
 }
 
 void ApplyVop3pSourceModifiers(Instruction& inst, uint32_t op_sel, uint32_t op_sel_hi, uint32_t neg,
-			       uint32_t neg_hi) {
+                               uint32_t neg_hi) {
 	Operand* sources[] = {&inst.src0, &inst.src1, &inst.src2};
 	for (uint32_t i = 0; i < 3u; i++) {
 		sources[i]->op_sel    = ((op_sel >> i) & 1u) != 0;
@@ -1287,7 +1291,7 @@ void ApplyVop3pMixAbsModifiers(Instruction& inst) {
 }
 
 void ApplyNativeVop3TernaryModifiers(Instruction& inst, uint32_t op_sel, uint32_t abs,
-				     uint32_t neg) {
+                                     uint32_t neg) {
 	Operand* sources[] = {&inst.src0, &inst.src1, &inst.src2};
 	for (uint32_t i = 0; i < 3u; i++) {
 		sources[i]->op_sel    = ((op_sel >> i) & 1u) != 0;
@@ -1313,7 +1317,7 @@ void ApplyNativeVop3B16BinaryModifiers(Instruction& inst, uint32_t op_sel) {
 }
 
 void ApplyNativeVop3PackB32F16Modifiers(Instruction& inst, uint32_t op_sel, uint32_t abs,
-					uint32_t neg) {
+                                        uint32_t neg) {
 	inst.src0.op_sel   = (op_sel & 0x1u) != 0;
 	inst.src1.op_sel   = (op_sel & 0x2u) != 0;
 	inst.src0.negate   = (neg & 0x1u) != 0;
@@ -1342,6 +1346,8 @@ bool SupportsNativeVop3SourceModifiers(Opcode opcode) {
 		case Opcode::V_MAX_F32:
 		case Opcode::V_MAC_F32:
 		case Opcode::V_MAD_F32:
+		case Opcode::V_MUL_F64:
+		case Opcode::V_FMA_F64:
 		case Opcode::V_FMA_F32:
 		case Opcode::V_PACK_B32_F16:
 		case Opcode::V_CUBEID_F32:
@@ -1374,6 +1380,7 @@ bool SupportsNativeVop3ResultModifiers(Opcode opcode) {
 		case Opcode::V_MAD_F32:
 		case Opcode::V_FMA_F32:
 		case Opcode::V_FMA_F16:
+		case Opcode::V_CUBEID_F32:
 		case Opcode::V_CVT_PKRTZ_F16_F32:
 		case Opcode::V_LDEXP_F32:
 		case Opcode::V_MIN3_F32:
@@ -1389,9 +1396,9 @@ bool SupportsNativeVop3Clamp(Opcode opcode) {
 }
 
 bool HasUnsupportedNativeVop3Modifiers(Opcode opcode, bool permlane, bool mad_mix,
-				       bool carry_in_out, bool scalar_dst, uint32_t abs,
-				       uint32_t op_sel, uint32_t clamp, uint32_t omod,
-				       uint32_t neg) {
+                                       bool carry_in_out, bool scalar_dst, uint32_t abs,
+                                       uint32_t op_sel, uint32_t clamp, uint32_t omod,
+                                       uint32_t neg) {
 	const bool source_modifiers = SupportsNativeVop3SourceModifiers(opcode);
 	const bool result_modifiers = SupportsNativeVop3ResultModifiers(opcode);
 	const bool clamp_modifier   = SupportsNativeVop3Clamp(opcode);
@@ -1450,6 +1457,7 @@ bool IsVopcCompareExec(Opcode opcode) {
 		case Opcode::V_CMPX_GT_F32:
 		case Opcode::V_CMPX_LG_F32:
 		case Opcode::V_CMPX_GE_F32:
+		case Opcode::V_CMPX_O_F32:
 		case Opcode::V_CMPX_NGE_F32:
 		case Opcode::V_CMPX_NLG_F32:
 		case Opcode::V_CMPX_NGT_F32:
@@ -1489,7 +1497,7 @@ bool IsVopcCompareExec(Opcode opcode) {
 } // namespace
 
 void DecodeVop2(uint32_t pc, std::span<const uint32_t> code, uint32_t word_index,
-		Instruction& inst) {
+                Instruction& inst) {
 	const uint32_t word   = code[word_index];
 	const uint32_t opcode = (word >> 25u) & 0x3fu;
 	const uint32_t vdst   = (word >> 17u) & 0xffu;
@@ -1519,7 +1527,7 @@ void DecodeVop2(uint32_t pc, std::span<const uint32_t> code, uint32_t word_index
 }
 
 void DecodeVop1(uint32_t pc, std::span<const uint32_t> code, uint32_t word_index,
-		Instruction& inst) {
+                Instruction& inst) {
 	const uint32_t word   = code[word_index];
 	const uint32_t opcode = (word >> 9u) & 0xffu;
 	const uint32_t src0   = word & 0x1ffu;
@@ -1558,7 +1566,7 @@ void DecodeVop1(uint32_t pc, std::span<const uint32_t> code, uint32_t word_index
 }
 
 void DecodeVopc(uint32_t pc, std::span<const uint32_t> code, uint32_t word_index,
-		Instruction& inst) {
+                Instruction& inst) {
 	const uint32_t word   = code[word_index];
 	const uint32_t opcode = (word >> 17u) & 0xffu;
 	const uint32_t src0   = word & 0x1ffu;
@@ -1587,7 +1595,7 @@ void DecodeVopc(uint32_t pc, std::span<const uint32_t> code, uint32_t word_index
 }
 
 void DecodeVop3(uint32_t pc, std::span<const uint32_t> code, uint32_t word_index,
-		Instruction& inst) {
+                Instruction& inst) {
 	const uint32_t word0  = code[word_index];
 	const uint32_t word1  = code[word_index + 1u];
 	const uint32_t opcode = (word0 >> 16u) & 0x3ffu;
@@ -1609,8 +1617,8 @@ void DecodeVop3(uint32_t pc, std::span<const uint32_t> code, uint32_t word_index
 	SetRawWords(inst, code, word_index, 2);
 
 	const bool carry_in_out    = (inst.opcode == Opcode::V_ADDC_U32 && opcode == 0x128u) ||
-				     (inst.opcode == Opcode::V_SUB_CO_CI_U32 && opcode == 0x129u) ||
-				     (inst.opcode == Opcode::V_SUBREV_CO_CI_U32 && opcode == 0x12au);
+	                             (inst.opcode == Opcode::V_SUB_CO_CI_U32 && opcode == 0x129u) ||
+	                             (inst.opcode == Opcode::V_SUBREV_CO_CI_U32 && opcode == 0x12au);
 	const bool vop3b_carry_out = IsVop3BCarryOutOpcode(inst.opcode);
 	const bool vop3b_mad_u64   = IsVop3BMadU64Opcode(inst.opcode);
 	const bool vop3b_uses_sdst = carry_in_out || vop3b_carry_out || vop3b_mad_u64;
@@ -1629,7 +1637,7 @@ void DecodeVop3(uint32_t pc, std::span<const uint32_t> code, uint32_t word_index
 	const bool native_clamp_modifier   = SupportsNativeVop3Clamp(inst.opcode);
 	const bool modifiers =
 	    HasUnsupportedNativeVop3Modifiers(inst.opcode, permlane, mad_mix, vop3b_uses_sdst,
-					      scalar_modifier_limits, abs, op_sel, clamp, omod, neg);
+	                                      scalar_modifier_limits, abs, op_sel, clamp, omod, neg);
 	if (modifiers) {
 		const char* reason = "VOP3 source modifiers are not implemented";
 		if (permlane && (op_sel & ~0x3u) != 0) {
@@ -1740,7 +1748,7 @@ void DecodeVop3(uint32_t pc, std::span<const uint32_t> code, uint32_t word_index
 }
 
 void DecodeVop3p(uint32_t pc, std::span<const uint32_t> code, uint32_t word_index,
-		 Instruction& inst) {
+                 Instruction& inst) {
 	const uint32_t word0       = code[word_index];
 	const uint32_t word1       = code[word_index + 1u];
 	const uint32_t opcode      = (word0 >> 16u) & 0x7fu;
@@ -1796,7 +1804,7 @@ void DecodeVop3p(uint32_t pc, std::span<const uint32_t> code, uint32_t word_inde
 }
 
 void DecodeVintrp(uint32_t pc, std::span<const uint32_t> code, uint32_t word_index,
-		  Instruction& inst) {
+                  Instruction& inst) {
 	const uint32_t word   = code[word_index];
 	const uint32_t opcode = (word >> 16u) & 0x3u;
 	const uint32_t vdst   = (word >> 18u) & 0xffu;

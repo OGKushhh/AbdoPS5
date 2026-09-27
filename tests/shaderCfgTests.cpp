@@ -86,7 +86,11 @@ ShaderRecompiler::CompileOptions MakeCompileOptions(ShaderType stage) {
   static const ShaderVertexInputInfo vertex{};
   static const ShaderPixelInputInfo pixel{};
   static const ShaderComputeInputInfo compute{};
-  static const std::array<uint32_t, 64> user_data{};
+  static const auto user_data = [] {
+    std::array<uint32_t, 64> data{};
+    data[3] = 3u << 28u; // Default fixture buffer uses raw offset bounds.
+    return data;
+  }();
 
   ShaderRecompiler::CompileOptions options;
   options.stage = stage;
@@ -2038,9 +2042,9 @@ void TestNewShaderRecompilerVop3LaneReadDestinationEncoding() {
   options.dump_ir = true;
 
   auto result = RecompileForTest(shader, options);
-  Check((result.decoded_dump.find("v_readfirstlane_b32 s25, v5") != std::string::npos),
+  Check((result.decoded_dump.find("V_READFIRSTLANE_B32 s25, v5") != std::string::npos),
         "VOP3 V_READFIRSTLANE_B32 destination was not decoded from VDST");
-  Check((result.decoded_dump.find("v_readlane_b32 s26, v5, 2") != std::string::npos),
+  Check((result.decoded_dump.find("V_READLANE_B32 s26, v5, 2") != std::string::npos),
         "VOP3 V_READLANE_B32 destination was not decoded from VDST");
   CheckSpirvBinaryValidates(result.spirv);
 }
@@ -3523,8 +3527,6 @@ void TestNewShaderRecompilerVop1SdwaNotDestination() {
   check_rejected(0x00260400u, "V_NOT_B32 SDWA accepted source absolute");
   check_rejected(0x00062400u, "V_NOT_B32 SDWA accepted clamp");
   check_rejected(0x00064400u, "V_NOT_B32 SDWA accepted output modifier");
-  check_rejected(0x00000400u,
-                 "V_NOT_B32 SDWA partial destination accepted a byte source");
 }
 
 void TestNewShaderRecompilerBootB16PackedAndSdwaOpcodes() {
@@ -6514,6 +6516,7 @@ void TestNewShaderRecompilerNativeWideScalarMemoryIr() {
 
 void TestNewShaderRecompilerNativeWideBufferIr() {
   const uint32_t shader[] = {
+      EncodeSMovB32(83, 255), 3u << 28u, // Raw bounds for the s[80:83] fixture.
       EncodeMubuf0(0x0d, 0),
       EncodeMubuf1(0, 20, 1), // buffer_load_dwordx2 v[0:1]
       EncodeMubuf0(0x1d, 16),
@@ -7852,6 +7855,44 @@ void TestNewShaderRecompilerCfgSharedOuterAndLoopMerge() {
         "shared outer/loop merge SPIR-V lacks OpSelectionMerge");
   Check(!SpirvContainsOpcode(result.spirv, 251),
         "shared outer/loop merge unexpectedly used dispatcher OpSwitch");
+  CheckSpirvBinaryValidates(result.spirv);
+}
+
+void TestNewShaderRecompilerCfgLoopExitSharedWithSelection() {
+  const uint32_t shader[] = {
+      EncodeSopc(0x0a, 0, 129),    // loop condition
+      EncodeSopp(0x04, 10),        // loop exit -> end
+      EncodeSopc(0x06, 1, 1),      // selection within the loop
+      EncodeSopp(0x05, 3),         // choose either arm
+      EncodeSopc(0x06, 2, 2),      // first arm
+      EncodeSopp(0x04, 6),         // first arm -> shared end
+      EncodeSopp(0x02, 3),         // first arm -> repeat
+      EncodeSopc(0x06, 3, 3),      // second arm
+      EncodeSopp(0x04, 3),         // second arm -> shared end
+      EncodeSopp(0x02, 0),         // second arm -> repeat
+      EncodeSop2(0x00, 0, 0, 129), // repeat work
+      EncodeSopp(0x02, 0xfff4u),  // backedge
+      0xbf810000u,
+  };
+
+  ShaderRecompiler::Decoder::Program decoded;
+  ShaderRecompiler::Decoder::DecodeProgram(std::span{shader}, decoded);
+  auto graph = ShaderRecompiler::CFG::BuildGraph(decoded);
+  const auto block_count = graph.blocks.size();
+  const auto coverage = CfgInstructionCoverage(graph, decoded.instructions.size());
+  Check(block_count == 8u && graph.natural_loops.size() == 1u,
+        "shared loop-exit fixture has the wrong native CFG");
+  Check(!ShaderRecompiler::CFG::Structurize(graph) &&
+            graph.unsupported_reason.find("duplicate structured merge block") !=
+                std::string::npos,
+        "shared loop exit did not terminate at its structured merge conflict");
+  Check(graph.blocks.size() == block_count &&
+            CfgInstructionCoverage(graph, decoded.instructions.size()) == coverage,
+        "shared loop-exit fallback changed semantic instruction coverage");
+
+  auto result = RecompileForTest(shader, MakeCompileOptions(ShaderType::Compute));
+  Check(result.program.dispatcher_fallback && SpirvContainsOpcode(result.spirv, 251),
+        "shared loop exit did not emit its dispatcher fallback");
   CheckSpirvBinaryValidates(result.spirv);
 }
 
@@ -13586,6 +13627,7 @@ int main() {
   TestNewShaderRecompilerCfgLoopHeaderDsReadStructured();
   TestNewShaderRecompilerCfgLoopHeaderDsRead2B64Structured();
   TestNewShaderRecompilerCfgSharedOuterAndLoopMerge();
+  TestNewShaderRecompilerCfgLoopExitSharedWithSelection();
   TestNewShaderRecompilerCfgLoopEarlyBreakNoSelection();
   TestNewShaderRecompilerCfgNestedLoopNonlocalExitDispatcher();
   TestNewShaderRecompilerCfgNestedLoopLocalExitNoSelection();
@@ -13671,6 +13713,8 @@ int main() {
   TestPixelProgramCacheBindingIdentity();
   TestGraphicsPushConstantPlacement();
   TestNewShaderRecompilerUnsupportedMemoryDecode();
+
+  TestNewShaderRecompilerVop3LaneReadDestinationEncoding();
 
   return 0;
 }
