@@ -244,6 +244,7 @@ void TextureCache::RegisterImage(ImageId id) {
 	});
 	image.registered = true;
 	image.lru_id     = m_lru_cache.Insert(id, m_gc_tick);
+	image.lru_tick   = m_gc_tick;
 	m_total_used_memory += image.AccountedSize();
 	// Kyty-034: mirror the registration into the alias registry so
 	// render-target caches can answer overlap queries in O(log N).
@@ -328,7 +329,9 @@ void TextureCache::FreeImage(ImageId id) {
 }
 
 void TextureCache::TouchImage(Image& image) {
-	if (image.registered) {
+	// Draws touch the same images many times per GC tick: the LRU holds this tick already.
+	if (image.registered && image.lru_tick != m_gc_tick) {
+		image.lru_tick = m_gc_tick;
 		m_lru_cache.Touch(image.lru_id, m_gc_tick);
 	}
 }
