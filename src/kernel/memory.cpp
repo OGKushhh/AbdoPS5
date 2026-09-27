@@ -169,6 +169,10 @@ static bool VirtualRangesOverlap(uint64_t left_start, uint64_t left_size, uint64
 static uint32_t g_test_backing_store_unmaps_before_failure = UINT32_MAX;
 #endif
 
+// GuestBackingStore::TryReadCached. The fork gates this behind KYTY_DEBUG_AB=backing;
+// our tree carries no A/B tooling, so the cache is always on.
+static bool BackingReadCacheEnabled() noexcept { return true; }
+
 #include "memoryAddressSpace.inc"
 
 enum class VirtualRangeType {
