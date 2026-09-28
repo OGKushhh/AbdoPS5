@@ -5,6 +5,8 @@
 #include <algorithm>
 #include <array>
 #include <bit>
+#include <cstdlib>
+#include <cstring>
 #include <unordered_map>
 #include <utility>
 
@@ -123,9 +125,31 @@ Decoder::Operand Translator::PlainOperand(const Decoder::Operand& operand) {
 	return result;
 }
 
+bool WaveHalvesInHostSubgroup(const IR::Program& program) {
+	// KYTY_DEBUG_WAVE_HALVES=0 translates as if the host subgroup matched the guest wave (A/B).
+	static const bool enabled = [] {
+		const char* text = std::getenv("KYTY_DEBUG_WAVE_HALVES");
+		return text == nullptr || std::strcmp(text, "0") != 0;
+	}();
+	return enabled && program.wave_size == 32u &&
+	       (program.stage == ShaderType::Vertex || program.stage == ShaderType::Local ||
+	        program.stage == ShaderType::TessellationEvaluation);
+}
+
+IR::U32 GuestWaveMask(IR::IREmitter& ir, const IR::Program& program, const IR::Value& ballot) {
+	const auto low = ir.CompositeExtract(ballot, 0);
+	if (!WaveHalvesInHostSubgroup(program)) {
+		return low;
+	}
+	const auto lane = IR::U32(ir.Emit(IR::ValueOpcode::LaneId));
+	return ir.Select(ir.ULessThan(lane, IR::U32(IR::Value(32u))), low,
+	                 ir.CompositeExtract(ballot, 1));
+}
+
 std::array<IR::U32, 2> Translator::BallotMask(IR::U1 value) {
 	const auto mask = ir.Emit(IR::ValueOpcode::Ballot, {value});
-	return {ir.CompositeExtract(mask, 0),
+	return {program.wave_size == 64u ? ir.CompositeExtract(mask, 0)
+	                                 : GuestWaveMask(ir, program, mask),
 	        program.wave_size == 64u ? ir.CompositeExtract(mask, 1) : IR::U32(IR::Value(0u))};
 }
 
@@ -1076,7 +1100,9 @@ IR::Program TranslateProgram(const Decoder::Program& decoded, const CFG::Graph& 
 		}
 		entry_ir.SetExec(initial_exec);
 		const auto initial_mask = entry_ir.Emit(IR::ValueOpcode::Ballot, {initial_exec});
-		entry_ir.SetExecLo(entry_ir.CompositeExtract(initial_mask, 0));
+		entry_ir.SetExecLo(options.wave_size == 64u
+		                       ? entry_ir.CompositeExtract(initial_mask, 0)
+		                       : GuestWaveMask(entry_ir, result, initial_mask));
 		entry_ir.SetExecHi(options.wave_size == 64u ? entry_ir.CompositeExtract(initial_mask, 1)
 		                                            : IR::U32(IR::Value(0u)));
 		if (options.stage == ShaderType::Compute) {
@@ -1279,10 +1305,25 @@ IR::Program TranslateProgram(const Decoder::Program& decoded, const CFG::Graph& 
 		} else if (options.stage == ShaderType::Vertex) {
 			// Vulkan owns primitive assembly; each vertex subgroup is one NGG wave.
 			// Keep its full lane extent: mbcnt(-1) uses lane ordinals, not active counts.
-			entry_ir.SetScalarReg(static_cast<IR::ScalarReg>(2),
-			                      IR::U32(IR::Value(options.wave_size << 12u)));
-			entry_ir.SetScalarReg(static_cast<IR::ScalarReg>(3),
-			                      IR::U32(IR::Value((1u << 28u) | options.wave_size)));
+			if (WaveHalvesInHostSubgroup(result)) {
+				// A 64-lane host subgroup holds two guest waves: one NGG subgroup of 64
+				// vertices, whose upper-half lanes are wave 1 (MERGED_WAVE_INFO bits 24-27), so
+				// thread ids (wave * 32 + mbcnt) stay distinct and within the vertex count.
+				const auto lane = IR::U32(entry_ir.Emit(IR::ValueOpcode::LaneId));
+				const auto wave = entry_ir.ShiftRightLogical(lane, IR::U32(IR::Value(5u)));
+				entry_ir.SetScalarReg(static_cast<IR::ScalarReg>(2),
+				                      IR::U32(IR::Value((2u * options.wave_size) << 12u)));
+				entry_ir.SetScalarReg(
+				    static_cast<IR::ScalarReg>(3),
+				    entry_ir.BitwiseOr(
+				        IR::U32(IR::Value((2u << 28u) | options.wave_size)),
+				        entry_ir.ShiftLeftLogical(wave, IR::U32(IR::Value(24u)))));
+			} else {
+				entry_ir.SetScalarReg(static_cast<IR::ScalarReg>(2),
+				                      IR::U32(IR::Value(options.wave_size << 12u)));
+				entry_ir.SetScalarReg(static_cast<IR::ScalarReg>(3),
+				                      IR::U32(IR::Value((1u << 28u) | options.wave_size)));
+			}
 			entry_ir.SetVectorReg(static_cast<IR::VectorReg>(5),
 			                      builtin(IR::StageInputKind::VertexIndex));
 			entry_ir.SetVectorReg(static_cast<IR::VectorReg>(8),
