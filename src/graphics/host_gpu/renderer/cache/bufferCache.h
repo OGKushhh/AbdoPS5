@@ -11,6 +11,8 @@
 #include "graphics/host_gpu/renderer/cache/multiLevelPageTable.h"
 #include "graphics/host_gpu/renderer/cache/streamBuffer.h"
 
+#include <array>
+#include <chrono>
 #include <map>
 #include <span>
 #include <utility>
@@ -140,6 +142,14 @@ private:
 	uint64_t m_trigger_gc_memory  = 1ull * 1024 * 1024 * 1024;
 	uint64_t m_critical_gc_memory = 2ull * 1024 * 1024 * 1024;
 	uint64_t m_gc_tick            = 0;
+	// ObtainBufferForImage's staged uploads, by range, with the time of the latest.
+	struct ImageStage {
+		uint64_t                              vaddr = 0;
+		uint64_t                              size  = 0;
+		std::chrono::steady_clock::time_point time {};
+	};
+	std::array<ImageStage, 256> m_image_stages {};
+	[[nodiscard]] bool          IsRepeatedImageStage(uint64_t vaddr, uint64_t size);
 };
 
 } // namespace Libs::Graphics
