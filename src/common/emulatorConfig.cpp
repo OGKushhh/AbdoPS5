@@ -169,6 +169,10 @@ bool PlayGoHackEnabled() {
         return g_config->playgo_hack_enabled;
 }
 
+bool NoIpcEnabled() {
+	return g_config->no_ipc;
+}
+
 bool VulkanRelaxRequirements() {
         return g_config->vulkan_relax_requirements;
 }

@@ -78,7 +78,7 @@ struct ConfigOptions {
         // Kyty additions
         std::string             audio_backend              = "sdl";
         uint32_t                storage_bandwidth_mbps    = 0;
-        int                     memory_compression_level  = 0;
+        int32_t               memory_compression_level  = 0;
         bool                    pm4_dump_enabled          = false;
         std::filesystem::path  pm4_dump_path             = "_Pm4Dump.txt";
         bool                    vulkan_relax_requirements  = false;
@@ -112,6 +112,15 @@ bool                  CommandBufferDumpEnabled();
 std::filesystem::path GetCommandBufferDumpFolder();
 
 bool GraphicsDebugDumpEnabled();
+
+// Kyty additions
+const std::string&      GetAudioBackend();
+uint32_t                GetStorageBandwidthMbps();
+int32_t                 GetMemoryCompressionLevel();
+bool                    Pm4DumpEnabled();
+std::filesystem::path   GetPm4DumpPath();
+bool                    VulkanRelaxRequirements();
+bool                    NoIpcEnabled();
 
 LogDirection          GetPrintfDirection();
 std::filesystem::path GetPrintfOutputFile();
