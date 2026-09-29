@@ -59,6 +59,10 @@ int32_t GetMemoryCompressionLevel() { // Kyty-010
         return g_config->memory_compression_level;
 }
 
+const std::optional<ControllerColor>& GetControllerColor() {
+	return g_config->controller_color;
+}
+
 PresentMode GetPresentMode() {
         return g_config->present_mode;
 }
