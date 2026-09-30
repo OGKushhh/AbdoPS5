@@ -727,7 +727,9 @@ private:
 	                            uint64_t size);
 	static void AddFreeRange(std::map<uint64_t, uint64_t>& ranges, uint64_t start, uint64_t size);
 	void        ReclaimAutomatic(uint64_t start, uint64_t size);
+public:
 	void        MarkAutomaticRanges(const PhysicalRanges& ranges);
+private:
 
 	std::map<uint64_t, AllocatedBlock> m_physical;
 	std::map<uint64_t, uint64_t>       m_free;
