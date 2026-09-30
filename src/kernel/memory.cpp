@@ -727,6 +727,7 @@ private:
 	                            uint64_t size);
 	static void AddFreeRange(std::map<uint64_t, uint64_t>& ranges, uint64_t start, uint64_t size);
 	void        ReclaimAutomatic(uint64_t start, uint64_t size);
+	void        MarkAutomaticRanges(const PhysicalRanges& ranges);
 
 	std::map<uint64_t, AllocatedBlock> m_physical;
 	std::map<uint64_t, uint64_t>       m_free;
@@ -1283,6 +1284,22 @@ void PhysicalMemory::ReclaimAutomatic(uint64_t start, uint64_t size) {
 			const auto last  = std::min(end, mapping.start_addr + mapping.size);
 			if (first < last) {
 				RemoveFreeRange(m_automatic_free, first, last - first);
+			}
+		}
+	}
+}
+
+void PhysicalMemory::MarkAutomaticRanges(const PhysicalRanges& ranges) {
+	Common::LockGuard lock(m_mutex);
+	for (const auto& [start, size] : ranges) {
+		const auto end = start + size;
+		auto it = m_physical.upper_bound(start);
+		if (it != m_physical.begin()) {
+			--it;
+		}
+		for (; it != m_physical.end() && it->first < end; ++it) {
+			if (it->second.kind == AllocationKind::Direct) {
+				it->second.kind = AllocationKind::Automatic;
 			}
 		}
 	}
@@ -3195,6 +3212,7 @@ int MapAutomaticMemory(uint64_t vaddr, size_t size, int type, int prot) {
 		}
 		mapped += length;
 	}
+	g_physical_memory->MarkAutomaticRanges(ranges);
 	return OK;
 }
 
