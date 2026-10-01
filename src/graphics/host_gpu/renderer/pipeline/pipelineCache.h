@@ -21,6 +21,7 @@ struct GraphicContext;
 struct RenderColorInfo;
 struct RenderDepthInfo;
 class CommandBuffer;
+class AsyncPipelineCompiler;
 
 namespace HW {
 class Context;
@@ -180,6 +181,7 @@ private:
 	std::unordered_map<GraphicsPipelineKey, std::unique_ptr<Pipeline>, GraphicsPipelineKeyHash>
 	                                                        m_graphics_pipelines;
 	std::unordered_map<uint64_t, std::unique_ptr<Pipeline>> m_compute_pipelines;
+	std::unique_ptr<AsyncPipelineCompiler>                   m_async;
 
 	void InitializeDriverCache();
 };

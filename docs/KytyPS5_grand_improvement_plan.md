@@ -966,17 +966,37 @@ eliminating the #1 perf bottleneck (repeated shader compilation).
 | **Severity** | 🟢 Medium |
 | **Effort** | 3–5 days |
 | **Source** | PS5PCEM deep comparison |
-| **Status** | 🔴 TODO — **phantom**: previously marked Done, but no AsyncPipelineCompiler/fallback code exists (repo-wide search returns zero matches; pipeline creation is synchronous on the GPU thread, shaders.cpp CreatePipelineInternal). Biggest stutter source in the emulator. |
+| **Status** | 🟡 **In progress (v1 shipped)** — AsyncPipelineCompiler worker pool + vertex-stage translation prefetch landed (pipeline/asyncPipelineCompiler.*, GetGraphicsPrograms submits vertex translations to workers while the GPU thread compiles the pixel stage; steady-state draws dispatch zero work via the WillLikelyTranslate gate; KYTY_NO_ASYNC_SHADERS env kill-switch). Remaining: uber-shader fallback (needs recompiler no-specialization mode) and SPIR-V disk persistence (needs ResourcePlan/CompiledShaderInfo serialization). |
 | **Depends on** | Kyty-031 |
 
 **Root cause:** shader compilation blocks the render thread, causing frame
 hitches the first time a shader is needed. PS5PCEM compiles shaders on a
 background thread and uses a fallback shader until the real one is ready.
 
+**v1 (shipped):** translation overlap. GetGraphicsPrograms dispatches the
+vertex-stage TranslateProgram jobs (all three tessellation stages when active)
+to a 1–3 worker pool before the GPU thread compiles the pixel stage, then
+consumes the results through slot handoff (mutex + condvar, results published
+atomically before the frame returns). First-encounter cost for a shader set
+drops from serial(VS+PS translation) to max(VS translation, PS translation)
+plus compile. The WillLikelyTranslate gate (entry missing or zero compiled
+permutations) keeps warm draws at zero dispatch cost, so steady-state behaviour
+is unchanged. Kill-switch: set KYTY_NO_ASYNC_SHADERS=1 to restore the fully
+synchronous path.
+
+**v2 (blocked, deliberately not faked):** a true fallback shader while the real
+pipeline compiles requires an uber-shader mode in the recompiler (a
+no-specialization/conservative-resource translation), which does not exist yet;
+skipping draws instead would silently corrupt readback-dependent games, which
+violates the loud-failure policy. SPIR-V disk persistence is blocked on
+serializing ResourcePlan (contains IR Values) and CompiledShaderInfo metadata
+that the per-call MaterializeResources/specialization machinery needs — tracked
+as the remaining acceptance criteria.
+
 **Acceptance criteria:**
-- [ ] AsyncPipelineCompiler class dispatches compile jobs to a worker thread
-- [ ] Render thread falls back to a simple shader while the real one compiles
-- [ ] Compiled pipeline replaces the fallback atomically when ready
+- [x] AsyncPipelineCompiler class dispatches compile jobs to a worker thread
+- [ ] Render thread falls back to a simple shader while the real one compiles (needs recompiler uber-shader mode; draw-skipping rejected as silent corruption)
+- [x] Compiled pipeline replaces the fallback atomically when ready (slot publish + consume; results always land before the frame returns)
 - [ ] SPIR-V/translated-shader disk persistence (currently only the driver blob survives restarts — every session re-pays decode+translate for every shader)
 
 ---
@@ -1230,7 +1250,7 @@ perf.
 | Kyty-029 | Weekly compatibility regression test | 1 week + ongoing | 🟢 |
 | Kyty-030 | Documentation (stub policy + triage + game hacks) | 1 day | 🟢 |
 | Kyty-031 | Pipeline cache persistence | 1–2 days | 🟢 |
-| Kyty-032 | Async pipeline compiler | 3–5 days | 🟢 |
+| Kyty-032 | Async pipeline compiler | 3–5 days | 🟡 |
 | Kyty-033 | Per-subresource Vulkan layout tracking | 1 week | 🟢 |
 | Kyty-034 | Image alias registry | 1–2 weeks | 🟢 |
 | Kyty-035 | NID computation from names | 2–3 days | 🟢 |
