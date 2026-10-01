@@ -1648,29 +1648,34 @@ but missed the linker layer).
 |---|---|
 | **Severity** | 🟠 High (correctness + perf, already proven upstream of us) |
 | **Effort** | 2–4 weeks of porting, verify each |
-| **Status** | 🟡 4/13 cherry-picked (264b4b72, 45a974e3, c8063762, 97fd1eed) |
+| **Status** | ✅ 14/17 ported (last: a50f4647) — CI green |
 
 The BryanKAdams fork (same project lineage, GPL-2 — cherry-picking is
 license-clean with git attribution) carries a deep GPU-side program.
 Landed clean: V_READFIRSTLANE/V_READLANE uniform marking, write-mask
 colour-attachment binding (Astro Bot Sky Garden grass), LRU touch dedup,
-lock-free ClampRangeSize. Remaining port backlog (conflicts with our
-tree; port adapted, credit in messages):
+lock-free ClampRangeSize. Second porting round (2026-10-01, adapted, fork
+tooling stripped, credit in messages): wave32 vertex in 64-lane host
+subgroups (a35dc0f0, with the 7-dword record + draw(6) slicing from their
+f79a100d), unlaunched lanes (0f60ed2e), fp32 classification/denormal
+flush/sin-cos (0e52d645), shader-write barrier deferral = Kyty-043
+(03fffcc9), image-range staging buffer (cfacf575), dynamic-state/pipeline
+bind skip = Kyty-044 (86b8846c), mesh draws from GPU arguments with
+workgroup slicing (69246155 + 5c8b2a2d, meshDispatch.h taken from their
+f79a100d), indexed indirect args on the GPU (a50f4647), two-texel box
+downscale filter (40b489d4), lock-free guest backing reads (0e9f5816).
+Remaining port backlog:
 
 - Pipeline libraries + look-ahead command-stream walk (their 07aed98c,
-  b6d2d91b, 0bffe78e, 75e4f6fc) — completes our Kyty-032 v1/v2 into v3
-- 08c3b6c0 defer shader-write barrier of buffer-writing draws — Kyty-043
-- 4ba45f97 skip dynamic state/pipeline binds a draw repeats — Kyty-044
-- 8f02ad19 wave32 vertex shaders in 64-lane host subgroups (correctness)
-- 067e8826 read unlaunched lanes as highest launched lane (correctness)
-- 5e224812 shorter exact fp32 classification, denormal flush, sin/cos
-- 2e8eae14 repeatedly re-uploaded image ranges get a staging buffer
-- d8449bd8 GPU-written indexed indirect args drawn on the GPU (Astro
-  Bot crash site; saves 8.5–9.6 ms/frame there)
-- 6b00e833 two-texel box filter for 1–2x downscales (presentation)
-- 492a5feb lock-free guest backing reads through last mapping
-- f0c5b371 keep render targets while registers unchanged
-- KYTY_DEBUG_* tooling suite + shader journals (methodology value)
+  b6d2d91b, 0bffe78e, 75e4f6fc) — completes our Kyty-032 v1/v2 into v3;
+  their mesh-pipeline-library churn (757b95b5/dc0365c8/c422cad7) needs
+  untangling first
+- f0c5b371 keep render targets while registers unchanged — needs the
+  fork's FindImage memo line (fad08c090 + bebdd590) which builds on their
+  dccClearResolver textureCache, divergent from our Kyty-034/037 registry;
+  a full manual adaptation of the memo onto our architecture is required
+- KYTY_DEBUG_* tooling suite + shader journals (methodology value; the
+  self-contained env toggles ride along with the ports above)
 
 Their WIP-marked commits (speculation, draw bisect) were excluded — the
 fork also merges upstream at older points than our 4479808 tip.
