@@ -966,7 +966,7 @@ eliminating the #1 perf bottleneck (repeated shader compilation).
 | **Severity** | 🟢 Medium |
 | **Effort** | 3–5 days |
 | **Source** | PS5PCEM deep comparison |
-| **Status** | 🟡 **In progress (v1 shipped)** — AsyncPipelineCompiler worker pool + vertex-stage translation prefetch landed (pipeline/asyncPipelineCompiler.*, GetGraphicsPrograms submits vertex translations to workers while the GPU thread compiles the pixel stage; steady-state draws dispatch zero work via the WillLikelyTranslate gate; KYTY_NO_ASYNC_SHADERS env kill-switch). Remaining: uber-shader fallback (needs recompiler no-specialization mode) and SPIR-V disk persistence (needs ResourcePlan/CompiledShaderInfo serialization). |
+| **Status** | 🟡 **In progress (v2 shipped)** — v1: AsyncPipelineCompiler worker pool + vertex-stage translation prefetch (pipeline/asyncPipelineCompiler.*, KYTY_NO_ASYNC_SHADERS kill-switch). v2: SPIR-V disk persistence (pipeline/shaderDiskCache.*, `_PipelineCache/<title>.shadercache`): full ResourcePlan IR-graph + per-permutation SPIR-V/CompiledShaderInfo/specialization serialization, merge-on-save keeps untouched entries, bounds-checked untrusted parsing (fails closed to retranslation), KYTY_NO_SHADER_CACHE kill-switch; WillLikelyTranslate consults the disk index so prefetched slots never leak. Remaining: uber-shader fallback (needs recompiler no-specialization mode). |
 | **Depends on** | Kyty-031 |
 
 **Root cause:** shader compilation blocks the render thread, causing frame
@@ -984,20 +984,31 @@ permutations) keeps warm draws at zero dispatch cost, so steady-state behaviour
 is unchanged. Kill-switch: set KYTY_NO_ASYNC_SHADERS=1 to restore the fully
 synchronous path.
 
-**v2 (blocked, deliberately not faked):** a true fallback shader while the real
+**v2 (shipped — disk persistence):** the ResourcePlan IR subgraph (the part
+shadPS4 never needs to persist, since PS4 descriptor models do not require
+per-draw re-evaluation) is now serialized: instruction storage with
+opcode/flags/args, instruction references as indexes, immediate Values
+bit-exact, plus memory/descriptor/control-flow/SRT/fill metadata and the flat
+ShaderInfo/BindingLayout/ResourceSpecialization of every permutation together
+with its SPIR-V. On a warm boot Get() restores plan + modules (direct
+createShaderModule with result checks — no fatal exits on bad data) and skips
+decode+translate+emit entirely when a stored permutation matches; any mismatch
+or malformed entry fails closed to the ordinary retranslate path. Saves happen
+at the existing driver-cache save point; merge-on-save preserves entries the
+session never touched. Kill-switch: KYTY_NO_SHADER_CACHE.
+
+**v3 (blocked, deliberately not faked):** a true fallback shader while the real
 pipeline compiles requires an uber-shader mode in the recompiler (a
 no-specialization/conservative-resource translation), which does not exist yet;
 skipping draws instead would silently corrupt readback-dependent games, which
-violates the loud-failure policy. SPIR-V disk persistence is blocked on
-serializing ResourcePlan (contains IR Values) and CompiledShaderInfo metadata
-that the per-call MaterializeResources/specialization machinery needs — tracked
-as the remaining acceptance criteria.
+violates the loud-failure policy.
 
 **Acceptance criteria:**
 - [x] AsyncPipelineCompiler class dispatches compile jobs to a worker thread
 - [ ] Render thread falls back to a simple shader while the real one compiles (needs recompiler uber-shader mode; draw-skipping rejected as silent corruption)
 - [x] Compiled pipeline replaces the fallback atomically when ready (slot publish + consume; results always land before the frame returns)
-- [ ] SPIR-V/translated-shader disk persistence (currently only the driver blob survives restarts — every session re-pays decode+translate for every shader)
+- [x] SPIR-V/translated-shader disk persistence (shaderDiskCache: plan IR graph + per-permutation SPIR-V; merge-on-save; second+ sessions skip decode+translate+emit; RAM cost: retained SPIR-V words per permutation — matches the file size)
+
 
 ---
 

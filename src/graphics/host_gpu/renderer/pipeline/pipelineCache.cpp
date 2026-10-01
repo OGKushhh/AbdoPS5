@@ -13,6 +13,7 @@
 #include "graphics/host_gpu/renderer/image/imageView.h"
 #include "graphics/host_gpu/renderer/pipeline/asyncPipelineCompiler.h"
 #include "graphics/host_gpu/renderer/pipeline/blendMapping.h"
+#include "graphics/host_gpu/renderer/pipeline/shaderDiskCache.h"
 #include "graphics/host_gpu/renderer/render.h"
 #include "graphics/host_gpu/renderer/renderContext.h"
 #include "graphics/shader/recompiler/ShaderRecompiler.h"
@@ -212,6 +213,7 @@ struct PipelineCache::ProgramCache {
 		ShaderRecompiler::IR::ResourceSpecialization specialization;
 		ShaderRecompiler::IR::CompiledShaderInfo     program;
 		ShaderProgram                                handle;
+		std::vector<uint32_t>                        spirv; // retained for the disk cache
 	};
 
 	struct SourceEntry {
@@ -269,6 +271,7 @@ struct PipelineCache::ProgramCache {
 		    .specialization = std::move(specialization),
 		    .program        = std::move(result.program).TakeCompiledInfo(),
 		    .handle         = {.id = ++next_shader_id, .module = module},
+		    .spirv          = std::move(result.spirv),
 		};
 	}
 
@@ -361,8 +364,18 @@ struct PipelineCache::ProgramCache {
 		peek_key.code_size       = static_cast<uint32_t>(params.code.size());
 		BuildStageStaticKey(input_info, peek_key.static_state);
 		const auto entry = programs.find(peek_key);
-		return entry == programs.end() ||
-		       (!entry->second.skip_dispatch && entry->second.permutations.empty());
+		if (entry != programs.end()) {
+			return !entry->second.skip_dispatch && entry->second.permutations.empty();
+		}
+		// A program that can be restored from the disk cache does not need a
+		// prefetched translation, and leaving one unconsumed would leak its slot.
+		if (m_disk != nullptr) {
+			ShaderDiskCache::Reader body;
+			if (m_disk->Lookup(ToDiskKey(peek_key), body)) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	// Dispatch the translation of a stage the GPU thread will consume shortly. The
@@ -436,6 +449,9 @@ struct PipelineCache::ProgramCache {
 		lookup_key.code_size       = static_cast<uint32_t>(params.code.size());
 		BuildStageStaticKey(input_info, lookup_key.static_state);
 		auto                                         entry = programs.find(lookup_key);
+		if (entry == programs.end()) {
+			entry = TryLoadProgramFromDisk(lookup_key);
+		}
 		if (entry != programs.end() && entry->second.skip_dispatch) {
 			return {};
 		}
@@ -502,9 +518,185 @@ struct PipelineCache::ProgramCache {
 		return permutation.handle;
 	}
 
+	static ShaderDiskCache::Key ToDiskKey(const ProgramKey& key) {
+		ShaderDiskCache::Key disk_key;
+		disk_key.stage           = key.stage;
+		disk_key.hash            = key.hash;
+		disk_key.user_data_count = key.user_data_count;
+		disk_key.code_size       = key.code_size;
+		disk_key.static_state    = key.static_state;
+		return disk_key;
+	}
+
+	// Restores a program (plan + compiled permutations) from the disk cache. Any
+	// malformed entry fails closed and the caller retranslates as before.
+	std::unordered_map<ProgramKey, SourceEntry, ProgramKeyHash>::iterator
+	TryLoadProgramFromDisk(const ProgramKey& key) {
+		if (m_disk == nullptr) {
+			return programs.end();
+		}
+		ShaderDiskCache::Reader body;
+		if (!m_disk->Lookup(ToDiskKey(key), body)) {
+			return programs.end();
+		}
+		auto loaded = ShaderDiskCache::ReadProgramBody(body);
+		if (!loaded) {
+			return programs.end();
+		}
+		auto entry = programs.try_emplace(key, std::move(loaded->plan)).first;
+		entry->second.skip_dispatch = loaded->skip_dispatch;
+		entry->second.permutations.reserve(loaded->permutations.size());
+		for (auto& permutation: loaded->permutations) {
+			vk::ShaderModuleCreateInfo create_info {};
+			create_info.codeSize = permutation.spirv.size() * sizeof(uint32_t);
+			create_info.pCode    = permutation.spirv.data();
+			vk::ShaderModule     module = nullptr;
+			if (device.createShaderModule(&create_info, nullptr, &module) !=
+			        vk::Result::eSuccess ||
+			    module == nullptr) {
+				continue;
+			}
+			entry->second.permutations.push_back({std::move(permutation.specialization),
+			                                    std::move(permutation.program),
+			                                    ShaderProgram {++next_shader_id, module},
+			                                    std::move(permutation.spirv)});
+		}
+		return entry;
+	}
+
+	void OpenDiskCache() {
+		const auto title_id = PipelineCacheTitleId();
+		if (title_id.empty()) {
+			return;
+		}
+		if (std::getenv("KYTY_NO_SHADER_CACHE") != nullptr) {
+			PipelineCacheLog("Shader disk cache: disabled (KYTY_NO_SHADER_CACHE)");
+			return;
+		}
+		if (KYTY_BUILD != KYTY_BUILD_RELEASE) {
+			PipelineCacheLog("Shader disk cache: disabled (non-Release build)");
+			return;
+		}
+		const std::string_view git_hash     = KYTY_GIT_HASH;
+		const std::string_view git_revision = KYTY_GIT_REVISION;
+		if (git_hash == "unknown" || git_revision == "unknown") {
+			PipelineCacheLog("Shader disk cache: disabled (unknown git revision)");
+			return;
+		}
+		if (git_hash.ends_with("-dirty")) {
+			PipelineCacheLog("Shader disk cache: disabled (dirty build)");
+			return;
+		}
+		m_disk_path      = std::filesystem::path("_PipelineCache") / (title_id + ".shadercache");
+		m_disk_signature = fmt::format("KytySC1:{}", git_revision);
+		auto disk        = std::make_unique<ShaderDiskCache::ShaderDiskIndex>();
+		if (disk->Open(m_disk_path, m_disk_signature)) {
+			PipelineCacheLog("Shader disk cache: {} entrie(s), {}", disk->Size(),
+			                 Common::PathToString(m_disk_path));
+			m_disk = std::move(disk);
+		} else {
+			// Keep path and signature so the next save rewrites a fresh file.
+			PipelineCacheLog("Shader disk cache: unusable, rebuilding ({})",
+			                 Common::PathToString(m_disk_path));
+		}
+	}
+
+	void SaveToDisk() {
+		if (m_disk_path.empty()) {
+			return;
+		}
+		struct StagedBody {
+			ShaderDiskCache::Key key;
+			std::vector<uint8_t> bytes;
+		};
+		std::vector<StagedBody> staged;
+		std::unordered_map<ShaderDiskCache::Key, size_t, ShaderDiskCache::KeyHash> staged_index;
+		if (m_disk != nullptr) {
+			m_disk->ForEach([&](const ShaderDiskCache::Key& key, std::span<const uint8_t> body) {
+				auto position = staged_index.emplace(key, staged.size());
+				if (position.second) {
+					staged.push_back({key, std::vector<uint8_t>(body.begin(), body.end())});
+				}
+			});
+		}
+		for (const auto& [key, entry]: programs) {
+			ShaderDiskCache::Writer w;
+			if (!ShaderDiskCache::WriteResourcePlan(w, entry.resource_plan)) {
+				PipelineCacheLog("Shader disk cache: program {:#018x} skipped (serialize failed)",
+				                 key.hash);
+				continue;
+			}
+			w.WriteBool(entry.skip_dispatch);
+			w.WriteU32(static_cast<uint32_t>(entry.permutations.size()));
+			for (const auto& permutation: entry.permutations) {
+				ShaderDiskCache::WriteResourceSpecialization(w, permutation.specialization);
+				ShaderDiskCache::WriteCompiledShaderInfo(w, permutation.program);
+				w.WriteWords(permutation.spirv);
+			}
+			auto disk_key = ToDiskKey(key);
+			auto position = staged_index.find(disk_key);
+			if (position != staged_index.end()) {
+				staged[position->second] = {disk_key, w.TakeData()};
+			} else {
+				staged_index.emplace(disk_key, staged.size());
+				staged.push_back({disk_key, w.TakeData()});
+			}
+		}
+
+		ShaderDiskCache::Writer file;
+		file.WriteU64(ShaderDiskCache::Magic);
+		file.WriteU32(ShaderDiskCache::FormatVersion);
+		file.WriteString(m_disk_signature);
+		file.WriteU32(static_cast<uint32_t>(staged.size()));
+		size_t cursor = 8 + 4 + 4 + m_disk_signature.size() + 4;
+		for (const auto& body: staged) {
+			cursor += 4 + 8 + 4 + 4 + 4 + 8 + 8 + body.key.static_state.size() * sizeof(uint32_t);
+		}
+		for (const auto& body: staged) {
+			file.WriteU32(static_cast<uint32_t>(body.key.stage));
+			file.WriteU64(body.key.hash);
+			file.WriteU32(body.key.user_data_count);
+			file.WriteU32(body.key.code_size);
+			file.WriteWords(body.key.static_state);
+			file.WriteU64(cursor);
+			file.WriteU64(body.bytes.size());
+			cursor += body.bytes.size();
+		}
+		for (const auto& body: staged) {
+			file.Write(body.bytes.data(), body.bytes.size());
+		}
+
+		auto tmp = m_disk_path;
+		tmp += ".tmp";
+		Common::File::CreateDirectories(m_disk_path.parent_path());
+		Common::File out(tmp);
+		if (out.IsInvalid()) {
+			PipelineCacheLog("Shader disk cache: cannot open {} for writing",
+			                 Common::PathToString(tmp));
+			return;
+		}
+		const auto& data   = file.Data();
+		constexpr size_t kMaxChunk = 256u << 20;
+		for (size_t offset = 0; offset < data.size(); offset += kMaxChunk) {
+			const auto chunk = std::min(kMaxChunk, data.size() - offset);
+			out.Write(data.data() + offset, static_cast<uint32_t>(chunk));
+		}
+		if (Common::File::IsFileExisting(m_disk_path)) {
+			Common::File::DeleteFile(m_disk_path);
+		}
+		if (!Common::File::RenameFile(tmp, m_disk_path)) {
+			PipelineCacheLog("Shader disk cache: rename to {} failed",
+			                 Common::PathToString(m_disk_path));
+			return;
+		}
+		PipelineCacheLog("Shader disk cache: saved {} program(s), {} byte(s) -> {}", staged.size(),
+		                 file.Size(), Common::PathToString(m_disk_path));
+	}
+
 	explicit ProgramCache(vk::Device device): device(device) {
 		lookup_key.static_state.reserve(MaxStaticKeyWords);
 		peek_key.static_state.reserve(MaxStaticKeyWords);
+		OpenDiskCache();
 	}
 	~ProgramCache() {
 		for (const auto& [key, entry]: programs) {
@@ -522,6 +714,9 @@ struct PipelineCache::ProgramCache {
 	std::vector<std::unique_ptr<PrefetchSlot>>                 m_prefetch_slots;
 	std::vector<PrefetchHandle>                                 m_free_prefetch_slots;
 	ProgramKey                                                  peek_key;
+	std::unique_ptr<ShaderDiskCache::ShaderDiskIndex>          m_disk;
+	std::filesystem::path                                       m_disk_path;
+	std::string                                                 m_disk_signature;
 };
 
 PipelineCache::PipelineCache(GraphicContext& graphics)
@@ -647,6 +842,8 @@ void PipelineCache::InitializeDriverCache() {
 }
 
 void PipelineCache::Save() {
+	m_program_cache->SaveToDisk();
+
 	if (m_driver_cache == nullptr) {
 		return;
 	}

@@ -53,6 +53,18 @@ public:
 
 	bool operator==(const Value& other) const;
 
+	// Raw storage access for shader disk cache serialization. RawTypeBits is
+	// the stored type tag (not the resolved semantic type); RawPayloadBits is
+	// the immediate payload. Both are meaningless for Type::Opaque refs.
+	[[nodiscard]] uint32_t RawTypeBits() const {
+		return static_cast<uint32_t>(type);
+	}
+	[[nodiscard]] uint64_t RawPayloadBits() const {
+		uint64_t bits = 0;
+		std::memcpy(&bits, &imm_u64, sizeof(bits));
+		return bits;
+	}
+
 private:
 	Type type = Type::Void;
 	union {
