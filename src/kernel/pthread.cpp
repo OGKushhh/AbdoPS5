@@ -93,7 +93,13 @@ constexpr size_t   PTHREAD_STACK_INITIAL   = 0x200000;
 constexpr size_t   PTHREAD_STACK_EXTRA     = 0x100000;
 constexpr uint64_t PTHREAD_STACK_TOP       = 0x7efff8000ull;
 constexpr uint64_t PTHREAD_STACK_BOTTOM    = 0x0000040000ull;
-constexpr uint32_t SIGNAL_APC_POLL_MICROS  = 10000;
+// Fallback poll interval for pending guest-signal dispatch while blocked
+// in kernel waits (sleep, mutex, rwlock, condvar, once). Actual delivery is
+// interrupt-driven: special user APC on Windows, host pthread_kill on Linux,
+// plus PthreadWakeForSignal notifies the thread condvar. This interval only
+// bounds worst-case fallback latency. Timed waits cap every slice by the
+// remaining deadline, so timeout exactness is unaffected.
+constexpr uint32_t SIGNAL_APC_POLL_MICROS  = 250000;
 
 static constexpr KernelClockid KERNEL_CLOCK_REALTIME          = 0;
 static constexpr KernelClockid KERNEL_CLOCK_VIRTUAL           = 1;

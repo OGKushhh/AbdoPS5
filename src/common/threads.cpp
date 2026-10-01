@@ -160,6 +160,14 @@ struct CondVarPrivate {
 
 static wait_poll_func_t g_cond_wait_poll_callback = nullptr;
 
+// Guest-signal fallback poll slice for CondVar::Wait while the kernel has
+// installed a wait poll callback. Real signal delivery is interrupt-driven
+// (special user APC on Windows, host pthread_kill on Linux), so this slice
+// only bounds the latency of the fallback dispatch and the recovery time of
+// a hypothetical missed notify. A long slice keeps blocked threads idle
+// instead of waking 100 times per second.
+constexpr uint32_t COND_WAIT_POLL_SLICE_MICROS = 250000;
+
 struct ThreadPrivate {
 	ThreadPrivate(thread_func_t f, void* a): func(f), arg(a), m_thread(&Run, this) {}
 
@@ -316,7 +324,8 @@ void CondVar::Wait(Mutex* mutex) {
 	if (g_cond_wait_poll_callback == nullptr) {
 		func(&m_cond_var->m_cv, &mutex->m_mutex->m_cs, INFINITE);
 	} else {
-		if (func(&m_cond_var->m_cv, &mutex->m_mutex->m_cs, 10) == 0 &&
+		if (func(&m_cond_var->m_cv, &mutex->m_mutex->m_cs,
+		          COND_WAIT_POLL_SLICE_MICROS / 1000) == 0 &&
 		    GetLastError() == ERROR_TIMEOUT) {
 			poll_callback();
 		}
@@ -325,7 +334,8 @@ void CondVar::Wait(Mutex* mutex) {
 	if (g_cond_wait_poll_callback == nullptr) {
 		m_cond_var->m_cv.wait(cpp_lock);
 	} else {
-		if (m_cond_var->m_cv.wait_for(cpp_lock, std::chrono::microseconds(10000)) ==
+		if (m_cond_var->m_cv.wait_for(cpp_lock, std::chrono::microseconds(
+		                                 COND_WAIT_POLL_SLICE_MICROS)) ==
 		    std::cv_status::timeout) {
 			poll_callback();
 		}

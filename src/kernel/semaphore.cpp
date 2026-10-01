@@ -22,7 +22,9 @@ namespace Libs::LibKernel::Semaphore {
 
 LIB_NAME("libkernel", "libkernel");
 
-constexpr uint32_t SIGNAL_APC_POLL_MICROS = 10000;
+// Fallback poll for pending guest signals while blocked; real delivery is
+// interrupt-driven (see common/threads.cpp COND_WAIT_POLL_SLICE_MICROS).
+constexpr uint32_t SIGNAL_APC_POLL_MICROS = 250000;
 
 class KernelSemaPrivate {
 public:
@@ -380,7 +382,9 @@ namespace {
 
 constexpr uint16_t POSIX_SEM_MAGIC        = 0x09fa;
 constexpr int      POSIX_SEM_VALUE_MAX    = 0x7fffffff;
-constexpr uint32_t SIGNAL_APC_POLL_MICROS = 10000;
+// Fallback poll for pending guest signals while blocked; real delivery is
+// interrupt-driven (see common/threads.cpp COND_WAIT_POLL_SLICE_MICROS).
+constexpr uint32_t SIGNAL_APC_POLL_MICROS = 250000;
 
 struct PosixSemGuest {
 	uint16_t          magic;

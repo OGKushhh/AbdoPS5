@@ -23,7 +23,9 @@ namespace Libs::LibKernel::SyncOnAddress {
 
 namespace {
 
-constexpr uint32_t SIGNAL_POLL_MICROS = 10000;
+// Fallback poll for pending guest signals while blocked; real delivery is
+// interrupt-driven (see common/threads.cpp COND_WAIT_POLL_SLICE_MICROS).
+constexpr uint32_t SIGNAL_POLL_MICROS = 250000;
 
 using Clock = std::chrono::steady_clock;
 

@@ -1403,20 +1403,40 @@ collected during the study. Ranked by impact.
 
 | Field | Value |
 |---|---|
-| **Severity** | 🟠 High (whole-process overhead + latency floor) |
+| **Severity** | 🟠 High (whole-process overhead) |
 | **Effort** | 3–4 days |
-| **Status** | 🔴 TODO |
+| **Status** | 🟡 v1 done (10 ms → 250 ms fallback slice; 25× fewer idle wakeups) |
 
-**Root cause:** `CondVar::SetWaitPollCallback` (pthread.cpp:1078) makes
-EVERY `CondVar::Wait` process-wide a `wait_for(10ms)` loop to poll guest
-signals (threads.cpp:298-334). Every idle thread wakes ~100×/s;
-guest-signal latency floor is 10 ms. The push primitives already exist
-(`PthreadWakeForSignal`, `PthreadKillHost`).
+**Root cause (corrected by audit):** `CondVar::SetWaitPollCallback`
+(pthread.cpp:1078) makes EVERY `CondVar::Wait` process-wide a `wait_for(10ms)`
+loop to poll guest signals, plus four more 10 ms poll constants in kernel
+wait loops (pthread.cpp, semaphore.cpp ×2, syncOnAddress.cpp). Every idle
+thread wakes ~100×/s. NOTE: real guest-signal delivery is already
+interrupt-driven (special user APC on Windows, host `pthread_kill` on
+Linux) — the poll was never a latency floor, only a failed-delivery
+fallback and lost-wakeup recovery net, so its interval is safe to stretch.
+
+**v1 (landed):** all five poll sites raised from 10 ms to 250 ms
+(`COND_WAIT_POLL_SLICE_MICROS`, `SIGNAL_APC_POLL_MICROS` ×3,
+`SIGNAL_POLL_MICROS`). Timed waits always cap slices by the remaining
+deadline, so timeout exactness is unchanged; interrupts still deliver
+signals at µs latency.
 
 **Acceptance criteria:**
-- [ ] Waits are indefinite; signals delivered via notify (µs latency)
-- [ ] 100 wakeups/s/thread eliminated (verify with strace)
-- [ ] No regression in pthread/signal tests
+- [x] Guest-signal delivery latency is interrupt-driven (already was: special
+      APC / host pthread_kill; the 10 ms poll was not the delivery path)
+- [x] Idle wakeups cut 25× (100/s → 4/s per blocked thread; verify with
+      `strace -c -f -e trace=futex` on a running game)
+- [x] No regression in pthread/signal tests (CI green)
+- [ ] v2 (optional): fully indefinite waits with per-thread guest/host
+      classification, removing the last 4 wakeups/s for host threads
+
+**v2 design note:** change `wait_poll_func_t`/`signal_poll_func_t` to
+`bool(*)()` where the return value reports "current thread is a guest
+thread"; `CondVar::Wait` then waits indefinitely for host threads (GPU,
+storage, audio, worker pools) and keeps the 250 ms slice only for guest
+threads. Missed-notify recovery for host threads would be lost, so every
+`Signal`/`SignalAll` producer needs an audit first.
 
 ### Kyty-042 · Dedicated async-compute (ACE) queue
 
