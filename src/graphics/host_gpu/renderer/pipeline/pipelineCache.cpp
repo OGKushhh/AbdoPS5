@@ -681,9 +681,10 @@ struct PipelineCache::ProgramCache {
 			const auto chunk = std::min(kMaxChunk, data.size() - offset);
 			out.Write(data.data() + offset, static_cast<uint32_t>(chunk));
 		}
-		if (Common::File::IsFileExisting(m_disk_path)) {
-			Common::File::DeleteFile(m_disk_path);
-		}
+		// std::filesystem::remove instead of Common::File::DeleteFile:
+		// Win32 headers #define DeleteFile to DeleteFileA.
+		std::error_code remove_error;
+		std::filesystem::remove(m_disk_path, remove_error);
 		if (!Common::File::RenameFile(tmp, m_disk_path)) {
 			PipelineCacheLog("Shader disk cache: rename to {} failed",
 			                 Common::PathToString(m_disk_path));
