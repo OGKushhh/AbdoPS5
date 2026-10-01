@@ -245,6 +245,13 @@ void TextureCache::RegisterImage(ImageId id) {
 	image.registered = true;
 	image.lru_id     = m_lru_cache.Insert(id, m_gc_tick);
 	m_total_used_memory += image.AccountedSize();
+	// Kyty-034: mirror the registration into the alias registry so
+	// render-target caches can answer overlap queries in O(log N).
+	// The view_class is captured from the binding's last-known usage;
+	// for newly-registered images we default to Texture (0) and let
+	// FindRenderTarget / FindDepthTarget update it on first bind.
+	m_alias_registry.Register(id, image.info.data.address, image.info.data.size,
+		                          static_cast<uint8_t>(BindingType::Texture));
 }
 
 void TextureCache::UnregisterImage(ImageId id) {
@@ -270,6 +277,9 @@ void TextureCache::UnregisterImage(ImageId id) {
 	}
 	m_total_used_memory -= accounted;
 	image.registered = false;
+	// Kyty-034: drop the alias-registry entry. No-op if the image
+	// was never registered there (e.g. null images).
+	m_alias_registry.Unregister(id);
 }
 
 void TextureCache::DeleteImage(ImageId id) {
@@ -1660,6 +1670,10 @@ void TextureCache::ClearImage(CommandBuffer& command, ImageId id, vk::Format for
 }
 
 void TextureCache::InvalidateMemory(uint64_t address, uint64_t size) {
+	// Kyty-037: drop per-page generation state for the invalidated
+	// range so future reads see kInitialGeneration (i.e. "nothing
+	// has been written here that we know of").
+	m_page_tracker.ClearRange(address, size);
 	if (!GuestRange {address, size}.Valid()) {
 		EXIT("TextureCache: invalid memory-invalidation range\n");
 	}
@@ -1868,6 +1882,9 @@ bool TextureCache::DownloadImageMemory(ImageId id) {
 }
 
 void TextureCache::InvalidateMemoryFromGPU(uint64_t address, uint64_t size) {
+	// Kyty-037: same as InvalidateMemory — clear generation state
+	// for the range so future reads see kInitialGeneration.
+	m_page_tracker.ClearRange(address, size);
 	if (!GuestRange {address, size}.Valid()) {
 		return;
 	}
@@ -1969,6 +1986,9 @@ void TextureCache::UnmapMemory(uint64_t address, uint64_t size) {
 	if (!GuestRange {address, size}.Valid()) {
 		EXIT("TextureCache: invalid unmap range\n");
 	}
+	// Kyty-037: clear generation state for the unmapped range so a
+	// reused address is not misjudged as unchanged by RefreshImage().
+	m_page_tracker.ClearRange(address, size);
 	std::scoped_lock lock {m_lock};
 	for (auto metadata = m_surface_metas.begin(); metadata != m_surface_metas.end();) {
 		const auto base = metadata->first;
