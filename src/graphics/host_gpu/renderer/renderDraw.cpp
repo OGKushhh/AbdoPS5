@@ -533,10 +533,7 @@ RenderState RenderExecutor::AcquireRenderTargets(CommandBuffer& buffer, RenderCo
 			}
 		}
 		if (feedback_aspects && !m_context.GetGraphics().attachment_feedback_loop_enabled) {
-			// Kyty-043: fall back to eGeneral instead of crashing
-			LOGF_COLOR(Log::Color::BrightYellow,
-			           "depth attachment feedback loop: extension not supported, "
-			           "falling back to eGeneral layout\n");
+			EXIT("depth attachment feedback loop is not supported by the host\n");
 		}
 		auto layout = depth_attachment_layout(depth);
 		if (sampled_aspects & ~DepthReadableAspects(layout)) {
