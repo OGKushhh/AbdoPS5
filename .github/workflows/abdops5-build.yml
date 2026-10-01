@@ -198,6 +198,17 @@ jobs:
     runs-on: ubuntu-24.04
 
     steps:
+      # Cached .debs survive job teardown; apt downloads only packages
+      # whose version changed since the cache was written. This removes
+      # the 110 MB download that a slow mirror once stretched to 32 min.
+      - name: Cache apt archives
+        uses: actions/cache@v4
+        with:
+          path: /var/cache/apt/archives
+          key: apt-archives-linux-x64-v1-${{ hashFiles('.github/workflows/abdops5-build.yml') }}
+          restore-keys: |
+            apt-archives-linux-x64-v1-
+
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
@@ -207,7 +218,7 @@ jobs:
         shell: bash
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
+          sudo apt-get install -y -o APT::Keep-Downloaded-Packages=1 \
             clang cmake ninja-build \
             libsdl2-dev libvulkan-dev libfreetype-dev \
             nlohmann-json3-dev libfmt-dev libxxhash-dev \
@@ -216,7 +227,7 @@ jobs:
             libavcodec-dev libavformat-dev libavutil-dev libswscale-dev \
             libswresample-dev libbz2-dev liblzma-dev \
             libxtst-dev libx11-dev libxext-dev libwayland-dev libxkbcommon-dev 2>&1 || \
-          sudo apt-get install -y \
+          sudo apt-get install -y -o APT::Keep-Downloaded-Packages=1 \
             clang cmake ninja-build \
             libsdl2-dev libvulkan-dev libfreetype-dev \
             nlohmann-json3-dev libfmt-dev libxxhash-dev \
