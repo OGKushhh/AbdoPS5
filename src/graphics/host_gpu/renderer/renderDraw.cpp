@@ -1145,15 +1145,13 @@ bool RenderExecutor::ReadsPendingWrites(std::span<PreparedBindings* const> stage
 	}
 	for (int i = 0; i < vertex_input.buffers_num; i++) {
 		const auto& vertex = vertex_input.buffers[i];
-		const auto  size   = VertexBufferDescriptorSize(vertex, vertex_input);
+		const auto  size   = VertexBufferDescriptorSize(i, vertex_input);
 		if (vertex.addr != 0 && size != 0 && overlaps(vertex.addr, size, false)) {
 			return true;
 		}
 	}
-	return (index_source.address != 0 && index_source.size != 0 &&
-	        overlaps(index_source.address, index_source.size, false)) ||
-	       (draw.indirect_args != 0 &&
-	        overlaps(draw.indirect_args, MeshIndirectArgs::ArgumentsSize, false));
+	return index_source.address != 0 && index_source.size != 0 &&
+	       overlaps(index_source.address, index_source.size, false);
 }
 
 // Adds the buffer ranges a draw's shaders write to the pending writes. Draws usually repeat the
