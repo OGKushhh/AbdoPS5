@@ -486,12 +486,11 @@ std::pair<Buffer*, uint64_t> BufferCache::ObtainBuffer(uint64_t vaddr, uint64_t 
 // times a second, though only ~1-6% of its bytes changed (KYTY_DEBUG_UPLOADS, 2026-09-28). From
 // the second staged upload of a range within two seconds on, a buffer holds the range instead:
 // the memory tracker then copies only the pages written since, and the image uploads from the
-// buffer. KYTY_DEBUG_AB=imagebuf stages every upload in alternate windows.
+// buffer.
 bool BufferCache::IsRepeatedImageStage(uint64_t vaddr, uint64_t size) {
 	static constexpr uint64_t MinSize = 1024 * 1024;
 	static constexpr auto     Window  = std::chrono::seconds(2);
-	static const bool         ab      = AbSelected("imagebuf");
-	if (size < MinSize || (ab && AbFeatureOff())) {
+	if (size < MinSize) {
 		return false;
 	}
 	const auto now   = std::chrono::steady_clock::now();
