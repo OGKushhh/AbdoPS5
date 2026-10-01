@@ -966,7 +966,7 @@ eliminating the #1 perf bottleneck (repeated shader compilation).
 | **Severity** | 🟢 Medium |
 | **Effort** | 3–5 days |
 | **Source** | PS5PCEM deep comparison |
-| **Status** | 🟢 Done |
+| **Status** | 🔴 TODO — **phantom**: previously marked Done, but no AsyncPipelineCompiler/fallback code exists (repo-wide search returns zero matches; pipeline creation is synchronous on the GPU thread, shaders.cpp CreatePipelineInternal). Biggest stutter source in the emulator. |
 | **Depends on** | Kyty-031 |
 
 **Root cause:** shader compilation blocks the render thread, causing frame
@@ -974,9 +974,10 @@ hitches the first time a shader is needed. PS5PCEM compiles shaders on a
 background thread and uses a fallback shader until the real one is ready.
 
 **Acceptance criteria:**
-- [x] AsyncPipelineCompiler class dispatches compile jobs to a worker thread
-- [x] Render thread falls back to a simple shader while the real one compiles
-- [x] Compiled pipeline replaces the fallback atomically when ready
+- [ ] AsyncPipelineCompiler class dispatches compile jobs to a worker thread
+- [ ] Render thread falls back to a simple shader while the real one compiles
+- [ ] Compiled pipeline replaces the fallback atomically when ready
+- [ ] SPIR-V/translated-shader disk persistence (currently only the driver blob survives restarts — every session re-pays decode+translate for every shader)
 
 ---
 
@@ -1010,7 +1011,7 @@ for layered textures.
 | **Severity** | 🟢 Medium |
 | **Effort** | 1–2 weeks |
 | **Source** | PS5PCEM deep comparison |
-| **Status** | 🟢 Done |
+| **Status** | 🟢 Done (wiring restored in ace334f after merge 94c6c28 lost the Register/Unregister call sites; crash: MarkGpuWritten → NotifyGpuWrite EXIT) |
 | **Depends on** | Kyty-033 |
 
 **Root cause:** the TextureCache answers "which images alias this guest
@@ -1079,7 +1080,7 @@ block the main build artifact (the ZIP).
 | **Severity** | 🟢 Medium |
 | **Effort** | 1 week |
 | **Source** | PS5PCEM deep comparison |
-| **Status** | 🟢 Done |
+| **Status** | 🟢 Done (wiring restored in ace334f; ClearRange now also called from InvalidateMemory/FromGPU/UnmapMemory so reused addresses are not misjudged by RefreshImage's generation early-exit) |
 | **Depends on** | Kyty-018 (fault buffer), Kyty-034 (alias registry) |
 
 **Root cause:** the existing fault-buffer processing (Kyty-018) answers
@@ -1368,6 +1369,225 @@ ls data/nids.csv tools/nids_tool.cpp
 ls src/loader/pkg.cpp src/loader/crypto.cpp
 # Expected: both files exist
 ```
+
+
+---
+
+## Phase 7 — 2026-10-01 Deep-Dive Roadmap (5-subsystem study)
+
+Findings from a full study of CPU/kernel, GPU command path, shader
+recompiler, memory subsystem and HLE libs. Each issue cites the evidence
+collected during the study. Ranked by impact.
+
+### Kyty-041 · Push-based guest signal delivery (kill the 10 ms poll tax)
+
+| Field | Value |
+|---|---|
+| **Severity** | 🟠 High (whole-process overhead + latency floor) |
+| **Effort** | 3–4 days |
+| **Status** | 🔴 TODO |
+
+**Root cause:** `CondVar::SetWaitPollCallback` (pthread.cpp:1078) makes
+EVERY `CondVar::Wait` process-wide a `wait_for(10ms)` loop to poll guest
+signals (threads.cpp:298-334). Every idle thread wakes ~100×/s;
+guest-signal latency floor is 10 ms. The push primitives already exist
+(`PthreadWakeForSignal`, `PthreadKillHost`).
+
+**Acceptance criteria:**
+- [ ] Waits are indefinite; signals delivered via notify (µs latency)
+- [ ] 100 wakeups/s/thread eliminated (verify with strace)
+- [ ] No regression in pthread/signal tests
+
+### Kyty-042 · Dedicated async-compute (ACE) queue
+
+| Field | Value |
+|---|---|
+| **Severity** | 🟠 High (performance) |
+| **Effort** | 1–2 weeks |
+| **Status** | 🔴 TODO |
+
+**Root cause:** 56 ACE queues are emulated logically but replayed onto a
+single host queue (vulkanWindow.cpp:398-402); graphics and compute can
+never overlap. shadPS4 routes compute to a second queue with timeline
+semaphores.
+
+**Acceptance criteria:**
+- [ ] Second queue from a compute-capable family + own CommandScheduler
+- [ ] Guest sync points order across queues correctly
+- [ ] Compute-heavy titles measurably faster
+
+### Kyty-043 · Barrier narrowing
+
+| Field | Value |
+|---|---|
+| **Severity** | 🟡 Medium (GPU throughput) |
+| **Effort** | 3–5 days |
+| **Status** | 🔴 TODO |
+
+**Root cause:** every dispatch gets full `ALL_COMMANDS` barriers before
+AND after (renderCompute.cpp:391-461); `EmitGlobalBarrier` is a kitchen-
+sink barrier (graphicsRun.cpp:1289-1303) although the GCR classification
+already exists (pm4Handlers.cpp:74-82).
+
+**Acceptance criteria:**
+- [ ] Dispatch barriers scoped to actually-written resource types
+- [ ] Event/release_mem barriers use decoded GCR stage/access masks
+- [ ] GPU-bound scenes measurably faster
+
+### Kyty-044 · Dynamic-state dirty tracking + extended_dynamic_state3 blend
+
+| Field | Value |
+|---|---|
+| **Severity** | 🟡 Medium (per-draw CPU + pipeline churn) |
+| **Effort** | 3–4 days |
+| **Status** | 🔴 TODO |
+
+**Root cause:** viewports/scissors/blend constants/stencil re-emitted
+every draw unconditionally (renderDraw.cpp:315-424); blend factors are
+baked into the pipeline key (pipelineCache.cpp:726-747) instead of
+dynamic state, multiplying pipeline variants.
+
+**Acceptance criteria:**
+- [ ] Dirty flags skip unchanged dynamic-state emission
+- [ ] Blend state via `VK_EXT_extended_dynamic_state3` where available
+- [ ] Pipeline-variant count reduced on blend-churn scenes
+
+### Kyty-045 · Fix 64-bit futex truncation on Linux
+
+| Field | Value |
+|---|---|
+| **Severity** | 🔴 Correctness (lost wakeups) |
+| **Effort** | 1 day |
+| **Status** | 🔴 TODO |
+
+**Root cause:** `WaitLinux` truncates 64-bit values to `uint32_t` in
+`SYS_futex` FUTEX_WAIT (syncOnAddress.cpp:106-107); high-dword-only
+changes are missed. Fix via `futex2`/`futex_waitv` (Linux ≥6.7) or
+two-futex technique.
+
+**Acceptance criteria:**
+- [ ] 64-bit wait/wake compare full value
+- [ ] Regression test for high-dword-only changes
+
+### Kyty-046 · Writable FLAT/GLOBAL shader stores
+
+| Field | Value |
+|---|---|
+| **Severity** | 🔴 Correctness (hard EXIT on real games) |
+| **Effort** | 1–2 weeks |
+| **Status** | 🔴 TODO |
+
+**Root cause:** compute shaders writing through raw pointers hard-EXIT
+(SpirvEmitter.cpp:196-198: "writable FLAT/GLOBAL addresses require GPU
+ownership tracking"). Blocks pointer-chasing/GPU-linked-list patterns.
+
+**Acceptance criteria:**
+- [ ] FLAT/GLOBAL stores go through BDA page table with ownership check
+- [ ] GPU linked-list / pointer-chasing compute shaders compile+run
+
+### Kyty-047 · Wire TryHandleMmioAccess (IOMMU/TMR reachable)
+
+| Field | Value |
+|---|---|
+| **Severity** | 🟡 Medium (Kyty-016/017 dead code) |
+| **Effort** | 1 day |
+| **Status** | 🔴 TODO |
+
+**Root cause:** `TryHandleMmioAccess` (x64InstructionEmulator.cpp:891)
+has zero callers; guest MMIO access falls through to fatal EXIT instead
+of the emulated IOMMU/TMR register models.
+
+**Acceptance criteria:**
+- [ ] Called from KytyExceptionHandler after HandleGpuFault fails
+- [ ] IOMMU COMPLETION_WAIT_STORE round-trips to the backing store
+
+### Kyty-048 · Deferred guest-unmap queue
+
+| Field | Value |
+|---|---|
+| **Severity** | 🟠 High (AMM-churn games) |
+| **Effort** | 1 week |
+| **Status** | 🔴 TODO |
+
+**Root cause:** every guest `munmap` fully drains the GPU
+(renderContext.cpp:107-131: Finish + WaitPriorityOperations +
+SendCommandSync). AMM-heavy titles (HFW loading) unmap/map constantly.
+
+**Acceptance criteria:**
+- [ ] Unmaps queued and processed at safe points (frame/submission)
+- [ ] Drain only when a conflicting access is imminent
+- [ ] Loading-screen hitching measurably reduced
+
+### Kyty-049 · Real HTTP send path (+optional TLS)
+
+| Field | Value |
+|---|---|
+| **Severity** | 🟡 Medium (game flow for online-leaning titles) |
+| **Effort** | 1 week |
+| **Status** | 🔴 TODO |
+
+**Root cause:** `HttpSendRequest` unconditionally returns
+HTTP_ERROR_TIMEOUT (network.cpp:2787-2799); Ssl binds only lifecycle
+functions. Update checks / DLC / telemetry all spin on timeouts.
+
+**Acceptance criteria:**
+- [ ] Plain-HTTP GET/POST over the existing real socket layer
+- [ ] Optional HTTPS via vendored TLS
+- [ ] Timeout spin eliminated in test titles
+
+### Kyty-050 · Audio3d real rendering + CSPRNG + cubeb decision
+
+| Field | Value |
+|---|---|
+| **Severity** | 🟡 Medium (compatibility bundle) |
+| **Effort** | 1 week combined |
+| **Status** | 🔴 TODO |
+
+**Root cause:** Audio3d sleeps instead of playing (audio3d.cpp:86-88);
+RNG is a fixed-seed LCG (libNet.cpp:3687-3692); cubeb backend is dead
+code (`KYTY_USE_CUBEB` never defined on any target, config knob
+`audio_backend` never consulted).
+
+**Acceptance criteria:**
+- [ ] Audio3d ports route into the real mix (panner downmix acceptable)
+- [ ] RNG from host CSPRNG
+- [ ] cubeb either wired (define + config honored) or deleted
+
+### Kyty-051 · Trophy runtime + rendered dialogs
+
+| Field | Value |
+|---|---|
+| **Severity** | 🟡 Medium (UX + game flow safety) |
+| **Effort** | 1–2 weeks |
+| **Status** | 🔴 TODO |
+
+**Root cause:** NpTrophy2 fabricates one bronze "Kyty" (libNet.cpp:2065);
+MsgDialog/SaveDataDialog auto-confirm destructive prompts instantly
+(dialog.cpp:545-565, 394-410) — a save-loss hazard. The launcher already
+ships a working UCP parser (trophyViewerDialog.cpp:206-407) to reuse.
+
+**Acceptance criteria:**
+- [ ] Real trophy DB parse + unlock persistence + toast
+- [ ] MsgDialog/SaveDataDialog rendered on the existing imgui overlay
+- [ ] No auto-confirm of destructive prompts
+
+### Kyty-052 · Unresolved imports must ENOSYS (stub-policy alignment)
+
+| Field | Value |
+|---|---|
+| **Severity** | 🟡 Medium (debugging/classification) |
+| **Effort** | 0.5 day |
+| **Status** | 🔴 TODO |
+
+**Root cause:** the unresolved-import thunk returns 0 and zeroes xmm0
+(runtimeLinker.cpp:161-217), silently faking success — exactly what
+docs/stub_policy.md forbids (Kyty-002 fixed this for registered stubs
+but missed the linker layer).
+
+**Acceptance criteria:**
+- [ ] Unresolved imports return KERNEL_ERROR_ENOSYS
+- [ ] One-time log with NID + module for classification
+- [ ] stub_policy.md references match the real code
 
 ---
 
