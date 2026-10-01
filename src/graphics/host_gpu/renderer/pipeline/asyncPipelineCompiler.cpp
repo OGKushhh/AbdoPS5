@@ -27,7 +27,7 @@ AsyncPipelineCompiler::~AsyncPipelineCompiler() {
 	}
 }
 
-void AsyncPipelineCompiler::Submit(Common::UniqueFunction<void()> job) {
+void AsyncPipelineCompiler::Submit(Common::UniqueFunction<void> job) {
 	EXIT_IF(!job);
 	Common::LockGuard lock(m_mutex);
 	EXIT_IF(m_stopping);
@@ -40,7 +40,7 @@ void AsyncPipelineCompiler::WorkerTrampoline(void* instance) {
 	EXIT_IF(self == nullptr);
 	KYTY_PROFILER_THREAD("Thread_AsyncShaders");
 	for (;;) {
-		Common::UniqueFunction<void()> job;
+		Common::UniqueFunction<void> job;
 		{
 			Common::LockGuard lock(self->m_mutex);
 			while (self->m_jobs.empty() && !self->m_stopping) {

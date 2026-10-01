@@ -23,14 +23,14 @@ public:
 	~AsyncPipelineCompiler();
 	KYTY_CLASS_NO_COPY(AsyncPipelineCompiler);
 
-	void Submit(Common::UniqueFunction<void()> job);
+	void Submit(Common::UniqueFunction<void> job);
 
 private:
 	static void WorkerTrampoline(void* instance);
 
 	Common::Mutex                               m_mutex;
 	Common::CondVar                             m_work_available;
-	std::deque<Common::UniqueFunction<void()>>  m_jobs;
+	std::deque<Common::UniqueFunction<void>> m_jobs;
 	std::vector<std::unique_ptr<Common::Thread>> m_workers;
 	bool                                        m_stopping = false;
 };
