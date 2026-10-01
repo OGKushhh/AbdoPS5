@@ -1459,10 +1459,15 @@ Graph BuildGraph(const Decoder::Program& program) {
 	for (const auto& inst: program.instructions) {
 		instruction_pcs.insert(inst.pc);
 		if (inst.opcode == Opcode::UNSUPPORTED) {
-			ExitBuildFailure(
-			    graph, FailureKind::UnsupportedInstruction, UINT32_MAX,
+			// Kyty-043: Instead of crashing, mark as unsupported so the
+			// caller can fall back to the dispatcher path.
+			graph.unsupported = true;
+			graph.failure_kind = FailureKind::UnsupportedInstruction;
+			graph.failure_block = UINT32_MAX;
+			graph.unsupported_reason =
 			    fmt::format("unsupported decoded instruction in CFG at pc 0x{:08x}: {}", inst.pc,
-			                Decoder::InstructionToString(inst).c_str()));
+			                Decoder::InstructionToString(inst).c_str());
+			return graph;
 		}
 	}
 
