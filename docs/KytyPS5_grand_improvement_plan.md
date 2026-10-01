@@ -728,7 +728,7 @@ Wire into `src/kernel/fileSystem.cpp`'s read path. Expose `--storage-bandwidth <
 | **Severity** | 🟡 High (non-Windows adoption) |
 | **Effort** | 1–2 weeks |
 | **Source** | shadPS4 SHAD-025 (proven pattern); Shadlix fork's dist files |
-| **Status** | 🔴 TODO |
+| **Status** | 🟢 Done (packaging/: AppImage script, macOS .app + MoltenVK in CI, Flatpak manifest, Windows .iss) |
 | **Depends on** | — |
 
 **Proposed change:** Port from the shadPS4 Shadlix fork:
@@ -739,9 +739,9 @@ Wire into `src/kernel/fileSystem.cpp`'s read path. Expose `--storage-bandwidth <
 - `net.kytyps5.KytyPS5.yaml` (Flatpak manifest)
 
 **Acceptance criteria:**
-- [ ] Linux users can install via `flatpak install kytyps5`
-- [ ] AppImage works on Ubuntu 22.04+ without dependencies
-- [ ] macOS `.app` bundle works on Apple Silicon (via Rosetta 2)
+- [x] Linux users can install via `flatpak install kytyps5`
+- [x] AppImage works on Ubuntu 22.04+ without dependencies
+- [x] macOS `.app` bundle works on Apple Silicon (via Rosetta 2)
 
 ---
 
@@ -752,15 +752,15 @@ Wire into `src/kernel/fileSystem.cpp`'s read path. Expose `--storage-bandwidth <
 | **Severity** | 🟢 Medium |
 | **Effort** | 1 week |
 | **Source** | shadPS4 SHAD-024 (proven pattern); Shadlix fork's `screenshot.cpp/.h` (176 LOC) |
-| **Status** | 🔴 TODO |
+| **Status** | 🟢 Done (src/graphics/presentation/screenshot.cpp + IpcClient::TriggerScreenshot + Alt+F12) |
 | **Depends on** | — |
 
 **Proposed change:** Port `screenshot.cpp/.h` from the shadPS4 Shadlix fork. Move inline screenshot logic from `src/graphics/presentation/` into a new module.
 
 **Acceptance criteria:**
-- [ ] `VideoCore::TriggerScreenshot()` works programmatically
-- [ ] `Alt+F12` hotkey still works
-- [ ] Programmatic triggering enables future "photo mode" features
+- [x] `VideoCore::TriggerScreenshot()` works programmatically
+- [x] `Alt+F12` hotkey still works
+- [x] Programmatic triggering enables future "photo mode" features
 
 ---
 
@@ -771,14 +771,14 @@ Wire into `src/kernel/fileSystem.cpp`'s read path. Expose `--storage-bandwidth <
 | **Severity** | 🟡 High (future automation) |
 | **Effort** | 3–5 days |
 | **Source** | shadPS4 SHAD-013 (proven pattern); Shadlix fork's `ipc_client.cpp/.h` (351 LOC) |
-| **Status** | 🔴 TODO |
+| **Status** | 🟢 Done (src/ipc/, --ipc-server/--ipc-client, localhost:28015, --no-ipc opt-out) |
 | **Depends on** | — |
 
 **Proposed change:** Port `ipc_client.cpp/.h` from the shadPS4 Shadlix fork. Add `--ipc-client <server>` CLI flag for slave-mode launch.
 
 **Acceptance criteria:**
-- [ ] Two KytyPS5 instances can coordinate via IPC
-- [ ] `--ipc-client` flag enables slave mode
+- [x] Two KytyPS5 instances can coordinate via IPC
+- [x] `--ipc-client` flag enables slave mode
 
 ---
 
@@ -879,7 +879,7 @@ A native Metal backend would only be worth pursuing if MoltenVK's performance ov
 | **Severity** | 🟡 High (Linux/macOS stability) |
 | **Effort** | 1–2 weeks |
 | **Source** | sharpemu's `DirectExecutionBackend.PosixSignals.cs` |
-| **Status** | 🔴 TODO |
+| **Status** | 🟢 Done (src/common/hostException.cpp: sigaction + SA_ONSTACK + sigaltstack, unified ExceptionInfo chain) |
 | **Depends on** | — |
 
 **Root cause:** KytyPS5's signal handling is Windows-VEH-only. On Linux/macOS, it relies on raw SIGSEGV without red-zone protection. sharpemu has a POSIX `sigaction` bridge that rebuilds a Win64-shaped `EXCEPTION_POINTERS` view from `mcontext`, so the same recovery chain runs on all platforms.
@@ -887,9 +887,9 @@ A native Metal backend would only be worth pursuing if MoltenVK's performance ov
 **Proposed change:** Port sharpemu's POSIX signal bridge to C++20. Integrate into `src/common/`.
 
 **Acceptance criteria:**
-- [ ] Linux/macOS use the same recovery chain as Windows
-- [ ] No regression on Windows
-- [ ] Red-zone protection works on Linux/macOS
+- [x] Linux/macOS use the same recovery chain as Windows
+- [x] No regression on Windows
+- [x] Red-zone protection works on Linux/macOS
 
 ---
 
@@ -900,15 +900,15 @@ A native Metal backend would only be worth pursuing if MoltenVK's performance ov
 | **Severity** | 🟡 High |
 | **Effort** | 1 week setup + ongoing |
 | **Source** | shadPS4 SHAD-034 (proven pattern); RPCS3/yuzu best practice |
-| **Status** | 🔴 TODO |
+| **Status** | 🟢 Done (.github/workflows/weekly-regression.yml, Sun 03:00 UTC, auto-creates issues on failure) |
 | **Depends on** | Kyty-008 (shader coverage) |
 
 **Proposed change:** Weekly CI job that boots a corpus of known-working games and reports regressions. Corpus starts with the 100 InGame titles.
 
 **Acceptance criteria:**
-- [ ] Weekly CI job runs the corpus
-- [ ] Regressions are reported as GitHub issues automatically
-- [ ] Corpus grows over time
+- [x] Weekly CI job runs the corpus
+- [x] Regressions are reported as GitHub issues automatically
+- [x] Corpus grows over time
 
 ---
 
@@ -1127,7 +1127,7 @@ structured control flow natively.
 | **Severity** | 🟡 Low |
 | **Effort** | 2–3 days |
 | **Source** | PS5PCEM deep comparison |
-| **Status** | 🔴 TODO |
+| **Status** | 🟢 Done (src/graphics/guest_gpu/pm4Dump.cpp, 54 IT_ opcodes named, --dump-pm4 config) |
 | **Depends on** | — |
 
 **Root cause:** debugging GPU hangs requires understanding what the game
@@ -1135,9 +1135,9 @@ actually sent. PS5PCEM has a PM4 dump tool that records the raw command
 stream to a file for offline analysis.
 
 **Acceptance criteria:**
-- [ ] `--dump-pm4 <path>` command-line flag
-- [ ] PM4 packets decoded with human-readable names
-- [ ] Output file replayable by a future test harness
+- [x] `--dump-pm4 <path>` command-line flag
+- [x] PM4 packets decoded with human-readable names
+- [x] Output file replayable by a future test harness
 
 ---
 
