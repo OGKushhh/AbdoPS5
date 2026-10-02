@@ -83,6 +83,8 @@ static void PrintUsage() {
 	::printf("  --playgo-hack                       Use the supplied PlayGo stub fallback.\n");
 	::printf("  --gpu-mesh-indirect <true|false>     Build mesh-emulated indirect draws on the GPU. "
 	         "Default: true.\n");
+	::printf("  --pipeline-libraries <true|false>    Build new graphics pipelines from cached, "
+	         "separately compiled parts where the driver supports it. Default: true.\n");
 #if KYTY_PLATFORM == KYTY_PLATFORM_WINDOWS
 	::printf("  --redzone                            Protect the guest SysV red zone.\n");
 #endif
@@ -399,6 +401,11 @@ static bool ParseArgs(int argc, char* argv[], RunOptions& options, bool& show_he
 			}
 		} else if (arg == "--gpu-mesh-indirect") {
 			if (!ParseBool(value, options.config.gpu_mesh_indirect_enabled)) {
+				::printf("invalid boolean for %s: %s\n", arg.c_str(), value.c_str());
+				return false;
+			}
+		} else if (arg == "--pipeline-libraries") {
+			if (!ParseBool(value, options.config.pipeline_libraries_enabled)) {
 				::printf("invalid boolean for %s: %s\n", arg.c_str(), value.c_str());
 				return false;
 			}

@@ -431,7 +431,10 @@ struct RenderExecutorTestAccess {
   static PipelineCache::Pipeline
   CreateDescriptorPipeline(RenderExecutor &executor,
                            std::span<PreparedBindings *const> stages) {
-    std::vector<vk::DescriptorSetLayoutBinding> layout_bindings;
+    // Mirrors the emulator: set 0 holds compute or vertex-side descriptors and
+    // set 1 the pixel shader's; only one set of a layout may push, so a pixel
+    // set takes the push and the vertex set then goes through the heap.
+    std::array<std::vector<vk::DescriptorSetLayoutBinding>, 2> layout_bindings;
     bool compute = false;
     for (const auto *prepared : stages) {
       const auto &program = *prepared->runtime->program;
@@ -441,30 +444,49 @@ struct RenderExecutorTestAccess {
                                 : program.stage == ShaderType::Pixel
                                     ? vk::ShaderStageFlagBits::eFragment
                                     : vk::ShaderStageFlagBits::eCompute;
+      auto &set_bindings = layout_bindings.at(
+          ShaderRecompiler::IR::NativeDescriptorSet(program.stage));
       for (const auto &binding : program.bindings.descriptors) {
-        layout_bindings.push_back(
+        set_bindings.push_back(
             {ShaderRecompiler::IR::NativeBinding(program.stage, binding.kind),
              NativeDescriptorType(binding.kind), NativeDescriptorCount(binding),
              shader_stage});
       }
     }
-    vk::DescriptorSetLayoutCreateInfo descriptor_info{};
-    descriptor_info.sType = vk::StructureType::eDescriptorSetLayoutCreateInfo;
-    descriptor_info.flags =
-        vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR;
-    descriptor_info.bindingCount =
-        static_cast<uint32_t>(layout_bindings.size());
-    descriptor_info.pBindings = layout_bindings.data();
     PipelineCache::Pipeline pipeline{};
     auto &device = executor.m_context.GetGraphics().device;
-    EXIT_IF(device.createDescriptorSetLayout(&descriptor_info, nullptr,
-                                             &pipeline.descriptor_set_layout) !=
-            vk::Result::eSuccess);
+    const auto create_set = [&](std::span<const vk::DescriptorSetLayoutBinding>
+                                    bindings,
+                                bool push) {
+      vk::DescriptorSetLayoutCreateInfo descriptor_info{};
+      descriptor_info.sType = vk::StructureType::eDescriptorSetLayoutCreateInfo;
+      if (push) {
+        descriptor_info.flags =
+            vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR;
+      }
+      descriptor_info.bindingCount = static_cast<uint32_t>(bindings.size());
+      descriptor_info.pBindings = bindings.data();
+      vk::DescriptorSetLayout layout = nullptr;
+      EXIT_IF(device.createDescriptorSetLayout(&descriptor_info, nullptr,
+                                               &layout) !=
+              vk::Result::eSuccess);
+      return layout;
+    };
+    pipeline.pixel_uses_push = !layout_bindings[1].empty();
+    pipeline.uses_push_descriptors = !pipeline.pixel_uses_push;
+    pipeline.descriptor_set_layout =
+        create_set(layout_bindings[0], pipeline.uses_push_descriptors);
+    if (!compute) {
+      pipeline.pixel_set_layout =
+          create_set(layout_bindings[1], pipeline.pixel_uses_push);
+    }
+    const std::array set_layouts{pipeline.descriptor_set_layout,
+                                 pipeline.pixel_set_layout};
 
     vk::PipelineLayoutCreateInfo pipeline_info{};
     pipeline_info.sType = vk::StructureType::ePipelineLayoutCreateInfo;
-    pipeline_info.setLayoutCount = 1;
-    pipeline_info.pSetLayouts = &pipeline.descriptor_set_layout;
+    pipeline_info.setLayoutCount = compute ? 1u : 2u;
+    pipeline_info.pSetLayouts = set_layouts.data();
     const vk::PushConstantRange push_range {
         compute ? vk::ShaderStageFlags {vk::ShaderStageFlagBits::eCompute}
                 : vk::ShaderStageFlags {vk::ShaderStageFlagBits::eVertex |
@@ -475,7 +497,6 @@ struct RenderExecutorTestAccess {
     EXIT_IF(device.createPipelineLayout(&pipeline_info, nullptr,
                                         &pipeline.pipeline_layout) !=
             vk::Result::eSuccess);
-    pipeline.uses_push_descriptors = true;
     return pipeline;
   }
 
@@ -518,6 +539,9 @@ struct RenderExecutorTestAccess {
       device.destroyPipelineLayout(pipeline.pipeline_layout, nullptr);
       device.destroyDescriptorSetLayout(pipeline.descriptor_set_layout,
                                         nullptr);
+      if (pipeline.pixel_set_layout != nullptr) {
+        device.destroyDescriptorSetLayout(pipeline.pixel_set_layout, nullptr);
+      }
     }
   }
 

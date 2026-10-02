@@ -1,5 +1,7 @@
 #include "graphics/host_gpu/renderer/pipeline/pipelineCache.h"
 
+#include "graphics/host_gpu/renderer/pipeline/pipelineLibrary.h"
+
 #include "common/assert.h"
 #include "common/emulatorConfig.h"
 #include "common/file.h"
@@ -724,6 +726,10 @@ PipelineCache::PipelineCache(GraphicContext& graphics)
     : m_graphics(graphics), m_program_cache(std::make_unique<ProgramCache>(graphics.device)) {
 	EXIT_NOT_IMPLEMENTED(!Common::Thread::IsMainThread());
 	InitializeDriverCache();
+	// Linking libraries without fast linking costs about as much as a full compile.
+	if (m_graphics.pipeline_library_enabled && m_graphics.pipeline_library_fast_linking) {
+		m_libraries = std::make_unique<PipelineLibraryCache>(m_graphics, m_driver_cache);
+	}
 	if (std::getenv("KYTY_NO_ASYNC_SHADERS") == nullptr) {
 		const auto hardware = std::thread::hardware_concurrency();
 		auto       workers  = hardware >= 4 ? hardware - 2u : 1u;
@@ -747,10 +753,15 @@ PipelineCache::~PipelineCache() {
 			m_graphics.device.destroyPipeline(pipeline->pipeline, nullptr);
 			m_graphics.device.destroyPipelineLayout(pipeline->pipeline_layout, nullptr);
 			m_graphics.device.destroyDescriptorSetLayout(pipeline->descriptor_set_layout, nullptr);
+			if (pipeline->pixel_set_layout != nullptr) {
+				m_graphics.device.destroyDescriptorSetLayout(pipeline->pixel_set_layout, nullptr);
+			}
 		}
 	};
 	destroy(m_graphics_pipelines);
 	destroy(m_compute_pipelines);
+	// The pipelines linked from the libraries go before the libraries themselves.
+	m_libraries.reset();
 	if (m_driver_cache != nullptr) {
 		m_graphics.device.destroyPipelineCache(m_driver_cache, nullptr);
 	}
@@ -843,6 +854,10 @@ void PipelineCache::InitializeDriverCache() {
 }
 
 void PipelineCache::Save() {
+	if (m_libraries != nullptr) {
+		// The link thread writes to the driver cache, which is saved and destroyed below.
+		m_libraries->Stop();
+	}
 	m_program_cache->SaveToDisk();
 
 	if (m_driver_cache == nullptr) {
@@ -1166,7 +1181,11 @@ PipelineCache::Pipeline& PipelineCache::GetGraphicsPipeline(
 	}
 
 	if (auto iter = m_graphics_pipelines.find(key); iter != m_graphics_pipelines.end()) {
-		return *iter->second;
+		auto& found = *iter->second;
+		if (found.optimize_pending) [[unlikely]] {
+			InstallOptimizedPipeline(found, command);
+		}
+		return found;
 	}
 
 	if (graphics_debug_dump_enabled()) {
@@ -1182,7 +1201,9 @@ PipelineCache::Pipeline& PipelineCache::GetGraphicsPipeline(
 	auto cached = std::make_unique<Pipeline>();
 	LogPipelineTrace("CreatePipelineInternal begin", vs_id, ps_id);
 	CreatePipelineInternal(m_graphics, *cached, rendering, key.vertex_input, vertex_info,
-	                       ps_input_info, programs, static_params, m_driver_cache);
+	                       ps_input_info, programs, static_params, m_libraries.get(),
+	                       m_driver_cache);
+	m_graphics_pipelines_created++;
 	LogPipelineTrace("CreatePipelineInternal done", vs_id, ps_id);
 
 	EXIT_NOT_IMPLEMENTED(cached->pipeline == nullptr);
@@ -1192,6 +1213,22 @@ PipelineCache::Pipeline& PipelineCache::GetGraphicsPipeline(
 	EXIT_IF(!inserted);
 
 	return *iter->second;
+}
+
+void PipelineCache::InstallOptimizedPipeline(Pipeline& pipeline, CommandBuffer& command) {
+	const auto optimized = m_libraries->TakeOptimized(&pipeline);
+	if (!optimized) {
+		return;
+	}
+	pipeline.optimize_pending = false;
+	if (*optimized == nullptr) {
+		return;
+	}
+	// Commands recorded before this draw may still use the fast-linked pipeline.
+	const auto fast_linked = pipeline.pipeline;
+	pipeline.pipeline      = *optimized;
+	command.GetContext().GetCommandScheduler().DeferOperation(
+	    [device = m_graphics.device, fast_linked] { device.destroyPipeline(fast_linked, nullptr); });
 }
 
 PipelineCache::Pipeline&
@@ -1212,6 +1249,7 @@ PipelineCache::GetComputePipeline(const ShaderComputeInputInfo& input_info,
 
 	auto cached = std::make_unique<Pipeline>();
 	CreatePipelineInternal(m_graphics, *cached, input_info, compute_program.module, m_driver_cache);
+	m_compute_pipelines_created++;
 
 	EXIT_NOT_IMPLEMENTED(cached->pipeline == nullptr);
 	EXIT_NOT_IMPLEMENTED(cached->pipeline_layout == nullptr);
