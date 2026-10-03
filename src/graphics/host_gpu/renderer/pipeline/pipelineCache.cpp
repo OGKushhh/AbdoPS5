@@ -48,6 +48,22 @@ namespace Libs::Graphics {
 
 namespace {
 
+// The library cache key a prefetched compute pipeline compiles under.
+std::string ComputePrefetchKey(uint64_t program_id) {
+	std::string key(1, 'C');
+	key.append(reinterpret_cast<const char*>(&program_id), sizeof(program_id));
+	return key;
+}
+
+void DestroyPipelineObjects(const GraphicContext& graphics, const PipelineCache::Pipeline& pipeline) {
+	graphics.device.destroyPipeline(pipeline.pipeline, nullptr);
+	graphics.device.destroyPipelineLayout(pipeline.pipeline_layout, nullptr);
+	graphics.device.destroyDescriptorSetLayout(pipeline.descriptor_set_layout, nullptr);
+	if (pipeline.pixel_set_layout != nullptr) {
+		graphics.device.destroyDescriptorSetLayout(pipeline.pixel_set_layout, nullptr);
+	}
+}
+
 vk::PolygonMode ResolvePolygonMode(const HW::ModeControl& mode, bool cull_front, bool cull_back) {
 	// CxPrimitiveSetup::PolygonMode disables both per-face modes when it is zero.
 	if (mode.poly_mode == 0) {
@@ -982,6 +998,12 @@ PipelineCache::~PipelineCache() {
 	};
 	destroy(m_graphics_pipelines);
 	destroy(m_compute_pipelines);
+	// Prefetched compute pipelines no dispatch took: their pipelines belong to the
+	// library cache.
+	for (const auto& [id, pipeline]: m_compute_prefetched) {
+		(void)id;
+		DestroyPipelineObjects(m_graphics, *pipeline);
+	}
 	// The pipelines linked from the libraries go before the libraries themselves.
 	m_libraries.reset();
 	if (m_driver_cache != nullptr) {
@@ -1481,6 +1503,209 @@ PipelineCache::Pipeline* PipelineCache::GetGraphicsPipeline(
 	return iter->second.get();
 }
 
+uint32_t PipelineCache::PrefetchGraphicsPipeline(const HW::Context& ctx, const HW::Shader& sh,
+                                                 const HW::UserConfig& user_config,
+                                                 ProgramWait wait, bool* pending) {
+	KYTY_PROFILER_FUNCTION();
+	if (m_libraries == nullptr || !Config::PipelineLibrariesEnabled()) {
+		return 0;
+	}
+	const auto& vs = sh.GetVs();
+	const auto& ps = sh.GetPs();
+	if (vs.es_regs.data_addr == 0) {
+		return 0;
+	}
+	// Only primitive types the draw path accepts; RectList pipelines stay monolithic.
+	const auto prim_type = user_config.GetPrimType();
+	switch (prim_type) {
+		case Prospero::PrimitiveType::kPointList:
+		case Prospero::PrimitiveType::kLineList:
+		case Prospero::PrimitiveType::kLineStrip:
+		case Prospero::PrimitiveType::kTriList:
+		case Prospero::PrimitiveType::kTriFan:
+		case Prospero::PrimitiveType::kTriStrip:
+		case Prospero::PrimitiveType::kQuadListLegacy: break;
+		case Prospero::PrimitiveType::kPatch:
+			if (!Config::TessellationEnabled()) {
+				return 0;
+			}
+			break;
+		default: return 0;
+	}
+	// The draw path turns metadata color modes, resolves and depth/stencil copies into
+	// other operations without translating their shaders, and a translation must not run
+	// that the real draw never would.
+	const auto color_mode = ctx.GetColorControl().mode;
+	if (color_mode > 1) {
+		return 0;
+	}
+	const auto& override    = ctx.GetDepthRenderOverride();
+	const auto& depth_regs  = ctx.GetDepthRenderTarget();
+	const bool  depth_copy  = override.force_z_dirty && override.force_z_valid &&
+	                        depth_regs.z_info.format != Prospero::DepthFormat::kInvalid &&
+	                        depth_regs.z_read_base_addr != 0 && depth_regs.z_write_base_addr != 0 &&
+	                        depth_regs.z_read_base_addr != depth_regs.z_write_base_addr;
+	const bool stencil_copy =
+	    override.force_stencil_dirty && override.force_stencil_valid &&
+	    depth_regs.stencil_info.format != Prospero::StencilFormat::kInvalid &&
+	    depth_regs.stencil_read_base_addr != 0 && depth_regs.stencil_write_base_addr != 0 &&
+	    depth_regs.stencil_read_base_addr != depth_regs.stencil_write_base_addr;
+	if (color_mode == 0 && (depth_copy || stencil_copy)) {
+		return 0;
+	}
+
+	// The draw path's decisions, made from the same registers.
+	const auto& sh_regs     = ctx.GetShaderRegisters();
+	const auto& db          = sh_regs.db_shader_control;
+	const bool  side_effect = db.shader_kill_enable || db.shader_z_export_enable ||
+	                         db.shader_mask_export_enable || db.shader_dual_export_enable ||
+	                         db.shader_execute_on_noop;
+	const auto target_mask = ctx.GetRenderTargetMask();
+	const bool ps_active   = ps.ps_regs.data_addr != 0 &&
+	                       ((target_mask & sh_regs.m_cbShaderMask) != 0 || side_effect);
+	std::array<Prospero::ColorComponentMapping, RENDER_COLOR_ATTACHMENTS_MAX> export_mapping {};
+	for (uint32_t slot = 0; slot < RENDER_COLOR_ATTACHMENTS_MAX; slot++) {
+		const auto& rt = ctx.GetRenderTarget(slot);
+		if (rt.base.addr != 0 && render_target_mask_slot(target_mask, slot) != 0) {
+			export_mapping[slot] = TextureGetRenderTargetFormat(rt.info.format, rt.info.channel_type,
+			                                            rt.info.channel_order)
+			                           .export_mapping;
+		}
+	}
+	std::array<ShaderVertexInputInfo, 3> vertex_info;
+	ShaderPixelInputInfo                 pixel_info;
+	const auto programs = GetGraphicsPrograms(vs, ps, sh_regs, ctx, user_config,
+	                                          export_mapping, ps_active, vertex_info,
+	                                          pixel_info, wait);
+	if (programs.pending) {
+		*pending = true;
+		return 0;
+	}
+	if (!programs.vertex[0] || (ps_active && !programs.pixel)) {
+		return 0;
+	}
+
+	uint32_t samples = 0;
+	if (ps_active) {
+		for (const auto& output: pixel_info.stage.program->info.outputs) {
+			if (output.kind != ShaderRecompiler::IR::StageOutputKind::Mrt ||
+			    output.index >= RENDER_COLOR_ATTACHMENTS_MAX || samples != 0) {
+				continue;
+			}
+			const auto& rt = ctx.GetRenderTarget(output.index);
+			if (rt.base.addr != 0 && render_target_mask_slot(target_mask, output.index) != 0) {
+				samples = render_sample_count(rt.attrib.num_fragments);
+			}
+		}
+	}
+	// As ResolveRenderDepthTarget decides whether the draw has a depth attachment.
+	const auto& z           = ctx.GetDepthRenderTarget();
+	const auto& rc          = ctx.GetRenderControl();
+	const auto& dc          = ctx.GetDepthControl();
+	const bool  has_stencil = z.stencil_info.format != Prospero::StencilFormat::kInvalid;
+	const bool  depth_active =
+	    dc.z_enable || dc.depth_bounds_enable || rc.depth_clear_enable || rc.copy_depth_to_color;
+	const bool stencil_active =
+	    has_stencil && (dc.stencil_enable || rc.stencil_clear_enable || rc.copy_stencil_to_color);
+	const bool with_depth = (depth_active || stencil_active) &&
+	                        (z.z_info.format != Prospero::DepthFormat::kInvalid || has_stencil);
+	if (with_depth && samples == 0) {
+		samples = render_sample_count(z.z_info.num_samples);
+	}
+	if (samples == 0 && !with_depth) {
+		samples = render_sample_count(ctx.GetAaConfig().msaa_num_samples);
+	}
+	if (samples == 0) {
+		return 0;
+	}
+
+	PipelineStaticParameters static_params {};
+	const auto&              clip_control = ctx.GetClipControl();
+	const auto&              mc           = ctx.GetModeControl();
+	static_params.negative_one_to_one     = !clip_control.dx_clip_space;
+	static_params.depth_clip_enable       = clip_control.IsZClipEnabled();
+	static_params.topology                = prim_type == Prospero::PrimitiveType::kPatch
+	                                            ? vk::PrimitiveTopology::ePatchList
+	                                            : vk::PrimitiveTopology::eTriangleList;
+	static_params.samples                 = samples;
+	static_params.sample_shading_enable   = ps_active && samples > 1 && pixel_info.ps_sample_shading;
+	static_params.depth_bounds_test_enable = with_depth && dc.depth_bounds_enable;
+	static_params.depth_min_bounds         = ctx.GetDepthBoundsMin();
+	static_params.depth_max_bounds         = ctx.GetDepthBoundsMax();
+	static_params.cull_back                = mc.cull_back;
+	static_params.cull_front               = mc.cull_front;
+	static_params.face                     = mc.face;
+	static_params.provoking_vtx_last       = mc.provoking_vtx_last;
+	static_params.polygon_mode = ResolvePolygonMode(mc, static_params.cull_front, static_params.cull_back);
+	if (static_params.sample_shading_enable && !m_graphics.sample_rate_shading_enabled) {
+		return 0;
+	}
+
+	// The shader parts do not depend on attachment formats or vertex input, which the
+	// prediction leaves empty; a depth attachment only matters as present or not.
+	PipelineRenderingState rendering {};
+	if (with_depth) {
+		rendering.depth_format = vk::Format::eD32Sfloat;
+	}
+	const PipelineVertexInputState vertex_input {};
+	return PrefetchLibraryParts(m_graphics, rendering, vertex_input,
+	                            std::span(vertex_info).first(programs.VertexStageCount()),
+	                            ps_active ? &pixel_info : nullptr, programs, static_params,
+	                            *m_libraries, m_driver_cache);
+}
+
+uint32_t PipelineCache::PrefetchComputePipeline(const HW::Context& ctx, const HW::Shader& sh,
+                                                uint32_t dispatch_initiator, ProgramWait wait,
+                                                bool* pending) {
+	KYTY_PROFILER_FUNCTION();
+	if (m_libraries == nullptr || !Config::PipelineLibrariesEnabled()) {
+		return 0;
+	}
+	const auto& cs = sh.GetCs();
+	if (cs.cs_regs.data_addr == 0) {
+		return 0;
+	}
+	// As the dispatch path prepares it (see RenderExecutor::DispatchDirect/DispatchIndirect).
+	ShaderComputeInputInfo input_info {};
+	input_info.dispatch_thread_dimensions =
+	    (dispatch_initiator & Pm4::COMPUTE_DISPATCH_INITIATOR_USE_THREAD_DIMENSIONS) != 0;
+	const auto program = GetComputeProgram(cs, ctx.GetShaderRegisters(), input_info, wait, pending);
+	if (!program) {
+		return 0;
+	}
+	if (m_compute_pipelines.contains(program.id) || m_compute_prefetched.contains(program.id)) {
+		return 0;
+	}
+	auto pipeline = std::make_unique<Pipeline>();
+	auto create   = PrepareComputePipeline(m_graphics, *pipeline, input_info, program.module,
+	                                       m_driver_cache);
+	if (!m_libraries->Prefetch(ComputePrefetchKey(program.id), std::move(create))) {
+		DestroyPipelineObjects(m_graphics, *pipeline);
+		return 0;
+	}
+	m_compute_prefetched.emplace(program.id, std::move(pipeline));
+	return 1;
+}
+
+void PipelineCache::LogLookahead(uint32_t draws, uint32_t parts) const {
+	// KYTY_PERMUTATION_LOG=1 (diagnostic): one line per look-ahead walk.
+	const char* value = std::getenv("KYTY_PERMUTATION_LOG");
+	if (value == nullptr || std::strcmp(value, "1") != 0) {
+		return;
+	}
+	const auto now = std::chrono::steady_clock::now().time_since_epoch();
+	std::printf("lookahead: draws=%u prefetched parts=%u t=%.3f\n", draws, parts,
+	            std::chrono::duration<double>(now).count());
+}
+
+uint32_t PipelineCache::BackgroundShaderJobs() const noexcept {
+	return m_program_cache->jobs->in_flight.load(std::memory_order_acquire);
+}
+
+uint64_t PipelineCache::BackgroundShaderJobsFinished() const noexcept {
+	return m_program_cache->jobs->finished.load(std::memory_order_relaxed);
+}
+
 void PipelineCache::InstallOptimizedPipeline(Pipeline& pipeline, CommandBuffer& command) {
 	const auto optimized = m_libraries->TakeOptimized(&pipeline);
 	if (!optimized) {
@@ -1513,8 +1738,23 @@ PipelineCache::GetComputePipeline(const ShaderComputeInputInfo& input_info,
 		ShaderDbgDumpInputInfo(input_info);
 	}
 
-	auto cached = std::make_unique<Pipeline>();
-	CreatePipelineInternal(m_graphics, *cached, input_info, compute_program.module, m_driver_cache);
+	std::unique_ptr<Pipeline> cached;
+	if (const auto prefetched = m_compute_prefetched.find(compute_program.id);
+	    prefetched != m_compute_prefetched.end()) {
+		// A look-ahead already made its layouts and compiled (or is compiling) the pipeline.
+		cached = std::move(prefetched->second);
+		m_compute_prefetched.erase(prefetched);
+		cached->pipeline = m_libraries->Take(ComputePrefetchKey(compute_program.id));
+		if (cached->pipeline == nullptr) {
+			DestroyPipelineObjects(m_graphics, *cached);
+			cached = nullptr;
+		}
+	}
+	if (!cached) {
+		cached = std::make_unique<Pipeline>();
+		CreatePipelineInternal(m_graphics, *cached, input_info, compute_program.module,
+		                       m_driver_cache);
+	}
 	m_compute_pipelines_created++;
 
 	EXIT_NOT_IMPLEMENTED(cached->pipeline == nullptr);

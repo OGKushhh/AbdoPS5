@@ -168,6 +168,34 @@ public:
 	Pipeline& GetComputePipeline(const ShaderComputeInputInfo& input_info,
 	                             const ShaderProgram&          compute_program);
 
+	// Graphics pipelines created so far; a change across a draw means it compiled one.
+	[[nodiscard]] uint64_t GraphicsPipelinesCreated() const noexcept {
+		return m_graphics_pipelines_created;
+	}
+	// Predicts the graphics pipeline a draw with these registers will need, translating
+	// its shaders (in the background with ProgramWait::Prefetch, which sets `*pending`
+	// while they translate), and queues its missing shader library parts on worker threads.
+	// Nothing is recorded or bound; a wrong prediction only costs the compile. Returns the
+	// number of parts queued.
+	uint32_t PrefetchGraphicsPipeline(const HW::Context& ctx, const HW::Shader& sh,
+	                                 const HW::UserConfig& user_config, ProgramWait wait,
+	                                 bool* pending);
+	// Compute pipelines created so far, for the same purpose.
+	[[nodiscard]] uint64_t ComputePipelinesCreated() const noexcept {
+		return m_compute_pipelines_created;
+	}
+	// Predicts the compute pipeline a dispatch with these registers and dispatch initiator
+	// will need, translating its shader (like PrefetchGraphicsPipeline), and compiles it on
+	// a worker thread; GetComputePipeline takes it over. Returns 1 when a compile was queued.
+	uint32_t PrefetchComputePipeline(const HW::Context& ctx, const HW::Shader& sh,
+	                                uint32_t dispatch_initiator, ProgramWait wait, bool* pending);
+	// Prints a look-ahead's result with KYTY_PERMUTATION_LOG=1.
+	void LogLookahead(uint32_t draws, uint32_t parts) const;
+	// Shader translations and module compiles queued or running on worker threads.
+	[[nodiscard]] uint32_t BackgroundShaderJobs() const noexcept;
+	// How many of those have finished since startup.
+	[[nodiscard]] uint64_t BackgroundShaderJobsFinished() const noexcept;
+
 private:
 	struct ProgramCache;
 
@@ -207,8 +235,12 @@ private:
 	// Asynchronous pipelines: draws skipped so far for each pipeline whose parts are
 	// compiling.
 	std::unordered_map<GraphicsPipelineKey, uint32_t, GraphicsPipelineKeyHash> m_deferred_draws;
+	std::unique_ptr<PipelineLibraryCache> m_libraries;
 	uint64_t                              m_graphics_pipelines_created = 0;
 	uint64_t                              m_compute_pipelines_created  = 0;
+	// Prefetched compute pipelines by program id: layouts made, pipeline compiling in the
+	// library cache under ComputePrefetchKey.
+	std::unordered_map<uint64_t, std::unique_ptr<Pipeline>> m_compute_prefetched;
 
 	void InitializeDriverCache();
 	void InstallOptimizedPipeline(Pipeline& pipeline, CommandBuffer& command);
