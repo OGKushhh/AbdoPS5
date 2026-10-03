@@ -33,7 +33,6 @@
 #include <cstdlib>
 #include <cstring>
 #include <fmt/format.h>
-#include <future>
 #include <limits>
 #include <magic_enum.hpp>
 #include <optional>
@@ -228,11 +227,43 @@ struct PipelineCache::ProgramCache {
 		std::vector<uint32_t>                    spirv; // retained for the disk cache
 	};
 
+	// A result a worker thread fills in. The project builds without exceptions, so a
+	// dropped job never breaks a future: its slot simply stays unset, and the callers
+	// that can still see it (the destructor, after Stop) skip it.
+	template <typename T>
+	struct AsyncResult {
+		Common::Mutex    mutex;
+		Common::CondVar  done;
+		std::optional<T> value;
+
+		void Set(T&& result) {
+			{
+				Common::LockGuard lock(mutex);
+				value.emplace(std::move(result));
+			}
+			done.SignalAll();
+		}
+
+		// Blocks until Set; nullopt only when the job never ran.
+		std::optional<T> Take() {
+			Common::LockGuard lock(mutex);
+			while (!value.has_value()) {
+				done.Wait(&mutex);
+			}
+			return std::move(value);
+		}
+
+		[[nodiscard]] bool IsDone() {
+			Common::LockGuard lock(mutex);
+			return value.has_value();
+		}
+	};
+
 	// A permutation compiling on a worker thread.
 	struct PendingPermutation {
 		ShaderRecompiler::IR::ResourceSpecialization specialization;
 		uint32_t                                     push_data_cursor = 0;
-		std::future<CompiledModule>                  compiled;
+		std::shared_ptr<AsyncResult<CompiledModule>> compiled;
 	};
 
 	struct SourceEntry {
@@ -447,18 +478,14 @@ struct PipelineCache::ProgramCache {
 	}
 
 	template <typename T>
-	[[nodiscard]] static bool IsReady(const std::future<T>& future) {
-		return future.wait_for(std::chrono::seconds(0)) == std::future_status::ready;
+	[[nodiscard]] static bool IsReady(const std::shared_ptr<AsyncResult<T>>& result) {
+		return result->IsDone();
 	}
 
 	// Null when the job was dropped (the worker threads stopped) or failed.
 	template <typename T>
-	[[nodiscard]] static std::optional<T> TakeResult(std::future<T>& future) {
-		try {
-			return future.get();
-		} catch (const std::exception&) {
-			return std::nullopt;
-		}
+	[[nodiscard]] static std::optional<T> TakeResult(const std::shared_ptr<AsyncResult<T>>& result) {
+		return result->Take();
 	}
 
 	// Whether the shader stores to buffers, writes images or uses GDS, found by decoding only.
@@ -522,12 +549,11 @@ struct PipelineCache::ProgramCache {
 				return;
 			}
 		}
-		std::promise<ShaderRecompiler::TranslateResult> promise;
-		pending_sources.emplace(lookup_key, promise.get_future());
+		auto result = std::make_shared<AsyncResult<ShaderRecompiler::TranslateResult>>();
+		pending_sources.emplace(lookup_key, result);
 		PostJob(
-		    [input = CopyTranslationInput(stage, params, input_info),
-		     promise = std::move(promise)]() mutable {
-			    promise.set_value(ShaderRecompiler::TranslateProgram(input->code, input->options));
+		    [input = CopyTranslationInput(stage, params, input_info), result]() mutable {
+			    result->Set(ShaderRecompiler::TranslateProgram(input->code, input->options));
 		    },
 		    false);
 	}
@@ -612,12 +638,12 @@ struct PipelineCache::ProgramCache {
 				translated = TakeResult(queued->second);
 				pending_sources.erase(queued);
 			} else if (background) {
-				std::promise<ShaderRecompiler::TranslateResult> promise;
-				pending_sources.emplace(lookup_key, promise.get_future());
+				auto result =
+				    std::make_shared<AsyncResult<ShaderRecompiler::TranslateResult>>();
+				pending_sources.emplace(lookup_key, result);
 				PostJob(
-				    [input   = CopyTranslationInput(stage, params, input_info),
-				     promise = std::move(promise)]() mutable {
-					    promise.set_value(
+				    [input = CopyTranslationInput(stage, params, input_info), result]() mutable {
+					    result->Set(
 					        ShaderRecompiler::TranslateProgram(input->code, input->options));
 				    },
 				    urgent);
@@ -654,19 +680,19 @@ struct PipelineCache::ProgramCache {
 			compiled = TakeResult(queued_permutation->compiled);
 			source.pending.erase(queued_permutation);
 		} else if (background) {
-			std::promise<CompiledModule> promise;
+			auto result = std::make_shared<AsyncResult<CompiledModule>>();
 			source.pending.push_back({.specialization   = source.specialization,
 			                          .push_data_cursor = push_data_cursor,
-			                          .compiled         = promise.get_future()});
+			                          .compiled         = result});
 			PostJob(
 			    [device = device, input = CopyTranslationInput(stage, params, input_info),
 			     translated = std::move(translated), specialization = source.specialization,
-			     push_data_cursor, promise = std::move(promise)]() mutable {
+			     push_data_cursor, result]() mutable {
 				    if (!translated) {
 					    translated = ShaderRecompiler::TranslateProgram(input->code, input->options);
 				    }
-				    promise.set_value(CompileModule(device, input->options, std::move(*translated),
-				                                    specialization, push_data_cursor));
+				    result->Set(CompileModule(device, input->options, std::move(*translated),
+				                            specialization, push_data_cursor));
 			    },
 			    urgent);
 			return defer();
@@ -888,9 +914,10 @@ struct PipelineCache::ProgramCache {
 			for (const auto& permutation: entry.permutations) {
 				device.destroyShaderModule(permutation.handle.module, nullptr);
 			}
-			// The worker threads have stopped: each job either finished or was dropped.
+			// The worker threads have stopped: a job either finished, and its module is
+			// destroyed here, or it was dropped, and none was created.
 			for (auto& queued: entry.pending) {
-				if (queued.compiled.valid() && IsReady(queued.compiled)) {
+				if (IsReady(queued.compiled)) {
 					if (auto compiled = TakeResult(queued.compiled)) {
 						device.destroyShaderModule(compiled->module, nullptr);
 					}
@@ -901,8 +928,9 @@ struct PipelineCache::ProgramCache {
 
 	std::unordered_map<ProgramKey, SourceEntry, ProgramKeyHash> programs;
 	// New sources translating on worker threads.
-	std::unordered_map<ProgramKey, std::future<ShaderRecompiler::TranslateResult>, ProgramKeyHash>
-	                                                            pending_sources;
+	std::unordered_map<ProgramKey, std::shared_ptr<AsyncResult<ShaderRecompiler::TranslateResult>>,
+	                   ProgramKeyHash>
+	                   pending_sources;
 	// Whether a shader (by hash) stores data; see StoresData.
 	std::unordered_map<uint64_t, bool>                          stores_data;
 	// Runs background translations; null without pipeline libraries.
