@@ -235,7 +235,6 @@ private:
 	// Asynchronous pipelines: draws skipped so far for each pipeline whose parts are
 	// compiling.
 	std::unordered_map<GraphicsPipelineKey, uint32_t, GraphicsPipelineKeyHash> m_deferred_draws;
-	std::unique_ptr<PipelineLibraryCache> m_libraries;
 	uint64_t                              m_graphics_pipelines_created = 0;
 	uint64_t                              m_compute_pipelines_created  = 0;
 	// Prefetched compute pipelines by program id: layouts made, pipeline compiling in the
