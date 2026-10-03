@@ -185,6 +185,10 @@ bool PipelineLibrariesEnabled() {
 	return g_config->pipeline_libraries_enabled;
 }
 
+bool AsyncPipelinesEnabled() {
+	return g_config->async_pipelines_enabled;
+}
+
 #if KYTY_PLATFORM == KYTY_PLATFORM_WINDOWS
 bool RedZoneProtectionEnabled() {
         return g_config->red_zone_protection_enabled;

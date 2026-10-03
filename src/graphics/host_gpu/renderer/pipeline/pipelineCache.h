@@ -22,7 +22,6 @@ struct GraphicContext;
 struct RenderColorInfo;
 struct RenderDepthInfo;
 class CommandBuffer;
-class AsyncPipelineCompiler;
 class PipelineLibraryCache;
 
 namespace HW {
@@ -99,6 +98,11 @@ struct PipelineVertexInputState {
 	bool operator==(const PipelineVertexInputState&) const = default;
 };
 
+// How a shader lookup treats a permutation not compiled yet: compile it now (Wait), or
+// queue it on worker threads and return nothing yet, for a draw that may be skipped
+// (Defer, ahead of other jobs) or a look-ahead prediction (Prefetch).
+enum class ProgramWait { Wait, Defer, Prefetch };
+
 struct ShaderProgram {
 	uint64_t         id     = 0;
 	vk::ShaderModule module = nullptr;
@@ -133,6 +137,9 @@ public:
 	struct GraphicsPrograms {
 		std::array<ShaderProgram, 3> vertex;
 		ShaderProgram pixel;
+		// A stage is still compiling in the background (ProgramWait::Defer or Prefetch); the
+		// other programs may be missing too.
+		bool          pending = false;
 
 		[[nodiscard]] uint32_t VertexStageCount() const { return vertex[1] ? 3u : 1u; }
 	};
@@ -143,17 +150,21 @@ public:
 	                    const HW::Context& context, const HW::UserConfig& user_config,
 	                    std::span<const Prospero::ColorComponentMapping, 8> target_export_mapping,
 	                    bool pixel_active, std::array<ShaderVertexInputInfo, 3>& vertex_info,
-	                    ShaderPixelInputInfo& pixel_info);
+	                    ShaderPixelInputInfo& pixel_info, ProgramWait wait = ProgramWait::Wait);
 	ShaderProgram GetComputeProgram(const HW::ComputeShaderInfo& regs,
 	                                const HW::ShaderRegisters&   sh,
-	                                ShaderComputeInputInfo&      input_info);
+	                                ShaderComputeInputInfo&      input_info,
+	                                ProgramWait wait = ProgramWait::Wait, bool* pending = nullptr);
 
-	Pipeline& GetGraphicsPipeline(std::span<const RenderColorInfo>       colors,
+	// With `may_defer` (asynchronous pipelines), a new pipeline whose shader library parts
+	// are not compiled yet is not created: its parts are queued on worker threads and the
+	// result is null, and the caller skips the draw. Otherwise never null.
+	Pipeline* GetGraphicsPipeline(std::span<const RenderColorInfo>       colors,
 	                              const RenderDepthInfo&                 depth,
 	                              std::span<const ShaderVertexInputInfo> vertex_info,
 	                              CommandBuffer& command, const ShaderPixelInputInfo* ps_input_info,
 	                              vk::PrimitiveTopology topology, bool primitive_restart_enable,
-	                              const GraphicsPrograms& programs);
+	                              const GraphicsPrograms& programs, bool may_defer = false);
 	Pipeline& GetComputePipeline(const ShaderComputeInputInfo& input_info,
 	                             const ShaderProgram&          compute_program);
 
@@ -192,8 +203,10 @@ private:
 	std::unordered_map<GraphicsPipelineKey, std::unique_ptr<Pipeline>, GraphicsPipelineKeyHash>
 	                                                        m_graphics_pipelines;
 	std::unordered_map<uint64_t, std::unique_ptr<Pipeline>> m_compute_pipelines;
-	std::unique_ptr<AsyncPipelineCompiler>                   m_async;
 	std::unique_ptr<PipelineLibraryCache> m_libraries;
+	// Asynchronous pipelines: draws skipped so far for each pipeline whose parts are
+	// compiling.
+	std::unordered_map<GraphicsPipelineKey, uint32_t, GraphicsPipelineKeyHash> m_deferred_draws;
 	uint64_t                              m_graphics_pipelines_created = 0;
 	uint64_t                              m_compute_pipelines_created  = 0;
 

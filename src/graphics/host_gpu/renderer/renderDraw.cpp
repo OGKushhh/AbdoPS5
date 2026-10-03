@@ -975,7 +975,8 @@ static void RefreshShaders(CommandBuffer& buffer, const DrawCallInfo& draw,
 	}
 	state.programs = pipeline_cache.GetGraphicsPrograms(
 	    vertex_shader_info, pixel_shader_info, shader_regs, ctx, buffer.GetUserConfig(),
-	    target_export_mapping, state.ps_active, state.vertex_info, state.ps_input_info);
+	    target_export_mapping, state.ps_active, state.vertex_info, state.ps_input_info,
+	    Config::AsyncPipelinesEnabled() ? ProgramWait::Defer : ProgramWait::Wait);
 }
 
 bool RenderExecutor::PrepareDrawRenderState(CommandBuffer& buffer, const DrawCallInfo& draw,
@@ -987,6 +988,11 @@ bool RenderExecutor::PrepareDrawRenderState(CommandBuffer& buffer, const DrawCal
 	                  (color_output_mask != 0 ||
 	                   PixelShaderHasDepthOrCoverageSideEffects(shader_regs));
 	RefreshShaders(buffer, draw, color_output_mask, state);
+	if (state.programs.pending) {
+		// Asynchronous pipelines: a shader is still translating; skip the draw until it is
+		// ready.
+		return false;
+	}
 	uint32_t mrt_mask = 0;
 	if (state.ps_active) {
 		for (const auto& output: state.ps_input_info.stage.program->info.outputs) {
@@ -1062,6 +1068,16 @@ static void CommitIndexBuffer(vk::CommandBuffer vk_buffer, const PreparedIndexBu
 		return;
 	}
 	vk_buffer.bindIndexBuffer(prepared.buffer, prepared.offset, prepared.type);
+}
+
+// Whether a stage stores to buffers or writes storage images: data later work may read.
+// Buffer atomics alone do not count. They are counters and feedback, such as the
+// per-object maximum Astro Bot's geometry shaders record, which a skipped draw only
+// leaves out for a few frames.
+static bool StoresData(const ShaderStageRuntime& runtime) {
+	const auto& info = runtime.program->info;
+	return std::ranges::any_of(info.buffers, [](const auto& buffer) { return buffer.stored; }) ||
+	       std::ranges::any_of(info.images, [](const auto& image) { return image.written; });
 }
 
 static void LogDrawStateIfNeeded(const CommandBuffer& buffer, const DrawCallInfo& draw,
@@ -1255,10 +1271,21 @@ void RenderExecutor::ExecutePreparedDraw(uint64_t submit_id, CommandBuffer& buff
 	if (draw.IsIndexed()) {
 		LogDrawPhase(draw.Name(), "CreatePipeline");
 	}
-	auto& pipeline = m_context.GetPipelineCache().GetGraphicsPipeline(
+	// With asynchronous pipelines, a draw whose pipeline is still compiling is skipped,
+	// unless its shaders store data that later work may read.
+	bool may_defer = Config::AsyncPipelinesEnabled();
+	for (const auto& stage: vertex_stages) {
+		may_defer = may_defer && !StoresData(stage.stage);
+	}
+	may_defer = may_defer && !(state.ps_active && StoresData(state.ps_input_info.stage));
+	auto* const found_pipeline = m_context.GetPipelineCache().GetGraphicsPipeline(
 	    std::span {state.color_info, state.color_count}, state.depth_info, vertex_stages, buffer,
 	    state.ps_active ? &state.ps_input_info : nullptr, topology, primitive_restart_enable,
-	    state.programs);
+	    state.programs, may_defer);
+	if (found_pipeline == nullptr) {
+		return;
+	}
+	auto& pipeline = *found_pipeline;
 	vk::ImageAspectFlags feedback_aspects;
 	const auto rendering =
 	    AcquireRenderTargets(buffer, state.color_info, state.color_count, state.depth_info,

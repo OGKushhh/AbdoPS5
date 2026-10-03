@@ -74,6 +74,7 @@ struct ConfigOptions {
         bool                   playgo_hack_enabled         = false;
         bool                   gpu_mesh_indirect_enabled   = true;
         bool                   pipeline_libraries_enabled  = true;
+        bool                   async_pipelines_enabled     = false;
 #if KYTY_PLATFORM == KYTY_PLATFORM_WINDOWS
         bool red_zone_protection_enabled = false;
 #endif
@@ -141,6 +142,8 @@ bool PlayGoHackEnabled();
 bool GpuMeshIndirectEnabled();
 // Build new graphics pipelines from cached, separately compiled parts.
 bool PipelineLibrariesEnabled();
+// Skip draws whose new pipeline is still compiling instead of stalling.
+bool AsyncPipelinesEnabled();
 
 #if KYTY_PLATFORM == KYTY_PLATFORM_WINDOWS
 bool RedZoneProtectionEnabled();

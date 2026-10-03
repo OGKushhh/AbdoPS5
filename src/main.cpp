@@ -85,6 +85,8 @@ static void PrintUsage() {
 	         "Default: true.\n");
 	::printf("  --pipeline-libraries <true|false>    Build new graphics pipelines from cached, "
 	         "separately compiled parts where the driver supports it. Default: true.\n");
+	::printf("  --async-pipelines <true|false>       Skip draws whose new pipeline is still "
+	         "compiling instead of stalling; they appear a few frames late. Default: false.\n");
 #if KYTY_PLATFORM == KYTY_PLATFORM_WINDOWS
 	::printf("  --redzone                            Protect the guest SysV red zone.\n");
 #endif
@@ -406,6 +408,11 @@ static bool ParseArgs(int argc, char* argv[], RunOptions& options, bool& show_he
 			}
 		} else if (arg == "--pipeline-libraries") {
 			if (!ParseBool(value, options.config.pipeline_libraries_enabled)) {
+				::printf("invalid boolean for %s: %s\n", arg.c_str(), value.c_str());
+				return false;
+			}
+		} else if (arg == "--async-pipelines") {
+			if (!ParseBool(value, options.config.async_pipelines_enabled)) {
 				::printf("invalid boolean for %s: %s\n", arg.c_str(), value.c_str());
 				return false;
 			}
