@@ -966,7 +966,7 @@ eliminating the #1 perf bottleneck (repeated shader compilation).
 | **Severity** | 🟢 Medium |
 | **Effort** | 3–5 days |
 | **Source** | PS5PCEM deep comparison |
-| **Status** | 🟡 **In progress (v2 shipped)** — v1: AsyncPipelineCompiler worker pool + vertex-stage translation prefetch (pipeline/asyncPipelineCompiler.*, KYTY_NO_ASYNC_SHADERS kill-switch). v2: SPIR-V disk persistence (pipeline/shaderDiskCache.*, `_PipelineCache/<title>.shadercache`): full ResourcePlan IR-graph + per-permutation SPIR-V/CompiledShaderInfo/specialization serialization, merge-on-save keeps untouched entries, bounds-checked untrusted parsing (fails closed to retranslation), KYTY_NO_SHADER_CACHE kill-switch; WillLikelyTranslate consults the disk index so prefetched slots never leak. Remaining: uber-shader fallback (needs recompiler no-specialization mode). |
+| **Status** | ✅ **v3 shipped** — v1/v2 as before (v1's worker pool is now subsumed by the library cache's compile threads; the KYTY_NO_ASYNC_SHADERS kill-switch still gates background translations). v3 (fork port): VK_EXT_graphics_pipeline_library part-based pipeline creation with background link-time-optimized relinks (pipeline/pipelineLibrary.*), background shader translation through pending_sources/SourceEntry::pending slots on the library workers, opt-in draw skipping (--async-pipelines, default off, data-storing shaders always synchronous), and the look-ahead command-stream walk that predicts upcoming draws'/dispatches' pipelines from registers alone and prefetches their parts. |
 | **Depends on** | Kyty-031 |
 
 **Root cause:** shader compilation blocks the render thread, causing frame
@@ -997,17 +997,31 @@ or malformed entry fails closed to the ordinary retranslate path. Saves happen
 at the existing driver-cache save point; merge-on-save preserves entries the
 session never touched. Kill-switch: KYTY_NO_SHADER_CACHE.
 
-**v3 (blocked, deliberately not faked):** a true fallback shader while the real
-pipeline compiles requires an uber-shader mode in the recompiler (a
-no-specialization/conservative-resource translation), which does not exist yet;
-skipping draws instead would silently corrupt readback-dependent games, which
-violates the loud-failure policy.
+**v3 (shipped — the fork's form, not an uber-shader):** new graphics pipelines
+build from VK_EXT_graphics_pipeline_library parts (vertex input,
+pre-rasterization, fragment shader, fragment output), each cached under the
+state it depends on, fast-linked in under a millisecond and relinked with
+link-time optimization on a background thread that the draw path swaps in.
+Pixel shaders use descriptor set 1 and vertex-side stages set 0, so each
+stage's descriptor layout is shared by every pipeline that uses it. A
+look-ahead walk of the rest of the command buffer (register writes replayed
+into a shadow command processor, calls/chains followed) predicts upcoming
+draws' and dispatches' pipelines from registers alone and queues the missing
+parts and compute pipelines on the library workers, rewalking as background
+translations finish. With --async-pipelines (default off) a draw whose parts
+are still compiling is skipped instead of stalling — data-storing shaders
+(buffer stores, image writes, GDS) always compile synchronously, and the
+uber-shader mode remains rejected as unnecessary. An uber-shader would still
+be the honest fallback for feedback loops; nothing in the current games
+needs it.
 
 **Acceptance criteria:**
-- [x] AsyncPipelineCompiler class dispatches compile jobs to a worker thread
-- [ ] Render thread falls back to a simple shader while the real one compiles (needs recompiler uber-shader mode; draw-skipping rejected as silent corruption)
-- [x] Compiled pipeline replaces the fallback atomically when ready (slot publish + consume; results always land before the frame returns)
+- [x] Background shader jobs (v1's pool subsumed by the pipeline library cache's compile threads)
+- [x] First-use pipelines compile only the parts no earlier pipeline built, then fast-link (v3)
+- [x] Opt-in draw skipping with --async-pipelines; data-storing shaders always synchronous (v3)
+- [x] Look-ahead command-stream walk prefetches upcoming graphics/compute pipelines (v3)
 - [x] SPIR-V/translated-shader disk persistence (shaderDiskCache: plan IR graph + per-permutation SPIR-V; merge-on-save; second+ sessions skip decode+translate+emit; RAM cost: retained SPIR-V words per permutation — matches the file size)
+- [ ] Uber-shader fallback (deliberately rejected: no game needs it; draw skipping covers the visible-hitch case without silent corruption of readback-dependent paths when off by default)
 
 
 ---
@@ -1261,7 +1275,7 @@ perf.
 | Kyty-029 | Weekly compatibility regression test | 1 week + ongoing | 🟢 |
 | Kyty-030 | Documentation (stub policy + triage + game hacks) | 1 day | 🟢 |
 | Kyty-031 | Pipeline cache persistence | 1–2 days | 🟢 |
-| Kyty-032 | Async pipeline compiler | 3–5 days | 🟡 |
+| Kyty-032 | Async pipeline compiler | 3–5 days | ✅ |
 | Kyty-033 | Per-subresource Vulkan layout tracking | 1 week | 🟢 |
 | Kyty-034 | Image alias registry | 1–2 weeks | 🟢 |
 | Kyty-035 | NID computation from names | 2–3 days | 🟢 |
@@ -1648,7 +1662,7 @@ but missed the linker layer).
 |---|---|
 | **Severity** | 🟠 High (correctness + perf, already proven upstream of us) |
 | **Effort** | 2–4 weeks of porting, verify each |
-| **Status** | ✅ 14/17 ported (last: a50f4647) — CI green |
+| **Status** | ✅ 15/17 ported (last: ba8da911) — CI green |
 
 The BryanKAdams fork (same project lineage, GPL-2 — cherry-picking is
 license-clean with git attribution) carries a deep GPU-side program.
@@ -1666,10 +1680,14 @@ f79a100d), indexed indirect args on the GPU (a50f4647), two-texel box
 downscale filter (40b489d4), lock-free guest backing reads (0e9f5816).
 Remaining port backlog:
 
-- Pipeline libraries + look-ahead command-stream walk (their 07aed98c,
-  b6d2d91b, 0bffe78e, 75e4f6fc) — completes our Kyty-032 v1/v2 into v3;
-  their mesh-pipeline-library churn (757b95b5/dc0365c8/c422cad7) needs
-  untangling first
+- ~~Pipeline libraries + look-ahead command-stream walk~~ — done as Kyty-032
+  v3 (89e14ac8 pipeline libraries incl. mesh + our blend/feedback
+  adaptations; ab600e91 background shaders + opt-in draw skip with the v1
+  pool subsumed; 06afd86b the walk with compute prefetch, burst walks and
+  rewalks; 0c3c5634/08568725/ba8da911 the CI fixes: exception-free result
+  slots, includes). Their whole series was untangled: 07aed98c, c422cad7,
+  757b95b5, 17da0ad5, 5949de94, dc0365c8, b6d2d91b, 75e4f6fc, 0bffe78e —
+  one adapted cumulative port, GPL-2 attribution kept.
 - f0c5b371 keep render targets while registers unchanged — needs the
   fork's FindImage memo line (fad08c090 + bebdd590) which builds on their
   dccClearResolver textureCache, divergent from our Kyty-034/037 registry;
