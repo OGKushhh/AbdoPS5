@@ -2,7 +2,7 @@ set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 
 add_subdirectory(cpuinfo)
 
-# Kyty-011: Cubeb audio backend (Mozilla cross-platform audio library).
+ (Mozilla cross-platform audio library).
 # Used by Firefox, RPCS3, Citra, Dolphin. Lower latency than SDL on
 # Linux/PipeWire, better device routing on macOS.
 #
@@ -30,12 +30,31 @@ if(USE_CUBEB)
                                  "Falling back to no-op stub (audio uses SDL).")
                 set(USE_CUBEB OFF CACHE BOOL "" FORCE)
         endif()
+endif()include(FetchContent)
+
+# The Bluetooth DualSense transports speaker audio as fixed-size Opus packets.
+set(kyty_build_testing_saved "${BUILD_TESTING}")
+set(BUILD_TESTING OFF)
+set(OPUS_BUILD_PROGRAMS OFF CACHE BOOL "" FORCE)
+set(OPUS_INSTALL_PKG_CONFIG_MODULE OFF CACHE BOOL "" FORCE)
+set(OPUS_INSTALL_CMAKE_CONFIG_MODULE OFF CACHE BOOL "" FORCE)
+if(MSVC AND CMAKE_C_COMPILER_ID STREQUAL "Clang")
+	# Opus assumes MSVC accepts SSE4.1 intrinsics without per-file flags, but
+	# clang-cl rejects them in its baseline x64 files. Its AVX2 dispatch also
+	# depends on the SSE4.1 declarations, so retain the x64 SSE2 baseline only.
+	set(OPUS_X86_MAY_HAVE_SSE4_1 OFF CACHE BOOL "" FORCE)
+	set(OPUS_X86_MAY_HAVE_AVX2 OFF CACHE BOOL "" FORCE)
 endif()
+FetchContent_Declare(opus
+	GIT_REPOSITORY https://github.com/xiph/opus.git
+	GIT_TAG ddbe48383984d56acd9e1ab6a090c54ca6b735a6
+	GIT_SHALLOW FALSE)
+FetchContent_MakeAvailable(opus)
+set(BUILD_TESTING "${kyty_build_testing_saved}")
+install(FILES "${opus_SOURCE_DIR}/COPYING" DESTINATION "licenses/opus")
 
-# The Windows guest red-zone patcher needs a decoder/encoder and a small
+# The guest instruction patcher needs a decoder/encoder and a small
 # trampoline assembler. Pin the same revisions used by shadPS4's implementation.
-include(FetchContent)
-
 set(XBYAK_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(
         xbyak
@@ -57,6 +76,7 @@ FetchContent_Declare(
 )
 
 FetchContent_MakeAvailable(xbyak zydis)
+target_compile_definitions(xbyak INTERFACE XBYAK_NO_EXCEPTION)
 
 # ZArchive provides random-access reads for compressed game dumps. Build only
 # the reader/writer library and its zstd dependency; the command-line tool is

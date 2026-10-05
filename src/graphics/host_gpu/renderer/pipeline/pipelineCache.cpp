@@ -50,7 +50,6 @@ namespace Libs::Graphics {
 
 namespace {
 
-// The library cache key a prefetched compute pipeline compiles under.
 std::string ComputePrefetchKey(uint64_t program_id) {
 	std::string key(1, 'C');
 	key.append(reinterpret_cast<const char*>(&program_id), sizeof(program_id));
@@ -63,6 +62,13 @@ void DestroyPipelineObjects(const GraphicContext& graphics, const PipelineCache:
 	graphics.device.destroyDescriptorSetLayout(pipeline.descriptor_set_layout, nullptr);
 	if (pipeline.pixel_set_layout != nullptr) {
 		graphics.device.destroyDescriptorSetLayout(pipeline.pixel_set_layout, nullptr);
+uint8_t RemapSourceAlphaFactor(uint8_t factor) {
+	switch (static_cast<Prospero::BlendFactor>(factor)) {
+		case Prospero::BlendFactor::kSrcAlpha:
+			return static_cast<uint8_t>(Prospero::BlendFactor::kSrc1Alpha);
+		case Prospero::BlendFactor::kOneMinusSrcAlpha:
+			return static_cast<uint8_t>(Prospero::BlendFactor::kOneMinusSrc1Alpha);
+		default: return factor;
 	}
 }
 
@@ -121,8 +127,10 @@ void PipelineCacheLog(fmt::format_string<Args...> format, Args&&... args) {
 }
 
 bool ReadShaderGuestMemory(void*, uint64_t address, std::span<uint32_t> values) {
+	// Scalar and unformatted buffer dependencies use the same backing as native raw loads.
+	// Image synchronization belongs to formatted buffer bindings, not these reads.
 	return !values.empty() &&
-	       Libs::LibKernel::Memory::TryReadGpuCleanBacking(address, values.data(), values.size_bytes());
+	       Libs::LibKernel::Memory::TryReadBufferBacking(address, values.data(), values.size_bytes());
 }
 
 void DumpShaderSpirv(const char* stage_name, uint64_t shader_hash,
@@ -296,7 +304,6 @@ struct PipelineCache::ProgramCache {
 		std::vector<Permutation>                    permutations;
 		// Permutations compiling on worker threads, picked up by a later lookup.
 		std::vector<PendingPermutation>             pending;
-		bool                                        skip_dispatch = false;
 	};
 
 	struct ProgramKeyHash {
@@ -609,14 +616,14 @@ struct PipelineCache::ProgramCache {
 		if (entry == programs.end()) {
 			entry = TryLoadProgramFromDisk(lookup_key);
 		}
-		if (entry != programs.end() && entry->second.skip_dispatch) {
-			return {};
-		}
-		const ShaderRecompiler::IR::SrtRuntime       runtime {
+		ShaderRecompiler::IR::SrtRuntime             runtime {
 		    .user_data                  = user_data,
 		    .shader_base                = params.Base(),
 		    .read_specialization_memory = ReadShaderGuestMemory,
 		};
+		if constexpr (std::is_same_v<InputInfo, ShaderComputeInputInfo>) {
+			runtime.workgroup_counts = input_info.workgroup_counts;
+		}
 		if (entry != programs.end()) {
 			EXIT_IF(!ShaderRecompiler::IR::MaterializeResources(
 			    entry->second.resource_plan, runtime, entry->second.resources,
@@ -670,11 +677,6 @@ struct PipelineCache::ProgramCache {
 			if (!translated) {
 				DumpShaderOriginal(stage_name, options.shader_hash, params.code);
 				translated = ShaderRecompiler::TranslateProgram(params.code, options);
-			}
-			if (translated->skip_dispatch) {
-				entry = programs.try_emplace(lookup_key, ShaderRecompiler::IR::ResourcePlan {}).first;
-				entry->second.skip_dispatch = true;
-				return {};
 			}
 			entry = programs.try_emplace(lookup_key,
 			    ShaderRecompiler::IR::ExtractResourcePlan(translated->program)).first;
@@ -772,7 +774,7 @@ struct PipelineCache::ProgramCache {
 			return programs.end();
 		}
 		auto entry = programs.try_emplace(key, std::move(loaded->plan)).first;
-		entry->second.skip_dispatch = loaded->skip_dispatch;
+		// Upstream now binds dispatch spans natively; skip_dispatch is obsolete.
 		entry->second.permutations.reserve(loaded->permutations.size());
 		for (auto& permutation: loaded->permutations) {
 			vk::ShaderModuleCreateInfo create_info {};
@@ -854,7 +856,7 @@ struct PipelineCache::ProgramCache {
 				                 key.hash);
 				continue;
 			}
-			w.WriteBool(entry.skip_dispatch);
+			w.WriteBool(false); // obsolete skip_dispatch, kept for cache format compat
 			w.WriteU32(static_cast<uint32_t>(entry.permutations.size()));
 			for (const auto& permutation: entry.permutations) {
 				ShaderDiskCache::WriteResourceSpecialization(w, permutation.specialization);
@@ -1213,14 +1215,24 @@ PipelineCache::GraphicsPrograms PipelineCache::GetGraphicsPrograms(
 		           pixel_info.target_output_mode[0] != 0 && pixel_info.target_output_mode[0] != 7 &&
 		           std::all_of(std::begin(pixel_info.target_output_mode) + 1,
 		                       std::end(pixel_info.target_output_mode),
-		                       [](uint8_t mode) { return mode == 0; }) &&
-		           ClassifyBlendMapping(blend, pixel_info.target_export_mapping[0]) ==
-		               BlendMappingSupport::SourceAlpha) {
-			// Preserve logical alpha when the export mapping moves it.
-			pixel_info.alpha_blend_source_remap = true;
-			pixel_info.dual_source_blending     = true;
-			pixel_info.target_output_mode[1]    = pixel_info.target_output_mode[0];
-			pixel_info.target_export_mapping[1] = {};
+		                       [](uint8_t mode) { return mode == 0; })) {
+			switch (ClassifyBlendMapping(blend, pixel_info.target_export_mapping[0])) {
+				case BlendMappingSupport::SourceAlpha:
+					pixel_info.alpha_blend_source = ShaderAlphaBlendSource::SourceAlpha;
+					break;
+				case BlendMappingSupport::SourceAlphaOne:
+					pixel_info.alpha_blend_source = ShaderAlphaBlendSource::SourceAlphaOne;
+					break;
+				case BlendMappingSupport::SourceAlphaZero:
+					pixel_info.alpha_blend_source = ShaderAlphaBlendSource::SourceAlphaZero;
+					break;
+				default: break;
+			}
+			if (pixel_info.alpha_blend_source != ShaderAlphaBlendSource::None) {
+				pixel_info.dual_source_blending     = true;
+				pixel_info.target_output_mode[1]    = pixel_info.target_output_mode[0];
+				pixel_info.target_export_mapping[1] = {};
+			}
 		}
 	}
 	if (context.GetClipControl().clip_disable) {
@@ -1293,6 +1305,8 @@ ShaderProgram PipelineCache::GetComputeProgram(const HW::ComputeShaderInfo& regs
                                                ProgramWait wait, bool* pending) {
 	input_info.host_subgroup_size = m_graphics.SupportsComputeWave64() ? 64u : 32u;
 	const auto        params      = PrepareProgram(regs, sh, input_info);
+	input_info.lds_storage = input_info.lds_size_dwords * 4u >
+	    m_graphics.GetPhysicalDeviceProperties().limits.maxComputeSharedMemorySize;
 	uint32_t          push_data_cursor = 0;
 	return m_program_cache->Get(params, input_info, push_data_cursor, wait, pending);
 }
@@ -1349,17 +1363,12 @@ PipelineCache::Pipeline* PipelineCache::GetGraphicsPipeline(
 		}
 		const auto& rt                        = ctx.GetRenderTarget(colors[i].target_slot);
 		const auto& bc                        = ctx.GetBlendControl(colors[i].target_slot);
-		static_params.color_srcblend[slot]       = bc.color_srcblend;
-		static_params.color_comb_fcn[slot]       = bc.color_comb_fcn;
-		static_params.color_destblend[slot]      = bc.color_destblend;
-		static_params.alpha_srcblend[slot]       = bc.alpha_srcblend;
-		static_params.alpha_comb_fcn[slot]       = bc.alpha_comb_fcn;
-		static_params.alpha_destblend[slot]      = bc.alpha_destblend;
-		static_params.separate_alpha_blend[slot] = bc.separate_alpha_blend;
-		const bool alpha_remap =
-		    slot == 0 && ps_input_info != nullptr && ps_input_info->alpha_blend_source_remap;
+		auto alpha_source = ShaderAlphaBlendSource::None;
+		if (slot == 0 && ps_input_info != nullptr) {
+			alpha_source = ps_input_info->alpha_blend_source;
+		}
 		static_params.blend_enable[slot] = bc.enable && !rt.info.blend_bypass;
-		if (static_params.blend_enable[slot] && !alpha_remap &&
+		if (static_params.blend_enable[slot] && alpha_source == ShaderAlphaBlendSource::None &&
 		    ClassifyBlendMapping(bc, colors[i].export_mapping) != BlendMappingSupport::Direct) {
 			static_params.blend_enable[slot] = false;
 			static std::atomic_bool warned = false;
@@ -1371,8 +1380,33 @@ PipelineCache::Pipeline* PipelineCache::GetGraphicsPipeline(
 				    bc.alpha_srcblend, bc.alpha_destblend, bc.separate_alpha_blend ? 1 : 0));
 			}
 		}
-		if (alpha_remap) {
-			static_params.blend_alpha_source_remap = true;
+		if (static_params.blend_enable[slot]) {
+			auto blend = bc;
+			switch (alpha_source) {
+				case ShaderAlphaBlendSource::SourceAlpha:
+					blend.color_srcblend  = RemapSourceAlphaFactor(blend.color_srcblend);
+					blend.color_destblend = RemapSourceAlphaFactor(blend.color_destblend);
+					blend.separate_alpha_blend = false;
+					break;
+				case ShaderAlphaBlendSource::SourceAlphaOne:
+				case ShaderAlphaBlendSource::SourceAlphaZero:
+					// The second source carries the mapped source factor; its alpha stays logical Sa.
+					blend.color_srcblend = static_cast<uint8_t>(Prospero::BlendFactor::kSrc1Color);
+					blend.color_destblend =
+					    static_cast<uint8_t>(Prospero::BlendFactor::kOneMinusSrc1Alpha);
+					blend.separate_alpha_blend = false;
+					break;
+				case ShaderAlphaBlendSource::None: break;
+			}
+			static_params.color_srcblend[slot]       = blend.color_srcblend;
+			static_params.color_comb_fcn[slot]       = blend.color_comb_fcn;
+			static_params.color_destblend[slot]      = blend.color_destblend;
+			static_params.separate_alpha_blend[slot] = blend.separate_alpha_blend;
+			if (blend.separate_alpha_blend) {
+				static_params.alpha_srcblend[slot]  = blend.alpha_srcblend;
+				static_params.alpha_comb_fcn[slot]  = blend.alpha_comb_fcn;
+				static_params.alpha_destblend[slot] = blend.alpha_destblend;
+			}
 		}
 	}
 	const bool with_depth =

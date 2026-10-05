@@ -139,6 +139,9 @@ uint32_t EmitFloatCompare32(ValueEmitContext& ctx, const IR::Inst& inst) {
 	return EmitNative<opcode, IR::Type::U1>(ctx.state, operand(0), operand(1));
 }
 inline constexpr auto EmitFPOrdEqual32 = EmitFloatCompare32<spv::OpFOrdEqual>;
+EMIT_NATIVE(FPOrdEqual64, OpFOrdEqual, U1, uint32_t, uint32_t)
+EMIT_NATIVE(FPOrdLessThanEqual64, OpFOrdLessThanEqual, U1, uint32_t, uint32_t)
+EMIT_NATIVE(FPOrdGreaterThanEqual64, OpFOrdGreaterThanEqual, U1, uint32_t, uint32_t)
 inline constexpr auto EmitFPUnordEqual32 = EmitFloatCompare32<spv::OpFUnordEqual>;
 inline constexpr auto EmitFPOrdNotEqual32 = EmitFloatCompare32<spv::OpFOrdNotEqual>;
 inline constexpr auto EmitFPUnordNotEqual32 = EmitFloatCompare32<spv::OpFUnordNotEqual>;
@@ -155,14 +158,17 @@ inline constexpr auto EmitFPCmpClass32 = EmitClassMaskF32;
 EMIT_NATIVE(FPAdd32, OpFAdd, F32, uint32_t, uint32_t)
 EMIT_NATIVE(FPSub32, OpFSub, F32, uint32_t, uint32_t)
 EMIT_NATIVE(FPMul32, OpFMul, F32, uint32_t, uint32_t)
+EMIT_NATIVE(FPAdd64, OpFAdd, F64, uint32_t, uint32_t)
 EMIT_NATIVE(FPMul64, OpFMul, F64, uint32_t, uint32_t)
 inline constexpr auto EmitFPFma64 =
     EmitGlsl<GLSLstd450Fma, IR::Type::F64, uint32_t, uint32_t, uint32_t>;
 uint32_t              EmitFPRecip64(EmitterState& state, uint32_t arg0);
-inline constexpr auto EmitFPFma32 =
-    EmitGlsl<GLSLstd450Fma, IR::Type::F32, uint32_t, uint32_t, uint32_t>;
+uint32_t EmitFPFma32(EmitterState& state, uint32_t arg0, uint32_t arg1, uint32_t arg2);
+uint32_t EmitFPMad32(EmitterState& state, uint32_t arg0, uint32_t arg1, uint32_t arg2);
 uint32_t EmitFPMin32(EmitterState& state, uint32_t arg0, uint32_t arg1);
 uint32_t EmitFPMax32(EmitterState& state, uint32_t arg0, uint32_t arg1);
+uint32_t EmitFPMin64(EmitterState& state, uint32_t arg0, uint32_t arg1);
+uint32_t EmitFPMax64(EmitterState& state, uint32_t arg0, uint32_t arg1);
 uint32_t EmitFPMinTri32(EmitterState& state, uint32_t arg0, uint32_t arg1, uint32_t arg2);
 uint32_t EmitFPMaxTri32(EmitterState& state, uint32_t arg0, uint32_t arg1, uint32_t arg2);
 uint32_t EmitFPMedTri32(EmitterState& state, uint32_t arg0, uint32_t arg1, uint32_t arg2);
@@ -177,7 +183,11 @@ inline constexpr auto EmitFPRoundEven32 = EmitGlsl<GLSLstd450RoundEven, IR::Type
 inline constexpr auto EmitFPFloor32     = EmitGlsl<GLSLstd450Floor, IR::Type::F32, uint32_t>;
 inline constexpr auto EmitFPCeil32      = EmitGlsl<GLSLstd450Ceil, IR::Type::F32, uint32_t>;
 inline constexpr auto EmitFPTrunc32     = EmitGlsl<GLSLstd450Trunc, IR::Type::F32, uint32_t>;
+inline constexpr auto EmitFPFloor64     = EmitGlsl<GLSLstd450Floor, IR::Type::F64, uint32_t>;
+inline constexpr auto EmitFPCeil64      = EmitGlsl<GLSLstd450Ceil, IR::Type::F64, uint32_t>;
+inline constexpr auto EmitFPTrunc64     = EmitGlsl<GLSLstd450Trunc, IR::Type::F64, uint32_t>;
 inline constexpr auto EmitFPFract32     = EmitGlsl<GLSLstd450Fract, IR::Type::F32, uint32_t>;
+inline constexpr auto EmitFPFract64     = EmitGlsl<GLSLstd450Fract, IR::Type::F64, uint32_t>;
 uint32_t              EmitFPSin(EmitterState& state, uint32_t arg0);
 uint32_t              EmitFPCos(EmitterState& state, uint32_t arg0);
 #undef EMIT_NATIVE
@@ -187,16 +197,17 @@ void                  EmitVoid(ValueEmitContext&);
 inline constexpr auto EmitReference    = EmitVoid;
 inline constexpr auto EmitReferenceU32 = EmitVoid;
 inline constexpr auto EmitControlNop   = EmitVoid;
-inline constexpr auto EmitWaitcnt      = EmitVoid;
 inline constexpr auto EmitSendmsg      = EmitVoid;
 inline constexpr auto EmitTtraceData   = EmitVoid;
 inline constexpr auto EmitInstPrefetch = EmitVoid;
 void                  EmitBarrier(EmitterState& state);
+void                  EmitStoreCompletion(EmitterState& state);
 void                  EmitMeshAllocate(ValueEmitContext& ctx, const IR::Inst& inst);
 uint32_t              EmitMeshDrawParameter(ValueEmitContext& ctx, const IR::Inst& inst);
 uint32_t              EmitGetTessellationAttribute(ValueEmitContext& ctx, const IR::Inst& inst);
 void                  EmitSetTessellationAttribute(ValueEmitContext& ctx, const IR::Inst& inst);
 uint32_t              EmitGetUserData(EmitterState& state, IR::ScalarReg reg);
+uint32_t              EmitGetDispatchThreadExtent(ValueEmitContext& ctx, const IR::Inst& inst);
 uint32_t              EmitGetBuiltin(ValueEmitContext& ctx, IR::Value kind, IR::Value index);
 uint32_t              EmitUndefU1(EmitterState& state, const IR::Inst& inst);
 inline constexpr auto EmitUndefU8  = EmitUndefU1;
@@ -228,11 +239,13 @@ void                  EmitLoadMemory(ValueEmitContext& ctx, const IR::Inst& inst
 void                  EmitStoreMemory(ValueEmitContext& ctx, const IR::Inst& inst);
 uint32_t              EmitAtomic32(ValueEmitContext& ctx, const IR::Inst& inst);
 uint32_t              EmitBufferAtomic64(ValueEmitContext& ctx, const IR::Inst& inst);
-void                  EmitSharedAtomicOr64(ValueEmitContext& ctx, const IR::Inst& inst);
+void                  EmitSharedAtomic64(ValueEmitContext& ctx, const IR::Inst& inst);
+void                  EmitSharedAtomicMaskedOr32(ValueEmitContext& ctx, const IR::Inst& inst);
 uint32_t              EmitBufferFloatAtomic(ValueEmitContext& ctx, const IR::Inst& inst);
 void                  EmitSharedFloatAtomic(ValueEmitContext& ctx, const IR::Inst& inst);
 uint32_t              EmitSharedIncDec(ValueEmitContext& ctx, const IR::Inst& inst);
 uint32_t              EmitAppendConsume(ValueEmitContext& ctx, const IR::Inst& inst);
+uint32_t              EmitPermuteU32(ValueEmitContext& ctx, const IR::Inst& inst);
 uint32_t              EmitBpermuteU32(ValueEmitContext& ctx, const IR::Inst& inst);
 uint32_t              EmitReadConst(ValueEmitContext& ctx, const IR::Inst& inst);
 void                  EmitReadConstBuffer(ValueEmitContext& ctx, const IR::Inst& inst);
@@ -264,6 +277,7 @@ inline constexpr auto EmitBufferAtomicUMin32    = EmitAtomic32;
 inline constexpr auto EmitBufferAtomicSMax32    = EmitAtomic32;
 inline constexpr auto EmitBufferAtomicUMax32    = EmitAtomic32;
 inline constexpr auto EmitBufferAtomicAnd32     = EmitAtomic32;
+inline constexpr auto EmitBufferAtomicAnd64     = EmitBufferAtomic64;
 inline constexpr auto EmitBufferAtomicOr32      = EmitAtomic32;
 inline constexpr auto EmitBufferAtomicOr64      = EmitBufferAtomic64;
 inline constexpr auto EmitBufferAtomicXor32     = EmitAtomic32;
@@ -285,6 +299,7 @@ inline constexpr auto EmitSharedAtomicFMin32    = EmitSharedFloatAtomic;
 inline constexpr auto EmitSharedAtomicFMax32    = EmitSharedFloatAtomic;
 inline constexpr auto EmitSharedAtomicSwap32    = EmitAtomic32;
 inline constexpr auto EmitSharedAtomicIAdd32    = EmitAtomic32;
+inline constexpr auto EmitSharedAtomicIAdd64    = EmitSharedAtomic64;
 inline constexpr auto EmitSharedAtomicISub32    = EmitAtomic32;
 inline constexpr auto EmitSharedAtomicInc32     = EmitSharedIncDec;
 inline constexpr auto EmitSharedAtomicDec32     = EmitSharedIncDec;
@@ -294,24 +309,36 @@ inline constexpr auto EmitSharedAtomicSMax32    = EmitAtomic32;
 inline constexpr auto EmitSharedAtomicUMax32    = EmitAtomic32;
 inline constexpr auto EmitSharedAtomicAnd32     = EmitAtomic32;
 inline constexpr auto EmitSharedAtomicOr32      = EmitAtomic32;
+inline constexpr auto EmitSharedAtomicOr64      = EmitSharedAtomic64;
 inline constexpr auto EmitSharedAtomicXor32     = EmitAtomic32;
 inline constexpr auto EmitDataAppend            = EmitAppendConsume;
 inline constexpr auto EmitDataConsume           = EmitAppendConsume;
 uint32_t              EmitSwizzleU32(ValueEmitContext& ctx, const IR::Inst& inst);
 void                  EmitImage(ValueEmitContext& ctx, const IR::Inst& inst);
+uint32_t              EmitBvhIntersect(ValueEmitContext& ctx, const IR::Inst& inst);
 inline constexpr auto EmitImageQueryDimensions = EmitImage;
 inline constexpr auto EmitImageQueryLod        = EmitImage;
 inline constexpr auto EmitImageRead            = EmitImage;
 inline constexpr auto EmitImageWrite           = EmitImage;
 inline constexpr auto EmitImageSampleRaw       = EmitImage;
 inline constexpr auto EmitImageGatherRaw       = EmitImage;
+inline constexpr auto EmitImageAtomicCompareSwap32 = EmitImage;
 inline constexpr auto EmitImageAtomicSwap32    = EmitImage;
+inline constexpr auto EmitImageAtomicSwap64    = EmitImage;
 inline constexpr auto EmitImageAtomicIAdd32    = EmitImage;
+inline constexpr auto EmitImageAtomicIAdd64    = EmitImage;
+inline constexpr auto EmitImageAtomicSMin32    = EmitImage;
 inline constexpr auto EmitImageAtomicUMin32    = EmitImage;
+inline constexpr auto EmitImageAtomicUMin64    = EmitImage;
+inline constexpr auto EmitImageAtomicSMax32    = EmitImage;
 inline constexpr auto EmitImageAtomicUMax32    = EmitImage;
+inline constexpr auto EmitImageAtomicUMax64    = EmitImage;
 inline constexpr auto EmitImageAtomicAnd32     = EmitImage;
+inline constexpr auto EmitImageAtomicAnd64     = EmitImage;
 inline constexpr auto EmitImageAtomicOr32      = EmitImage;
+inline constexpr auto EmitImageAtomicOr64      = EmitImage;
 inline constexpr auto EmitImageAtomicXor32     = EmitImage;
+inline constexpr auto EmitImageAtomicXor64     = EmitImage;
 inline constexpr auto EmitImageAtomicFMin32    = EmitImage;
 inline constexpr auto EmitImageAtomicFMax32    = EmitImage;
 void                  EmitUnreachable(ValueEmitContext& ctx, const IR::Inst& inst);
