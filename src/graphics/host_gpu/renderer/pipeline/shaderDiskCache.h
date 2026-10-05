@@ -21,7 +21,7 @@ namespace Libs::Graphics::ShaderDiskCache {
 
 // Bump when any serialized structure below changes shape or semantics.
 inline constexpr uint64_t Magic        = 0x4b59545953484301ull; // "KYTYSHC" 0x01
-inline constexpr uint32_t FormatVersion = 1;
+inline constexpr uint32_t FormatVersion = 2; // v2: DescriptorSource::IndirectDescriptor
 
 // Bounds so a corrupted or hostile file cannot blow up allocations.
 inline constexpr uint32_t MaxVectorElements = 1u << 20;

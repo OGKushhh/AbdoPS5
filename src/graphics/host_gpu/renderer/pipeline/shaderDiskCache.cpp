@@ -590,20 +590,27 @@ bool WriteResourcePlan(Writer& w, const IR::ResourcePlan& plan) {
 								return false;
 						}
 				}
-				if (s.indirect_image.has_value()) {
+				if (s.indirect_descriptor.has_value()) {
 						w.WriteBool(true);
-						const auto& image = *s.indirect_image;
-						w.WriteU32(image.material_source);
-						w.WriteU32(image.table_source);
-						w.WriteU32(image.selector_stride);
-						w.WriteU32(image.selector_offset);
-						w.WriteU32(image.table_offset);
-						if (!WriteValue(w, image.key_count, index)) {
+						const auto& indirect = *s.indirect_descriptor;
+						w.WriteU32(indirect.material_source);
+						w.WriteU32(indirect.table_source);
+						w.WriteU32(indirect.selector_stride);
+						w.WriteU32(indirect.selector_offset);
+						w.WriteU32(indirect.table_offset);
+						w.WriteU32(indirect.table_stride);
+						w.WriteU32(indirect.workgroup_axis);
+						w.WriteU32(indirect.selector_shift);
+						if (!WriteValue(w, indirect.key_count, index)) {
 								return false;
 						}
-						if (!WriteValue(w, image.selector_mask, index)) {
+						if (!WriteValue(w, indirect.selector_first, index)) {
 								return false;
 						}
+						if (!WriteValue(w, indirect.selector_mask, index)) {
+								return false;
+						}
+						w.WriteWords(indirect.sources);
 				} else {
 						w.WriteBool(false);
 				}
@@ -756,23 +763,32 @@ std::optional<IR::ResourcePlan> ReadResourcePlan(Reader& r) {
 						s.dwords[d] = *value;
 				}
 				if (r.ReadBool()) {
-						IR::DescriptorSource::IndirectImage image;
-						image.material_source = r.ReadU32();
-						image.table_source    = r.ReadU32();
-						image.selector_stride = r.ReadU32();
-						image.selector_offset = r.ReadU32();
-						image.table_offset    = r.ReadU32();
-						auto key_count        = ReadValue(r, insts);
+						IR::DescriptorSource::IndirectDescriptor indirect;
+						indirect.material_source = r.ReadU32();
+						indirect.table_source    = r.ReadU32();
+						indirect.selector_stride = r.ReadU32();
+						indirect.selector_offset = r.ReadU32();
+						indirect.table_offset    = r.ReadU32();
+						indirect.table_stride    = r.ReadU32();
+						indirect.workgroup_axis  = r.ReadU32();
+						indirect.selector_shift = r.ReadU32();
+						auto key_count          = ReadValue(r, insts);
 						if (!key_count) {
 								return std::nullopt;
 						}
-						image.key_count = *key_count;
+						indirect.key_count = *key_count;
+						auto selector_first = ReadValue(r, insts);
+						if (!selector_first) {
+								return std::nullopt;
+						}
+						indirect.selector_first = *selector_first;
 						auto selector_mask = ReadValue(r, insts);
 						if (!selector_mask) {
 								return std::nullopt;
 						}
-						image.selector_mask = *selector_mask;
-						s.indirect_image    = std::move(image);
+						indirect.selector_mask = *selector_mask;
+						indirect.sources      = r.ReadWords();
+						s.indirect_descriptor = std::move(indirect);
 				}
 		}
 

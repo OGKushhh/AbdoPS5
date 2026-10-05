@@ -63,6 +63,9 @@ void DestroyPipelineObjects(const GraphicContext& graphics, const PipelineCache:
 	graphics.device.destroyDescriptorSetLayout(pipeline.descriptor_set_layout, nullptr);
 	if (pipeline.pixel_set_layout != nullptr) {
 		graphics.device.destroyDescriptorSetLayout(pipeline.pixel_set_layout, nullptr);
+	}
+}
+
 uint8_t RemapSourceAlphaFactor(uint8_t factor) {
 	switch (static_cast<Prospero::BlendFactor>(factor)) {
 		case Prospero::BlendFactor::kSrcAlpha:
