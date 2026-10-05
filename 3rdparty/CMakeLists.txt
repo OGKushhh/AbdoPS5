@@ -2,7 +2,7 @@ set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 
 add_subdirectory(cpuinfo)
 
- (Mozilla cross-platform audio library).
+# Kyty-011: Cubeb audio backend (Mozilla cross-platform audio library).
 # Used by Firefox, RPCS3, Citra, Dolphin. Lower latency than SDL on
 # Linux/PipeWire, better device routing on macOS.
 #

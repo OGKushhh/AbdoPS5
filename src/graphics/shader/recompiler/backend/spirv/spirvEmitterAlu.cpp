@@ -506,7 +506,6 @@ uint32_t EmitSGreaterThan64(EmitterState& state, uint32_t arg0, uint32_t arg1) {
 uint32_t EmitSGreaterThanEqual64(EmitterState& state, uint32_t arg0, uint32_t arg1) {
 	return CompareOrdered64(state, arg0, arg1, spv::OpSGreaterThan, spv::OpUGreaterThanEqual);
 }
-}
 
 uint32_t EmitFPIsNan32(EmitterState& state, uint32_t arg0) {
 	return EmitNative<spv::OpFUnordNotEqual, IR::Type::U1>(state, arg0, arg0);

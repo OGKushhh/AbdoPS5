@@ -268,7 +268,7 @@ constexpr VopcOpcodeInfo VOPC_OPCODE_LIST[] = {
     {0xd2u, Opcode::V_CMPX_EQ_U32},        {0xd3u, Opcode::V_CMPX_LE_U32},
     {0xd4u, Opcode::V_CMPX_GT_U32},        {0xd5u, Opcode::V_CMPX_NE_U32},
     {0xd6u, Opcode::V_CMPX_GE_U32},        {0xe1u, Opcode::V_CMP_LT_U64, false},
-  {0xe4u, Opcode::V_CMP_GT_U64, false},
+    {0xe2u, Opcode::V_CMP_EQ_U64, false},  {0xe4u, Opcode::V_CMP_GT_U64, false},
     {0xe5u, Opcode::V_CMP_NE_U64, false},
     // V_CMP_*_I64 (0xA0-0xA7) — Kyty-001
     {0xa0u, Opcode::V_CMP_F_I64, false},  {0xa1u, Opcode::V_CMP_LT_I64, false},

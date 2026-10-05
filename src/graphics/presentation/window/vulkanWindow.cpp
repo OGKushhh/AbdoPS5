@@ -478,17 +478,21 @@ static vk::Device VulkanCreateDevice(GraphicContext& graphics,
 		provoking_vertex.pNext = supported_features2.pNext;
 		supported_features2.pNext = &provoking_vertex;
 	}
+	const bool pipeline_library_extension =
 	    HasExtension(device_extensions, VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME) &&
 	    HasExtension(device_extensions, VK_EXT_GRAPHICS_PIPELINE_LIBRARY_EXTENSION_NAME);
 	vk::PhysicalDeviceGraphicsPipelineLibraryFeaturesEXT pipeline_library {};
 	if (pipeline_library_extension) {
 		pipeline_library.pNext    = supported_features2.pNext;
-		supported_features2.pNext = &pipeline_library;	const bool image_atomic_int64_extension =
+		supported_features2.pNext = &pipeline_library;
+	}
+	const bool image_atomic_int64_extension =
 	    HasExtension(device_extensions, VK_EXT_SHADER_IMAGE_ATOMIC_INT64_EXTENSION_NAME);
 	vk::PhysicalDeviceShaderImageAtomicInt64FeaturesEXT image_atomic_int64 {};
 	if (image_atomic_int64_extension) {
 		image_atomic_int64.pNext = supported_features2.pNext;
-		supported_features2.pNext = &image_atomic_int64;	}
+		supported_features2.pNext = &image_atomic_int64;
+	}
 	physical_device.getFeatures2(&supported_features2);
 	graphics.shader_image_int64_atomics_enabled = image_atomic_int64.shaderImageInt64Atomics;
 
@@ -650,12 +654,16 @@ static vk::Device VulkanCreateDevice(GraphicContext& graphics,
 		provoking_vertex.transformFeedbackPreservesProvokingVertex = VK_FALSE;
 		create_info.pNext = &provoking_vertex;
 	}
+	if (graphics.pipeline_library_enabled) {
 		pipeline_library.pNext = const_cast<void*>(create_info.pNext);
 		pipeline_library.graphicsPipelineLibrary = VK_TRUE;
-		create_info.pNext = &pipeline_library;	if (graphics.shader_image_int64_atomics_enabled) {
+		create_info.pNext = &pipeline_library;
+	}
+	if (graphics.shader_image_int64_atomics_enabled) {
 		image_atomic_int64.pNext = const_cast<void*>(create_info.pNext);
 		image_atomic_int64.sparseImageInt64Atomics = VK_FALSE;
-		create_info.pNext = &image_atomic_int64;	}
+		create_info.pNext = &image_atomic_int64;
+	}
 	create_info.pQueueCreateInfos       = &queue_create_info;
 	create_info.queueCreateInfoCount    = 1;
 	create_info.enabledExtensionCount   = static_cast<uint32_t>(device_extensions.size());

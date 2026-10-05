@@ -24701,6 +24701,7 @@ TestCase VectorSpecialF32FlushesDenormalInputs() {
            O::V_SQRT_F32, O::BUFFER_STORE_DWORD, O::S_ENDPGM}};
 }
 
+// The flush keeps a denormal's sign, and leaves the smallest normal alone.
 TestCase VectorSpecialF32FlushesNegativeDenormalInputs() {
   using O = ShaderOpcode;
 

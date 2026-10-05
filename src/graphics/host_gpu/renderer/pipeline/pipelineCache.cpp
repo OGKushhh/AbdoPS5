@@ -50,6 +50,7 @@ namespace Libs::Graphics {
 
 namespace {
 
+// The library cache key a prefetched compute pipeline compiles under.
 std::string ComputePrefetchKey(uint64_t program_id) {
 	std::string key(1, 'C');
 	key.append(reinterpret_cast<const char*>(&program_id), sizeof(program_id));
