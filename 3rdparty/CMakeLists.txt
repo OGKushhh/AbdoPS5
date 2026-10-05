@@ -30,7 +30,9 @@ if(USE_CUBEB)
                                  "Falling back to no-op stub (audio uses SDL).")
                 set(USE_CUBEB OFF CACHE BOOL "" FORCE)
         endif()
-endif()include(FetchContent)
+endif()
+
+include(FetchContent)
 
 # The Bluetooth DualSense transports speaker audio as fixed-size Opus packets.
 set(kyty_build_testing_saved "${BUILD_TESTING}")
