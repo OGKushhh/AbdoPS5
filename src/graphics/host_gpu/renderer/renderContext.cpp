@@ -140,4 +140,66 @@ void RenderContext::PrepareBda() {
 		m_buffer_cache.SynchronizeBuffersInRange(start, end - start);
 	});
 	m_fault_process_pending = true;
+}
 
+void RenderContext::RunGarbageCollector() {
+	if (m_fault_process_pending) {
+		m_fault_process_pending = false;
+		m_buffer_cache.ProcessFaultBuffer();
+	}
+	m_texture_cache.ProcessDownloadImages();
+	m_texture_cache.RunGarbageCollector();
+	m_buffer_cache.RunGarbageCollector();
+}
+
+void RenderContext::AddInterruptEq(LibKernel::EventQueue::KernelEqueue eq, int event_id) {
+	Common::LockGuard lock(m_interrupt_mutex);
+
+	auto it = std::find_if(
+	    m_interrupt_eqs.begin(), m_interrupt_eqs.end(),
+	    [eq, event_id](const auto& entry) { return entry.eq == eq && entry.event_id == event_id; });
+	if (it != m_interrupt_eqs.end()) {
+		return;
+	}
+
+	m_interrupt_eqs.push_back({eq, event_id});
+}
+
+void RenderContext::DeleteInterruptEq(LibKernel::EventQueue::KernelEqueue eq, int event_id) {
+	Common::LockGuard lock(m_interrupt_mutex);
+
+	auto it = std::find_if(
+	    m_interrupt_eqs.begin(), m_interrupt_eqs.end(),
+	    [eq, event_id](const auto& entry) { return entry.eq == eq && entry.event_id == event_id; });
+	if (it == m_interrupt_eqs.end()) {
+		return;
+	}
+
+	m_interrupt_eqs.erase(it);
+}
+
+void RenderContext::TriggerInterrupt(int event_id, uint32_t context_id) {
+	std::vector<InterruptEqRegistration> registrations;
+	{
+		Common::LockGuard lock(m_interrupt_mutex);
+		for (const auto& registration: m_interrupt_eqs) {
+			if (registration.event_id == event_id) {
+				registrations.push_back(registration);
+			}
+		}
+	}
+
+	for (const auto& registration: registrations) {
+		const auto result = LibKernel::EventQueue::KernelTriggerEvent(
+		    registration.eq, static_cast<uintptr_t>(registration.event_id),
+		    LibKernel::EventQueue::KERNEL_EVFILT_GRAPHICS,
+		    reinterpret_cast<void*>(static_cast<uintptr_t>(context_id)));
+		if (result == LibKernel::KERNEL_ERROR_EBADF || result == LibKernel::KERNEL_ERROR_ENOENT) {
+			DeleteInterruptEq(registration.eq, registration.event_id);
+			continue;
+		}
+		EXIT_NOT_IMPLEMENTED(result != OK);
+	}
+}
+
+} // namespace Libs::Graphics
