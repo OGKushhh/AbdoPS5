@@ -816,6 +816,9 @@ struct Instruction {
 struct Program {
 	std::span<const uint32_t> code;
 	std::vector<Instruction>  instructions;
+	// Set when the program contains a BVH intersection instruction; long-running
+	// compute the pipeline cache may defer to a worker thread (Kyty-032 v3).
+	bool                     has_bvh = false;
 };
 
 // Code spans are trusted to contain complete instructions, valid branch targets, and 32-bit PCs.
