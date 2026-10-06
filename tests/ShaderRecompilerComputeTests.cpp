@@ -34068,7 +34068,12 @@ void CheckIndirectBufferStore(VulkanHarness &vulkan) {
   candidate.indirect_search_iterations = 0;
   candidate.indirect_resources.clear();
   program.descriptor_sources.resize(1);
-  program.descriptor_sources[0].indirect_descriptor.emplace().table_stride = 16;
+  // Plain local + assignment: clang+libstdc++ rejects optional::emplace()'s
+  // is_constructible gate for this aggregate, while the direct declaration
+  // (as in ResourceTracking.cpp) compiles everywhere.
+  DescriptorSource::IndirectDescriptor indirect_table;
+  indirect_table.table_stride = 16;
+  program.descriptor_sources[0].indirect_descriptor = indirect_table;
   ShaderComputeInputInfo compute;
   compute.wave_size = 32;
   compute.host_subgroup_size = vulkan.SubgroupSize();
