@@ -593,14 +593,20 @@ bool WriteResourcePlan(Writer& w, const IR::ResourcePlan& plan) {
 				if (s.indirect_descriptor.has_value()) {
 						w.WriteBool(true);
 						const auto& indirect = *s.indirect_descriptor;
-						w.WriteU32(indirect.material_source);
+						const bool has_selector = indirect.selector.has_value();
+						w.WriteBool(has_selector);
+						if (has_selector) {
+							w.WriteU32(indirect.selector->source);
+							w.WriteU32(indirect.selector->stride);
+							w.WriteU32(indirect.selector->offset);
+						}
 						w.WriteU32(indirect.table_source);
-						w.WriteU32(indirect.selector_stride);
-						w.WriteU32(indirect.selector_offset);
 						w.WriteU32(indirect.table_offset);
+						w.WriteU32(indirect.table_immediate);
 						w.WriteU32(indirect.table_stride);
+						w.WriteU32(indirect.table_record_bytes);
+						w.WriteBool(indirect.table_scalar);
 						w.WriteU32(indirect.workgroup_axis);
-						w.WriteU32(indirect.selector_shift);
 						if (!WriteValue(w, indirect.key_count, index)) {
 								return false;
 						}
@@ -764,14 +770,19 @@ std::optional<IR::ResourcePlan> ReadResourcePlan(Reader& r) {
 				}
 				if (r.ReadBool()) {
 						IR::DescriptorSource::IndirectDescriptor indirect;
-						indirect.material_source = r.ReadU32();
-						indirect.table_source    = r.ReadU32();
-						indirect.selector_stride = r.ReadU32();
-						indirect.selector_offset = r.ReadU32();
-						indirect.table_offset    = r.ReadU32();
-						indirect.table_stride    = r.ReadU32();
-						indirect.workgroup_axis  = r.ReadU32();
-						indirect.selector_shift = r.ReadU32();
+						if (r.ReadBool()) {
+							indirect.selector       = IR::DescriptorSource::IndirectDescriptor::SelectorRead{};
+							indirect.selector->source = r.ReadU32();
+							indirect.selector->stride = r.ReadU32();
+							indirect.selector->offset = r.ReadU32();
+						}
+						indirect.table_source       = r.ReadU32();
+						indirect.table_offset       = r.ReadU32();
+						indirect.table_immediate    = r.ReadU32();
+						indirect.table_stride       = r.ReadU32();
+						indirect.table_record_bytes = r.ReadU32();
+						indirect.table_scalar       = r.ReadBool();
+						indirect.workgroup_axis     = r.ReadU32();
 						auto key_count          = ReadValue(r, insts);
 						if (!key_count) {
 								return std::nullopt;
