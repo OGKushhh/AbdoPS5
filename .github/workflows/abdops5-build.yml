@@ -270,15 +270,18 @@ jobs:
           cmake --build _Build/linux \
             --target kyty_emulator launcher audio_out2_port_tests ime_dialog_tests virtual_memory_allocation_tests iommu_tests haptic_tests tmr_tests screenshot_tests kytyps5_elf_info kytyps5_nids kytyps5_pkg_inspect kytyps5_param_sfo \
             scalar_provenance_tests resource_tracking_tests resource_materialization_tests trophy_system_tests event_queue_lifetime_tests \
-            shader_cfg_tests shader_vertex_metadata_tests http_uri_parse_tests shader_recompiler_compute_tests \
+            shader_cfg_tests shader_vertex_metadata_tests http_uri_parse_tests \
             --parallel $(nproc)
 
+      # shader_recompiler_compute_tests needs a real GPU (fragment barycentrics,
+      # 64-bit image atomics); no GitHub-hosted runner provides one. Run it on
+      # GPU-equipped machines with: cmake --build ... --target shader_recompiler_compute_tests
       - name: Run tests
         shell: bash
         timeout-minutes: 90
         run: |
           ctest --test-dir _Build/linux --output-on-failure \
-            -R '^(audio_out2_port|ime_dialog|virtual_memory_allocation|iommu_tests|haptic_tests|tmr_tests|screenshot_tests|scalar_provenance|resource_tracking|resource_materialization|trophy_system|event_queue_lifetime|shader_cfg|shader_vertex_metadata|http_uri_parse|shader_recompiler_compute)$'
+            -R '^(audio_out2_port|ime_dialog|virtual_memory_allocation|iommu_tests|haptic_tests|tmr_tests|screenshot_tests|scalar_provenance|resource_tracking|resource_materialization|trophy_system|event_queue_lifetime|shader_cfg|shader_vertex_metadata|http_uri_parse)$'
 
       - name: Run shader coverage check (Kyty-008)
         shell: bash
