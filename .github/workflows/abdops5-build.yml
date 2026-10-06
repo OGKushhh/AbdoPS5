@@ -115,13 +115,14 @@ jobs:
         run: |
           cmake --build _Build/windows ^
             --target kyty_emulator launcher audio_out2_port_tests ime_dialog_tests virtual_memory_allocation_tests iommu_tests haptic_tests tmr_tests screenshot_tests kytyps5_elf_info kytyps5_nids kytyps5_pkg_inspect kytyps5_param_sfo ^
+            scalar_provenance_tests resource_tracking_tests resource_materialization_tests trophy_system_tests event_queue_lifetime_tests ^
             --parallel
 
       - name: Run tests
         shell: cmd
         run: |
           ctest --test-dir _Build/windows --output-on-failure ^
-            -R "^(audio_out2_port|ime_dialog|virtual_memory_allocation|iommu_tests|haptic_tests|tmr_tests|screenshot_tests)$"
+            -R "^(audio_out2_port|ime_dialog|virtual_memory_allocation|iommu_tests|haptic_tests|tmr_tests|screenshot_tests|scalar_provenance|resource_tracking|resource_materialization|trophy_system|event_queue_lifetime)$"
 
       - name: Run shader coverage check (Kyty-008)
         shell: pwsh
@@ -222,7 +223,7 @@ jobs:
             clang cmake ninja-build \
             libsdl2-dev libvulkan-dev libfreetype-dev \
             nlohmann-json3-dev libfmt-dev libxxhash-dev \
-            libmagic-dev glslang-tools spirv-tools \
+            libmagic-dev glslang-tools spirv-tools mesa-vulkan-drivers \
             qt6-base-dev qt6-base-dev-tools \
             libavcodec-dev libavformat-dev libavutil-dev libswscale-dev \
             libswresample-dev libbz2-dev liblzma-dev \
@@ -231,7 +232,7 @@ jobs:
             clang cmake ninja-build \
             libsdl2-dev libvulkan-dev libfreetype-dev \
             nlohmann-json3-dev libfmt-dev libxxhash-dev \
-            libmagic-dev libglslang-dev libspirv-dev \
+            libmagic-dev libglslang-dev libspirv-dev mesa-vulkan-drivers \
             qt6-base-dev qt6-base-dev-tools \
             libavcodec-dev libavformat-dev libavutil-dev libswscale-dev \
             libswresample-dev libbz2-dev liblzma-dev \
@@ -268,13 +269,16 @@ jobs:
         run: |
           cmake --build _Build/linux \
             --target kyty_emulator launcher audio_out2_port_tests ime_dialog_tests virtual_memory_allocation_tests iommu_tests haptic_tests tmr_tests screenshot_tests kytyps5_elf_info kytyps5_nids kytyps5_pkg_inspect kytyps5_param_sfo \
+            scalar_provenance_tests resource_tracking_tests resource_materialization_tests trophy_system_tests event_queue_lifetime_tests \
+            shader_cfg_tests shader_vertex_metadata_tests http_uri_parse_tests shader_recompiler_compute_tests \
             --parallel $(nproc)
 
       - name: Run tests
         shell: bash
+        timeout-minutes: 90
         run: |
           ctest --test-dir _Build/linux --output-on-failure \
-            -R '^(audio_out2_port|ime_dialog|virtual_memory_allocation|iommu_tests|haptic_tests|tmr_tests|screenshot_tests)$'
+            -R '^(audio_out2_port|ime_dialog|virtual_memory_allocation|iommu_tests|haptic_tests|tmr_tests|screenshot_tests|scalar_provenance|resource_tracking|resource_materialization|trophy_system|event_queue_lifetime|shader_cfg|shader_vertex_metadata|http_uri_parse|shader_recompiler_compute)$'
 
       - name: Run shader coverage check (Kyty-008)
         shell: bash
