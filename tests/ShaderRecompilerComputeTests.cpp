@@ -25201,6 +25201,8 @@ TestCase VectorSpecialF32FlushesNegativeDenormalInputs() {
           {0xff800000u, 0xff800000u, 0x80000000u, 0x7e800000u, 0x20000000u},
           {O::V_MOV_B32, O::V_LOG_F32, O::V_RCP_F32, O::V_SQRT_F32,
            O::BUFFER_STORE_DWORD, O::S_ENDPGM}};
+}
+
 TestCase VectorCompareInteger64Edges() {
   using O = ShaderOpcode;
   constexpr std::array<std::array<uint64_t, 2>, 10> pairs{{
@@ -34192,10 +34194,10 @@ void CheckIndirectImageKeySwitch(VulkanHarness &vulkan) {
   root.read = true;
   root.indirect_root = 0;
   root.indirect_mapping_offset = 0;
-	root.indirect_search_iterations = std::bit_width(mapping_capacity);
+        root.indirect_search_iterations = std::bit_width(mapping_capacity);
   root.indirect_resources = {0u, 1u};
   auto candidate = root;
-	candidate.indirect_search_iterations = 0;
+        candidate.indirect_search_iterations = 0;
   candidate.indirect_resources.clear();
   program.info.images = {root, candidate};
   program.info.samplers.push_back({1u, 0x10f0u});
