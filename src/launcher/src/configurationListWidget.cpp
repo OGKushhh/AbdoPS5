@@ -1,5 +1,6 @@
 #include "configurationListWidget.h"
 
+#include "cheatFile.h"
 #include "common/archive.h"
 #include "compatibilityDatabase.h"
 #include "configuration.h"
@@ -36,6 +37,7 @@
 #include <QPainter>
 #include <QPalette>
 #include <QPointer>
+#include <QProcess>
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QSet>
@@ -47,7 +49,14 @@
 #include <QUrl>
 #include <QtCore>
 
+#ifdef __linux__
+#include <QDBusConnection>
+#include <QDBusMessage>
+#include <QDBusPendingCallWatcher>
+#endif
+
 #include <memory>
+#include <vector>
 
 #include "ui_configuration_list_widget.h"
 
@@ -233,6 +242,8 @@ ConfigurationListWidget::ConfigurationListWidget(QWidget* parent)
 	        &ConfigurationListWidget::edit_configuration);
 	connect(m_ui->delete_button, &QToolButton::clicked, this,
 	        &ConfigurationListWidget::delete_configuartion);
+	connect(m_ui->trophy_overview_button, &QToolButton::clicked, this,
+	        &ConfigurationListWidget::ViewTrophyOverview);
 	connect(m_ui->cfgs_list, &QTreeWidget::currentItemChanged, this,
 	        &ConfigurationListWidget::SelectItem);
 	connect(m_ui->cfgs_list, &QTreeWidget::itemDoubleClicked, this,
@@ -285,6 +296,7 @@ void ConfigurationListWidget::UpdateToolbarIcons() {
 	set_icon(m_ui->input_mapping_button, QStringLiteral(":/icons/input-mapping.svg"));
 	set_icon(m_ui->edit_button, QStringLiteral(":/icons/edit-configuration.svg"));
 	set_icon(m_ui->delete_button, QStringLiteral(":/icons/remove-configuration.svg"));
+	set_icon(m_ui->trophy_overview_button, QStringLiteral(":/icons/trophy.svg"));
 }
 
 void ConfigurationListWidget::WriteSettings() {
@@ -314,6 +326,7 @@ void ConfigurationListWidget::WriteSettings() {
 	s->remove(CONF_GLOBAL);
 	s->beginGroup(CONF_GLOBAL);
 	m_global_info.WriteSettings(s.get());
+	m_global_info.controller.WriteSettings(s.get());
 	s->endGroup();
 
 	s->remove(CONF_SECTION_NAME);
@@ -357,6 +370,7 @@ void ConfigurationListWidget::ReadSettings() {
 	if (!s->childKeys().isEmpty()) {
 		m_global_info.ReadSettings(s.get());
 	}
+	m_global_info.controller.ReadSettings(s.get());
 	s->endGroup();
 
 	qDeleteAll(m_custom_infos);
@@ -409,6 +423,7 @@ ConfigurationListWidget::CreateConfiguration(const ConfigurationItem& item) cons
 	const auto* custom = m_custom_infos.value(item.GetInfo().game_path);
 	info->CopyGameInfoFrom(item.GetInfo());
 	info->CopyEmulatorSettingsFrom(custom != nullptr ? *custom : m_global_info);
+	info->controller = m_global_info.controller;
 	if (custom != nullptr && !custom->elf.isEmpty()) {
 		info->elf = custom->elf;
 	}
@@ -787,16 +802,18 @@ void ConfigurationListWidget::delete_configuartion() {
 void ConfigurationListWidget::edit_global_settings() {
 	Configuration info;
 	info.CopyEmulatorSettingsFrom(m_global_info);
+	info.controller = m_global_info.controller;
 	info.name = tr("Global settings");
 
 	ConfigurationEditDialog dlg(info, this);
 	dlg.setWindowTitle(tr("Global settings"));
-	dlg.SetGameDirectories(m_game_dirs);
+	dlg.SetGlobalSettings(m_game_dirs);
 	connect(&dlg, &ConfigurationEditDialog::PreviewControllerColor, this,
 	        &ConfigurationListWidget::PreviewControllerColor);
 
 	if (dlg.exec() == QDialog::Accepted) {
 		m_global_info.CopyEmulatorSettingsFrom(info);
+		m_global_info.controller     = info.controller;
 		const auto game_dirs         = NormalizeGameDirectories(dlg.GetGameDirectories());
 		const bool game_dirs_changed = game_dirs != m_game_dirs;
 		m_game_dirs                  = game_dirs;
@@ -823,7 +840,22 @@ void ConfigurationListWidget::ViewTrophies() {
 		return;
 	}
 
-	TrophyViewerDialog::ShowForGame(&item->GetInfo(), this);
+	const auto config = CreateConfiguration(*item);
+	TrophyViewerDialog::ShowForGame(config.get(), m_runtime_directory, this);
+}
+
+void ConfigurationListWidget::ViewTrophyOverview() {
+	std::vector<std::unique_ptr<Configuration>> configurations;
+	std::vector<const Configuration*>            games;
+	configurations.reserve(static_cast<size_t>(m_ui->cfgs_list->topLevelItemCount()));
+	games.reserve(static_cast<size_t>(m_ui->cfgs_list->topLevelItemCount()));
+	for (int index = 0; index < m_ui->cfgs_list->topLevelItemCount(); ++index) {
+		const auto* item =
+		    static_cast<const ConfigurationItem*>(m_ui->cfgs_list->topLevelItem(index));
+		configurations.push_back(CreateConfiguration(*item));
+		games.push_back(configurations.back().get());
+	}
+	TrophyViewerDialog::ShowOverview(games, m_runtime_directory, this);
 }
 
 void ConfigurationListWidget::open_game_folder() {
@@ -832,16 +864,52 @@ void ConfigurationListWidget::open_game_folder() {
 		return;
 	}
 
-	const auto base = item->GetInfo().basedir;
-	const QDir game_dir(GameContent::IsArchive(base) ? QFileInfo(base).absolutePath() : base);
+	const auto base       = item->GetInfo().basedir;
+	const bool is_archive = GameContent::IsArchive(base);
+	const QDir game_dir(is_archive ? QFileInfo(base).absolutePath() : base);
 	if (!game_dir.exists()) {
 		QMessageBox::warning(this, tr("Open game folder"), tr("Game folder does not exist."));
 		return;
 	}
 
-	if (!QDesktopServices::openUrl(QUrl::fromLocalFile(game_dir.absolutePath()))) {
-		QMessageBox::warning(this, tr("Open game folder"), tr("Could not open game folder."));
+	const auto open_directory = [this, game_dir] {
+		if (!QDesktopServices::openUrl(QUrl::fromLocalFile(game_dir.absolutePath()))) {
+			QMessageBox::warning(this, tr("Open game folder"), tr("Could not open game folder."));
+		}
+	};
+	if (is_archive) {
+		const auto path = QFileInfo(base).absoluteFilePath();
+#if defined(_WIN32)
+		QProcess explorer;
+		explorer.setProgram("explorer.exe");
+		explorer.setNativeArguments(
+		    QStringLiteral("/select,\"%1\"").arg(QDir::toNativeSeparators(path)));
+		if (explorer.startDetached()) {
+			return;
+		}
+#elif defined(__APPLE__)
+		if (QProcess::startDetached("/usr/bin/open", {"-R", path})) {
+			return;
+		}
+#elif defined(__linux__)
+		auto request = QDBusMessage::createMethodCall("org.freedesktop.FileManager1",
+		                                              "/org/freedesktop/FileManager1",
+		                                              "org.freedesktop.FileManager1", "ShowItems");
+		request << QStringList {QUrl::fromLocalFile(path).toString(QUrl::FullyEncoded)}
+		        << QString();
+		auto* watcher = new QDBusPendingCallWatcher(
+		    QDBusConnection::sessionBus().asyncCall(request, 5000), this);
+		connect(watcher, &QDBusPendingCallWatcher::finished, this,
+		        [open_directory](QDBusPendingCallWatcher* call) {
+			        call->deleteLater();
+			        if (call->isError()) {
+				        open_directory();
+			        }
+		        });
+		return;
+#endif
 	}
+	open_directory();
 }
 
 void ConfigurationListWidget::remove_save_data() {
@@ -966,7 +1034,7 @@ void ConfigurationListWidget::show_context_menu(const QPoint& pos) {
 		        }
 	        });
 	action_patches->setVisible(item != nullptr &&
-	                           PatchesDialog::IsSupportedTitleId(item->GetInfo().title_id));
+	                           Cheats::IsSupportedTitleId(item->GetInfo().title_id));
 	QAction* action_remove_save_data =
 	    menu.addAction(style()->standardIcon(QStyle::SP_DialogDiscardButton),
 	                   tr("Remove save data..."), this, SLOT(remove_save_data()));
