@@ -150,6 +150,11 @@ public:
 		vk::CompareOp                               depth_compare = vk::CompareOp::eNever;
 		vk::Bool32                                  depth_bias    = VK_FALSE;
 		vk::Bool32                                  stencil_test  = VK_FALSE;
+#if !defined(__APPLE__)
+		vk::Bool32                                  depth_bounds_test = VK_FALSE;
+		bool                                        depth_bounds_valid = false;
+		std::array<float, 2>                       depth_bounds {};
+#endif
 		bool                                        bias_valid    = false;
 		std::array<float, 3>                        bias {};
 		bool                                        stencil_valid = false;
@@ -213,7 +218,7 @@ public:
 	                      uint32_t mode);
 
 	void PrepareBindings(const ShaderStageRuntime& runtime, PreparedBindings& prepared);
-	void                           FindBuffers(PreparedBindings& bindings);
+	void                           FindBuffers(std::span<PreparedBindings* const> stages);
 	void                           RebindBuffers(PreparedBindings& bindings);
 	void                           RebindImages(PreparedBindings& bindings);
 	void CommitBindings(CommandBuffer& buffer, vk::PipelineBindPoint pipeline_bind_point,

@@ -105,29 +105,34 @@ void RenderContext::MapMemory(uint64_t vaddr, uint64_t size) {
 }
 
 void RenderContext::UnmapMemory(uint64_t vaddr, uint64_t size) {
-        if (CommandScheduler::InDeferredOperation()) {
-                EXIT("unsupported memory unmap from an asynchronous GPU completion, "
-                     "addr=0x%016" PRIx64 " size=0x%016" PRIx64 "\n",
-                     vaddr, size);
-        }
-        const auto unmap = [this, vaddr, size] {
-                if (m_command_scheduler.Active()) {
-                        const auto tick = m_command_scheduler.CurrentTick();
-                        m_command_scheduler.Finish();
-                        m_command_scheduler.WaitPriorityOperations(tick);
-                }
-                m_buffer_cache.InvalidateMemory(vaddr, size);
-                m_texture_cache.UnmapMemory(vaddr, size);
-                std::lock_guard lock(m_mapped_ranges_mutex);
-                m_mapped_ranges.Subtract(vaddr, size);
-        };
-        // Shutdown still owns the GPU while queued rendering drains, but its command lane no
-        // longer accepts external work. Use the guest GPU's state for the teardown route.
-        if (m_gpu == nullptr || m_gpu->IsStopping()) {
-                unmap();
-                return;
-        }
-        m_gpu->SendCommandSync(unmap);
+	if (CommandScheduler::InDeferredOperation()) {
+		EXIT("unsupported memory unmap from an asynchronous GPU completion, "
+		     "addr=0x%016" PRIx64 " size=0x%016" PRIx64 "\n",
+		     vaddr, size);
+	}
+	const auto unmap = [this, vaddr, size] {
+		// Check cache ownership on the GPU thread. Guest-memory callbacks can still
+		// access a range with no cached data, so they must finish before it is unmapped.
+		if (m_command_scheduler.Active() &&
+		    (m_buffer_cache.IsRegionRegistered(vaddr, size) ||
+		     m_texture_cache.IsRegionRegistered(vaddr, size) ||
+		     m_command_scheduler.HasPendingPriorityOperations())) {
+			const auto tick = m_command_scheduler.CurrentTick();
+			m_command_scheduler.Finish();
+			m_command_scheduler.WaitPriorityOperations(tick);
+		}
+		m_buffer_cache.InvalidateMemory(vaddr, size);
+		m_texture_cache.UnmapMemory(vaddr, size);
+		std::lock_guard lock(m_mapped_ranges_mutex);
+		m_mapped_ranges.Subtract(vaddr, size);
+	};
+	// Shutdown still owns the GPU while queued rendering drains, but its command lane no
+	// longer accepts external work. Use the guest GPU's state for the teardown route.
+	if (m_gpu == nullptr || m_gpu->IsStopping()) {
+		unmap();
+		return;
+	}
+	m_gpu->SendCommandSync(unmap);
 }
 
 void RenderContext::PrepareBda() {
@@ -203,3 +208,4 @@ void RenderContext::TriggerInterrupt(int event_id, uint32_t context_id) {
 }
 
 } // namespace Libs::Graphics
+

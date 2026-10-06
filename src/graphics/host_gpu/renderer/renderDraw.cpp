@@ -405,6 +405,10 @@ static void SetGraphicsDynamicParams(const CommandBuffer& buffer, vk::CommandBuf
 	const std::array blend_constants {blend.red, blend.green, blend.blue, blend.alpha};
 	const vk::Bool32 depth_test  = depth.depth_test_enable ? VK_TRUE : VK_FALSE;
 	const vk::Bool32 depth_write = depth.depth_write_enable ? VK_TRUE : VK_FALSE;
+#if !defined(__APPLE__)
+	const vk::Bool32 depth_bounds_test = depth.depth_bounds_test_enable ? VK_TRUE : VK_FALSE;
+	const std::array depth_bounds     = {ctx.GetDepthBoundsMin(), ctx.GetDepthBoundsMax()};
+#endif
 
 	const auto& mode              = ctx.GetModeControl();
 	const auto& poly_offset       = ctx.GetPolyOffset();
@@ -430,6 +434,16 @@ static void SetGraphicsDynamicParams(const CommandBuffer& buffer, vk::CommandBuf
 	if (!fixed_valid || known.depth_compare != depth.depth_compare_op) {
 		vk_buffer.setDepthCompareOp(depth.depth_compare_op);
 	}
+#if !defined(__APPLE__)
+	if (!fixed_valid || known.depth_bounds_test != depth_bounds_test) {
+		vk_buffer.setDepthBoundsTestEnable(depth_bounds_test);
+	}
+	if (depth_bounds_test == VK_TRUE &&
+	    (!known.depth_bounds_valid || known.depth_bounds != depth_bounds)) {
+		vk_buffer.setDepthBounds(depth_bounds[0], depth_bounds[1]);
+		known.depth_bounds_valid = true;
+	}
+#endif
 	if (!fixed_valid || known.depth_bias != depth_bias) {
 		vk_buffer.setDepthBiasEnable(depth_bias);
 	}
@@ -444,6 +458,9 @@ static void SetGraphicsDynamicParams(const CommandBuffer& buffer, vk::CommandBuf
 	known.depth_compare   = depth.depth_compare_op;
 	known.depth_bias      = depth_bias;
 	known.stencil_test    = stencil_test;
+#if !defined(__APPLE__)
+	known.depth_bounds_test = depth_bounds_test;
+#endif
 
 	if (depth_bias_enable) {
 		// Vulkan has one bias for both faces. Prefer a visible front face when both are enabled.
